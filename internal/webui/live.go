@@ -7,11 +7,12 @@ import (
 	"sync"
 	"time"
 
+	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/watchlist"
-	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
+	"github.com/IS908/optix/pkg/model"
 )
 
 // newIBClient creates a new IB client with the configured host/port.
@@ -68,6 +69,14 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 	if payload, jerr := json.Marshal(resp); jerr == nil {
 		_ = s.store.SaveAnalysisCache(ctx, symbol, payload)
 	}
+
+	// For a live fetch every layer was just refreshed — use current time.
+	now := time.Now().UTC()
+	resp.Freshness.Symbol    = symbol
+	resp.Freshness.QuoteAt   = now
+	resp.Freshness.OHLCVAt   = now
+	resp.Freshness.OptionsAt  = now
+	resp.Freshness.CacheAt   = now
 
 	return resp, nil
 }
@@ -169,9 +178,23 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		})
 	}
 
+	// Build freshness for each successfully fetched symbol (all layers = now).
+	now := time.Now().UTC()
+	freshness := make([]model.SymbolFreshness, 0, len(syms))
+	for _, sym := range syms {
+		freshness = append(freshness, model.SymbolFreshness{
+			Symbol:    sym.Symbol,
+			QuoteAt:   now,
+			OHLCVAt:   now,
+			OptionsAt:  now,
+			// CacheAt and SnapshotAt are not written during a live dashboard refresh
+		})
+	}
+
 	return &DashboardResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   false,
 		Symbols:     syms,
+		Freshness:   freshness,
 	}, nil
 }

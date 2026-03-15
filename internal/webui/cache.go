@@ -13,10 +13,18 @@ func (s *Server) fetchCachedDashboard(ctx context.Context) (*DashboardResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("load snapshots: %w", err)
 	}
+
+	// Fetch freshness data for all watchlist symbols regardless of snapshot presence.
+	freshAll, _ := s.store.GetAllSymbolFreshness(ctx) // best-effort; ignore error
+
 	if len(snaps) == 0 {
 		// No snapshots yet — return an empty response so the template renders
 		// the "no data" empty state instead of a 500 error page.
-		return &DashboardResponse{GeneratedAt: time.Now().UTC(), FromCache: true}, nil
+		return &DashboardResponse{
+			GeneratedAt: time.Now().UTC(),
+			FromCache:   true,
+			Freshness:   freshAll,
+		}, nil
 	}
 
 	syms := make([]SymbolSummary, 0, len(snaps))
@@ -27,6 +35,7 @@ func (s *Server) fetchCachedDashboard(ctx context.Context) (*DashboardResponse, 
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   true,
 		Symbols:     syms,
+		Freshness:   freshAll,
 	}, nil
 }
 
@@ -42,5 +51,9 @@ func (s *Server) fetchCachedAnalysis(ctx context.Context, symbol string) (*Analy
 	}
 	resp.FromCache = true
 	resp.GeneratedAt = cachedAt
+
+	// Populate per-data-layer freshness from SQLite.
+	resp.Freshness, _ = s.store.GetSymbolFreshness(ctx, symbol) // best-effort
+
 	return &resp, nil
 }

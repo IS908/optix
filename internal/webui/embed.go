@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"time"
 )
 
 //go:embed static
@@ -20,6 +21,58 @@ var tmplFuncMap = template.FuncMap{
 	"dollar":  func(f float64) string { return fmt.Sprintf("$%.2f", f) },
 	"int":     func(f float64) int64 { return int64(f) },
 	"add":     func(a, b int) int { return a + b },
+
+	// timeago formats t as a human-readable relative time ("2h ago", "3d ago", "—").
+	"timeago": func(t time.Time) string {
+		if t.IsZero() {
+			return "—"
+		}
+		d := time.Since(t)
+		switch {
+		case d < time.Minute:
+			return "just now"
+		case d < time.Hour:
+			return fmt.Sprintf("%dm ago", int(d.Minutes()))
+		case d < 24*time.Hour:
+			return fmt.Sprintf("%dh ago", int(d.Hours()))
+		case d < 7*24*time.Hour:
+			return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+		default:
+			return t.Format("2006-01-02")
+		}
+	},
+	// freshclass returns a Tailwind text-color class based on data age.
+	// green < 6 h | amber < 48 h | red ≥ 48 h | gray = never fetched
+	"freshclass": func(t time.Time) string {
+		if t.IsZero() {
+			return "text-gray-600"
+		}
+		d := time.Since(t)
+		switch {
+		case d < 6*time.Hour:
+			return "text-emerald-400"
+		case d < 48*time.Hour:
+			return "text-amber-400"
+		default:
+			return "text-red-400"
+		}
+	},
+	// freshbg returns a subtle Tailwind bg class for freshness badge backgrounds.
+	"freshbg": func(t time.Time) string {
+		if t.IsZero() {
+			return "bg-gray-800/40 border-gray-700/40"
+		}
+		d := time.Since(t)
+		switch {
+		case d < 6*time.Hour:
+			return "bg-emerald-950/60 border-emerald-800/60"
+		case d < 48*time.Hour:
+			return "bg-amber-950/60 border-amber-800/60"
+		default:
+			return "bg-red-950/60 border-red-800/60"
+		}
+	},
+
 	// dict builds a map from alternating key/value pairs, enabling named
 	// arguments in sub-template calls: {{template "foo" dict "A" 1 "B" 2}}
 	"dict": func(pairs ...any) (map[string]any, error) {

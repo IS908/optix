@@ -20,9 +20,10 @@ type WatchlistPageResponse struct {
 
 // DashboardResponse is the JSON/template payload for GET /dashboard and /api/dashboard.
 type DashboardResponse struct {
-	GeneratedAt time.Time       `json:"generated_at"`
-	FromCache   bool            `json:"from_cache"`
-	Symbols     []SymbolSummary `json:"symbols"`
+	GeneratedAt time.Time              `json:"generated_at"`
+	FromCache   bool                   `json:"from_cache"`
+	Symbols     []SymbolSummary        `json:"symbols"`
+	Freshness   []model.SymbolFreshness `json:"freshness,omitempty"`
 }
 
 // SymbolSummary is one row in the dashboard table.
@@ -45,14 +46,15 @@ type SymbolSummary struct {
 
 // AnalyzeResponse is the JSON/template payload for GET /analyze/{symbol} and /api/analyze/{symbol}.
 type AnalyzeResponse struct {
-	GeneratedAt time.Time       `json:"generated_at"`
-	FromCache   bool            `json:"from_cache"`
-	Symbol      string          `json:"symbol"`
-	Summary     SummaryData     `json:"summary"`
-	Technical   TechnicalData   `json:"technical"`
-	Options     OptionsData     `json:"options"`
-	Outlook     OutlookData     `json:"outlook"`
-	Strategies  []StrategyData  `json:"strategies"`
+	GeneratedAt time.Time             `json:"generated_at"`
+	FromCache   bool                  `json:"from_cache"`
+	Symbol      string                `json:"symbol"`
+	Summary     SummaryData           `json:"summary"`
+	Technical   TechnicalData         `json:"technical"`
+	Options     OptionsData           `json:"options"`
+	Outlook     OutlookData           `json:"outlook"`
+	Strategies  []StrategyData        `json:"strategies"`
+	Freshness   model.SymbolFreshness `json:"freshness,omitempty"`
 }
 
 type SummaryData struct {

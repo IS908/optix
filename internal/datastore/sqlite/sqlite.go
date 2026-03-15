@@ -264,3 +264,80 @@ func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error)
 	}
 	return items, rows.Err()
 }
+
+// --- Data Freshness ---
+
+// GetSymbolFreshness returns the last successful fetch timestamp for each
+// data layer of a single symbol. Missing data layers have zero Time values.
+func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.SymbolFreshness, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE((SELECT updated_at  FROM stock_quotes  WHERE symbol    = ?1), '') AS quote_at,
+			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1D'), '') AS ohlcv_at,
+			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
+			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
+			COALESCE((SELECT MAX(snapshot_date) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
+	`, symbol)
+
+	var quoteAt, ohlcvAt, optAt, cacheAt, snapDate string
+	if err := row.Scan(&quoteAt, &ohlcvAt, &optAt, &cacheAt, &snapDate); err != nil {
+		return model.SymbolFreshness{Symbol: symbol}, err
+	}
+	f := model.SymbolFreshness{Symbol: symbol}
+	if quoteAt != ""  { f.QuoteAt, _   = time.Parse(time.RFC3339, quoteAt) }
+	if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
+	if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
+	if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
+	if snapDate != "" { f.SnapshotAt, _ = time.Parse("2006-01-02", snapDate) }
+	return f, nil
+}
+
+// GetAllSymbolFreshness returns freshness records for every symbol currently
+// in the watchlist using a single JOIN query for efficiency.
+func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshness, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			w.symbol,
+			COALESCE(sq.updated_at, '')           AS quote_at,
+			COALESCE(ob.ohlcv_at, '')             AS ohlcv_at,
+			COALESCE(oq.opt_at, '')               AS opt_at,
+			COALESCE(ac.cached_at, '')            AS cache_at,
+			COALESCE(ws.snap_date, '')            AS snap_date
+		FROM watchlist w
+		LEFT JOIN stock_quotes sq ON sq.symbol = w.symbol
+		LEFT JOIN (
+			SELECT symbol, MAX(open_time) AS ohlcv_at
+			FROM ohlcv_bars WHERE timeframe = '1D' GROUP BY symbol
+		) ob ON ob.symbol = w.symbol
+		LEFT JOIN (
+			SELECT underlying, MAX(snapshot_time) AS opt_at
+			FROM option_quotes GROUP BY underlying
+		) oq ON oq.underlying = w.symbol
+		LEFT JOIN analysis_cache ac ON ac.symbol = w.symbol
+		LEFT JOIN (
+			SELECT symbol, MAX(snapshot_date) AS snap_date
+			FROM watchlist_snapshots GROUP BY symbol
+		) ws ON ws.symbol = w.symbol
+		ORDER BY w.symbol
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []model.SymbolFreshness
+	for rows.Next() {
+		var f model.SymbolFreshness
+		var quoteAt, ohlcvAt, optAt, cacheAt, snapDate string
+		if err := rows.Scan(&f.Symbol, &quoteAt, &ohlcvAt, &optAt, &cacheAt, &snapDate); err != nil {
+			return nil, err
+		}
+		if quoteAt != ""  { f.QuoteAt, _   = time.Parse(time.RFC3339, quoteAt) }
+		if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
+		if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
+		if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
+		if snapDate != "" { f.SnapshotAt, _ = time.Parse("2006-01-02", snapDate) }
+		result = append(result, f)
+	}
+	return result, rows.Err()
+}

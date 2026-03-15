@@ -1,5 +1,18 @@
 package model
 
+import "time"
+
+// SymbolFreshness records the last successful IBKR data-fetch timestamp for
+// each storage layer of a single symbol. A zero Time means no data exists yet.
+type SymbolFreshness struct {
+	Symbol     string    `json:"symbol"`
+	QuoteAt    time.Time `json:"quote_at"`    // stock_quotes.updated_at
+	OHLCVAt    time.Time `json:"ohlcv_at"`    // newest ohlcv_bars.open_time (1D)
+	OptionsAt  time.Time `json:"options_at"`  // newest option_quotes.snapshot_time
+	CacheAt    time.Time `json:"cache_at"`    // analysis_cache.cached_at
+	SnapshotAt time.Time `json:"snapshot_at"` // newest watchlist_snapshots.snapshot_date
+}
+
 // WatchlistItem represents a stock in the user's watchlist.
 type WatchlistItem struct {
 	Symbol  string

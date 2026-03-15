@@ -7,7 +7,7 @@
 {{end}}
 
 {{define "content"}}
-<div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+<div class="flex flex-wrap items-start justify-between gap-3 mb-4">
   <div>
     <h1 class="text-3xl font-bold font-mono">{{.Symbol}}</h1>
     <p class="text-gray-400 text-sm mt-0.5">{{.Outlook.ForecastDays}}-Day Forecast Analysis</p>
@@ -17,6 +17,39 @@
     ⚡ Refresh Live
   </a>
 </div>
+
+{{/* ── Data Freshness strip ── */}}
+{{if .Freshness.Symbol}}
+<div class="flex flex-wrap items-center gap-2 mb-6 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
+  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
+
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+               {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
+        title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Quote&nbsp;·&nbsp;{{timeago .Freshness.QuoteAt}}
+  </span>
+
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+               {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
+        title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    OHLCV&nbsp;·&nbsp;{{timeago .Freshness.OHLCVAt}}
+  </span>
+
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+               {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
+        title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Options&nbsp;·&nbsp;{{timeago .Freshness.OptionsAt}}
+  </span>
+
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+               {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
+        title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Analysis&nbsp;·&nbsp;{{timeago .Freshness.CacheAt}}
+  </span>
+
+  <span class="ml-auto text-gray-700 text-xs pr-2 hidden sm:inline">Hover badge for UTC time</span>
+</div>
+{{end}}
 
 <!-- ── Stock Summary ─────────────────────────────────────────────────────── -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

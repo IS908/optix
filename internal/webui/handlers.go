@@ -3,7 +3,16 @@ package webui
 import (
 	"net/http"
 	"strings"
+	"time"
 )
+
+// ─── Help ─────────────────────────────────────────────────────────────────────
+
+func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, "help.html", map[string]any{
+		"GeneratedAt": time.Now().UTC(),
+	})
+}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 

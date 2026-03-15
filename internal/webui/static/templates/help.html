@@ -1,0 +1,313 @@
+{{template "base" .}}
+
+{{define "title"}}Help & Field Reference{{end}}
+
+{{/* ── Sub-templates (must be at top level, NOT inside define "content") ─── */}}
+
+{{define "field"}}
+<div class="rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+  <div class="flex flex-wrap items-center gap-2 mb-1">
+    <span class="font-semibold text-gray-100">{{.Name}}</span>
+    <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">{{.Badge}}</span>
+  </div>
+  <p class="text-gray-400 text-sm">{{.Desc}}</p>
+  {{if .Note}}<p class="text-gray-600 text-xs mt-1 font-mono leading-relaxed">{{.Note}}</p>{{end}}
+</div>
+{{end}}
+
+{{define "strategy"}}
+<div class="rounded-lg border border-gray-800 bg-gray-900/40 p-5">
+  <div class="flex flex-wrap items-center gap-3 mb-3">
+    <span class="font-semibold text-gray-100 text-base">{{.Name}}</span>
+    <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400">{{.When}}</span>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mb-3">
+    <div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Structure</div>
+      <div class="text-gray-300">{{.Structure}}</div>
+    </div>
+    <div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Max Profit</div>
+      <div class="text-emerald-400">{{.MaxProfit}}</div>
+    </div>
+    <div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Max Loss</div>
+      <div class="text-red-400">{{.MaxLoss}}</div>
+    </div>
+  </div>
+  <p class="text-gray-400 text-xs leading-relaxed">{{.Notes}}</p>
+</div>
+{{end}}
+
+{{define "content"}}
+<div class="max-w-4xl mx-auto space-y-10">
+
+  <div>
+    <h1 class="text-3xl font-bold mb-1">Field Reference</h1>
+    <p class="text-gray-400 text-sm">Definitions, formulas, and calculation logic for every metric shown in Optix.</p>
+  </div>
+
+  {{/* ── Dashboard columns ───────────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Dashboard Columns
+    </h2>
+    <div class="space-y-4">
+
+      {{template "field" dict "Name" "Price" "Badge" "real-time"
+        "Desc" "Last trade price from IB TWS real-time quote feed."
+        "Note" ""}}
+
+      {{template "field" dict "Name" "Trend" "Badge" "technical"
+        "Desc" "Overall directional bias derived from a weighted signal score:"
+        "Note" "score = MA_cross×0.30 + MACD×0.25 + RSI×0.20 + price_vs_SR×0.15 + volume×0.10  —  Bullish > +0.3 · Bearish < −0.3 · Neutral otherwise"}}
+
+      {{template "field" dict "Name" "RSI" "Badge" "technical"
+        "Desc" "14-period Relative Strength Index. Measures momentum as the ratio of average gains to average losses over the lookback window."
+        "Note" "Formula: RSI = 100 − 100/(1 + AvgGain/AvgLoss)  ·  >70 overbought (red)  ·  <30 oversold (green)"}}
+
+      {{template "field" dict "Name" "IV Rank" "Badge" "options"
+        "Desc" "Where the current 30-day implied volatility sits within its own 52-week high/low range, expressed as a percentage."
+        "Note" "Formula: (IV_now − IV_52wLow) / (IV_52wHigh − IV_52wLow) × 100  ·  ≥50% → high IV, good for selling  ·  <30% → Wait (Low IV)"}}
+
+      {{template "field" dict "Name" "Max Pain" "Badge" "options"
+        "Desc" "The expiration price at which aggregate option buyer losses are maximised (option seller profits are maximised). Calculated for the nearest upcoming expiry."
+        "Note" "Algorithm: for each candidate strike, sum (intrinsic payout × open interest) across all calls and puts; the strike with the minimum total payout is Max Pain. Price tends to gravitate toward Max Pain as expiry approaches due to dealer delta-hedging flows."}}
+
+      {{template "field" dict "Name" "PCR" "Badge" "options"
+        "Desc" "Put/Call Ratio — total put open interest ÷ total call open interest for the front-month expiry."
+        "Note" "PCR > 1.2 → excessive bearish positioning, potential contrarian buy signal  ·  PCR < 0.8 → excessive bullish positioning, potential contrarian sell signal  ·  Extreme readings (>1.5 or <0.5) are stronger signals"}}
+
+      {{template "field" dict "Name" "2W Range (1σ)" "Badge" "forecast"
+        "Desc" "Statistical price range with ~68% probability of containing the closing price at expiry, based on ATM implied volatility."
+        "Note" "Formula: Price × (1 ± IV × √(T/365))  where T = forecast days (default 14)  ·  Boundaries are further adjusted toward strong support/resistance levels and Max Pain"}}
+
+      {{template "field" dict "Name" "Recommendation" "Badge" "strategy"
+        "Desc" "Top strategy recommendation output from the 5-step decision engine (see Strategies section below)."
+        "Note" "\"Wait (Low IV)\" = IV Rank < 30%, premiums too thin for sell-side strategies."}}
+
+      {{template "field" dict "Name" "Score" "Badge" "composite"
+        "Desc" "Composite opportunity score (0–100) summarising how attractive the sell-side setup is right now."
+        "Note" "score = prob_OTM×0.30 + risk_reward×0.25 + theta_daily×0.20 + iv_rank×0.15 + breakeven_dist×0.10  ·  ≥50 starred (★)"}}
+
+    </div>
+  </section>
+
+  {{/* ── Analyze page sections ──────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Single-Stock Analysis Sections
+    </h2>
+    <div class="space-y-6">
+
+      <div>
+        <h3 class="font-semibold text-gray-200 mb-2">Price Summary</h3>
+        <p class="text-gray-400 text-sm">Current quote snapshot: last price, bid/ask, daily change %, day high/low, 52-week high/low, and 20-day average volume — all sourced directly from IB TWS market data.</p>
+      </div>
+
+      <div>
+        <h3 class="font-semibold text-gray-200 mb-2">Technical Analysis</h3>
+        <div class="overflow-x-auto rounded-lg border border-gray-800">
+          <table class="min-w-full text-sm">
+            <thead><tr class="bg-gray-900 text-gray-400 text-xs uppercase">
+              <th class="px-4 py-2 text-left w-40">Indicator</th>
+              <th class="px-4 py-2 text-left">What it measures</th>
+              <th class="px-4 py-2 text-left">How it's calculated</th>
+            </tr></thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300">
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">MA 20/50/200</td><td class="px-4 py-2">Simple moving averages</td><td class="px-4 py-2 text-gray-400 text-xs">Arithmetic mean of the last N closing prices. Relative ordering (MA20 &gt; MA50 &gt; MA200) signals a healthy uptrend.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">RSI 14</td><td class="px-4 py-2">Momentum oscillator</td><td class="px-4 py-2 text-gray-400 text-xs">See Dashboard → RSI above.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">MACD</td><td class="px-4 py-2">Trend / momentum</td><td class="px-4 py-2 text-gray-400 text-xs">EMA(12) − EMA(26); signal line = EMA(9) of MACD. Histogram = MACD − signal. Positive histogram = bullish momentum.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">Bollinger Bands</td><td class="px-4 py-2">Volatility envelope</td><td class="px-4 py-2 text-gray-400 text-xs">Middle = MA20; Upper/Lower = MA20 ± 2×StdDev(20). Price near upper band = extended; near lower band = compressed.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">Support / Resistance</td><td class="px-4 py-2">Key price levels</td><td class="px-4 py-2 text-gray-400 text-xs">Identified from: swing highs/lows, MA lines, Fibonacci retracements (0.236/0.382/0.5/0.618/0.786), Volume Profile POC, and large OI strike walls.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="font-semibold text-gray-200 mb-2">Options Analysis</h3>
+        <div class="overflow-x-auto rounded-lg border border-gray-800">
+          <table class="min-w-full text-sm">
+            <thead><tr class="bg-gray-900 text-gray-400 text-xs uppercase">
+              <th class="px-4 py-2 text-left w-40">Metric</th>
+              <th class="px-4 py-2 text-left">Meaning</th>
+              <th class="px-4 py-2 text-left">Formula / Source</th>
+            </tr></thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300">
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">IV (30-day)</td><td class="px-4 py-2">30-day implied volatility</td><td class="px-4 py-2 text-gray-400 text-xs">Back-solved from ATM option market prices using Newton-Raphson on the Black-Scholes equation. Annualised.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">IV Rank</td><td class="px-4 py-2">IV percentile rank</td><td class="px-4 py-2 text-gray-400 text-xs">See Dashboard → IV Rank above.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">IV Skew</td><td class="px-4 py-2">Put vs call premium</td><td class="px-4 py-2 text-gray-400 text-xs">IV of 25-delta put − IV of 25-delta call. Positive skew = market paying extra for downside protection.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">OI Clusters</td><td class="px-4 py-2">Open interest concentration</td><td class="px-4 py-2 text-gray-400 text-xs">Strikes with unusually large OI relative to adjacent strikes. Large put OI below price → dealer delta-hedge creates support. Large call OI above → creates resistance.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">Max Pain</td><td class="px-4 py-2">Expiry gravity point</td><td class="px-4 py-2 text-gray-400 text-xs">See Dashboard → Max Pain above.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-emerald-400">PCR</td><td class="px-4 py-2">Sentiment ratio</td><td class="px-4 py-2 text-gray-400 text-xs">See Dashboard → PCR above.</td></tr>
+              <tr><td class="px-4 py-2 font-mono text-xs text-amber-400">⚠ Earnings</td><td class="px-4 py-2">Event risk warning</td><td class="px-4 py-2 text-gray-400 text-xs">Shown when a known earnings date falls before the recommended strategy's expiry. IV may collapse dramatically after the event (IV crush), benefiting premium sellers but also introducing binary directional risk.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="font-semibold text-gray-200 mb-2">Market Outlook</h3>
+        <p class="text-gray-400 text-sm mb-3">Synthesises technical and options signals into a directional forecast and a price range.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">1σ Range (~68%)</div>
+            <div class="text-gray-300 text-sm">Price × (1 ± IV × √(T/365))<br/>Adjusted by key S/R levels.</div>
+          </div>
+          <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">2σ Range (~95%)</div>
+            <div class="text-gray-300 text-sm">Price × (1 ± 2×IV × √(T/365))<br/>Outer boundary for wings.</div>
+          </div>
+          <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Direction Confidence</div>
+            <div class="text-gray-300 text-sm">Magnitude of the weighted trend score, normalised to 0–100%.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  {{/* ── Strategy types ──────────────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Options Strategies
+    </h2>
+    <div class="space-y-4">
+
+      {{template "strategy" dict "Name" "Sell Put (CSP)" "When" "Neutral-to-bullish · IV Rank ≥ 50%"
+        "Structure" "Sell 1 OTM put"
+        "MaxProfit" "Premium received"
+        "MaxLoss" "Strike − Premium (worst case: stock falls to zero)"
+        "Notes" "Ideal when you are willing to own the stock at a lower price. Strike is chosen below a strong support level or large put OI wall. Delta target: −0.20 to −0.30 (~70–80% OTM probability)."}}
+
+      {{template "strategy" dict "Name" "Sell Call (Covered Call)" "When" "Neutral-to-bearish · own the stock"
+        "Structure" "Sell 1 OTM call against 100 shares held"
+        "MaxProfit" "Premium + (Strike − Entry price) if called away"
+        "MaxLoss" "Entry price − Premium (stock falls to zero)"
+        "Notes" "Strike chosen above a strong resistance level or large call OI wall. Delta target: +0.20 to +0.30."}}
+
+      {{template "strategy" dict "Name" "Bull Put Spread" "When" "Neutral-to-bullish · IV moderate–high"
+        "Structure" "Sell higher-strike put · Buy lower-strike put (same expiry)"
+        "MaxProfit" "Net credit received"
+        "MaxLoss" "Strike width − Net credit"
+        "Notes" "Defined-risk version of Sell Put. Short put below support; long put 2–5 strikes lower as protection. Reduces margin but also caps premium collected."}}
+
+      {{template "strategy" dict "Name" "Bear Call Spread" "When" "Neutral-to-bearish · IV moderate–high"
+        "Structure" "Sell lower-strike call · Buy higher-strike call (same expiry)"
+        "MaxProfit" "Net credit received"
+        "MaxLoss" "Strike width − Net credit"
+        "Notes" "Defined-risk version of Sell Call. Short call above resistance; long call 2–5 strikes higher."}}
+
+      {{template "strategy" dict "Name" "Iron Condor" "When" "Range-bound · IV Rank ≥ 40%"
+        "Structure" "Bull Put Spread + Bear Call Spread (4 legs, same expiry)"
+        "MaxProfit" "Combined net credit"
+        "MaxLoss" "Larger wing width − Net credit"
+        "Notes" "Put spread placed below support; call spread above resistance. The inner short strikes define the profit tent. Best in high-IV sideways markets where IV is expected to contract."}}
+
+      {{template "strategy" dict "Name" "Short Strangle" "When" "Range-bound · IV Rank ≥ 60%"
+        "Structure" "Sell 1 OTM call · Sell 1 OTM put (same expiry, no long protection)"
+        "MaxProfit" "Combined premium"
+        "MaxLoss" "Theoretically unlimited — requires careful position sizing"
+        "Notes" "Higher premium than Iron Condor but naked risk. Used only when IV Rank is very high. Margin intensive; not suitable for small accounts."}}
+
+    </div>
+  </section>
+
+  {{/* ── Recommendation engine ───────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Recommendation Engine — 5-Step Logic
+    </h2>
+    <ol class="space-y-4 list-none">
+      <li class="flex gap-4">
+        <span class="flex-none w-8 h-8 rounded-full bg-emerald-900 border border-emerald-700 flex items-center justify-center text-emerald-400 font-bold text-sm">1</span>
+        <div>
+          <div class="font-semibold text-gray-200">IV Environment</div>
+          <p class="text-gray-400 text-sm mt-0.5">IV Rank ≥ 50 → high-IV environment, sell-side strategies have edge (IV expected to mean-revert downward, benefiting premium sellers).<br/>IV Rank &lt; 30 → output <span class="font-mono text-amber-400">Wait (Low IV)</span>, premiums insufficient to justify the risk.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="flex-none w-8 h-8 rounded-full bg-emerald-900 border border-emerald-700 flex items-center justify-center text-emerald-400 font-bold text-sm">2</span>
+        <div>
+          <div class="font-semibold text-gray-200">Directional Bias</div>
+          <p class="text-gray-400 text-sm mt-0.5">Weighted trend score (see Dashboard → Trend) determines strategy type: bullish → Sell Put / Bull Put Spread · bearish → Sell Call / Bear Call Spread · neutral → Iron Condor / Short Strangle. Max Pain vs current price and PCR extremes provide secondary adjustments.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="flex-none w-8 h-8 rounded-full bg-emerald-900 border border-emerald-700 flex items-center justify-center text-emerald-400 font-bold text-sm">3</span>
+        <div>
+          <div class="font-semibold text-gray-200">Strike Selection</div>
+          <p class="text-gray-400 text-sm mt-0.5">Short leg chosen at the intersection of: (a) nearest strong S/R level in the favourable direction, (b) large OI cluster acting as a natural wall, (c) target delta −0.20 to −0.30 for puts / +0.20 to +0.30 for calls (~70–80% OTM probability). The best strike is one where all three criteria align.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="flex-none w-8 h-8 rounded-full bg-emerald-900 border border-emerald-700 flex items-center justify-center text-emerald-400 font-bold text-sm">4</span>
+        <div>
+          <div class="font-semibold text-gray-200">Scoring &amp; Filtering</div>
+          <p class="text-gray-400 text-sm mt-0.5">Each candidate strategy is scored:</p>
+          <div class="mt-2 rounded-lg bg-gray-900 border border-gray-800 px-4 py-3 font-mono text-xs text-gray-300 space-y-1">
+            <div>score = <span class="text-emerald-400">prob_OTM</span> × 0.30</div>
+            <div>      + <span class="text-emerald-400">risk_reward_ratio</span> × 0.25</div>
+            <div>      + <span class="text-emerald-400">theta_daily</span> × 0.20  <span class="text-gray-600">// daily Θ income, normalised</span></div>
+            <div>      + <span class="text-emerald-400">iv_rank</span> × 0.15</div>
+            <div>      + <span class="text-emerald-400">breakeven_dist</span> × 0.10  <span class="text-gray-600">// % gap to B/E point</span></div>
+          </div>
+          <p class="text-gray-400 text-sm mt-2">Minimum thresholds (moderate risk): prob_OTM ≥ 60% · risk_reward ≥ 0.20 · margin ≤ 20% of capital.</p>
+        </div>
+      </li>
+      <li class="flex gap-4">
+        <span class="flex-none w-8 h-8 rounded-full bg-emerald-900 border border-emerald-700 flex items-center justify-center text-emerald-400 font-bold text-sm">5</span>
+        <div>
+          <div class="font-semibold text-gray-200">Top-3 Output</div>
+          <p class="text-gray-400 text-sm mt-0.5">Remaining candidates are sorted by score descending. The top 3 are shown with full details: expiry, strike, premium, max profit/loss, P&amp;L ratio, margin required, net Greeks (Δ Θ ν), win probability, breakeven, and any risk warnings (e.g. earnings inside expiry).</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  {{/* ── Greeks quick reference ───────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Greeks Quick Reference
+    </h2>
+    <div class="overflow-x-auto rounded-lg border border-gray-800">
+      <table class="min-w-full text-sm">
+        <thead><tr class="bg-gray-900 text-gray-400 text-xs uppercase">
+          <th class="px-4 py-2 text-left w-20">Greek</th>
+          <th class="px-4 py-2 text-left w-52">Measures</th>
+          <th class="px-4 py-2 text-left">What to look for (sell-side perspective)</th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-800/60 text-gray-300">
+          <tr><td class="px-4 py-2 font-mono text-emerald-400">Δ Delta</td><td class="px-4 py-2">Price sensitivity ($ per +$1)</td><td class="px-4 py-2 text-gray-400 text-xs">Net delta near zero = market-neutral. For sell puts: negative delta, target −0.20 to −0.30.</td></tr>
+          <tr><td class="px-4 py-2 font-mono text-emerald-400">Γ Gamma</td><td class="px-4 py-2">Delta acceleration</td><td class="px-4 py-2 text-gray-400 text-xs">Short gamma (negative) for premium sellers — profits are capped but losses accelerate near the strike. Highest near ATM and near expiry.</td></tr>
+          <tr><td class="px-4 py-2 font-mono text-emerald-400">Θ Theta</td><td class="px-4 py-2">Time decay ($ per day)</td><td class="px-4 py-2 text-gray-400 text-xs">Positive theta = time works in your favour. Accelerates in the final 30 DTE — the sweet spot for premium sellers.</td></tr>
+          <tr><td class="px-4 py-2 font-mono text-emerald-400">ν Vega</td><td class="px-4 py-2">IV sensitivity ($ per +1% IV)</td><td class="px-4 py-2 text-gray-400 text-xs">Negative vega for short premium — you profit when IV drops (IV crush after earnings, VIX spike resolved). High IV Rank environments maximise this edge.</td></tr>
+          <tr><td class="px-4 py-2 font-mono text-emerald-400">ρ Rho</td><td class="px-4 py-2">Interest rate sensitivity</td><td class="px-4 py-2 text-gray-400 text-xs">Minor factor for short-dated options (&lt;60 DTE). Positive for long calls, negative for long puts.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{/* ── Data sources ────────────────────────────────────────────────────── */}}
+  <section>
+    <h2 class="text-xl font-semibold text-emerald-400 mb-4 pb-2 border-b border-gray-800">
+      Data Sources &amp; Caching
+    </h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-400">
+      <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+        <div class="text-gray-200 font-semibold mb-1">📡 Live mode (<code class="text-emerald-400 text-xs">?refresh=true</code>)</div>
+        Fetches real-time quotes, OHLCV bars, and option chains directly from IB TWS via the IBAPI. The Python engine then runs full analysis in-process. Results are saved to the SQLite analysis cache for future cache-mode reads.
+      </div>
+      <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+        <div class="text-gray-200 font-semibold mb-1">📦 Cache mode (default)</div>
+        Reads the most-recent <code class="font-mono text-xs">watchlist_snapshots</code> row per symbol (populated by <code class="font-mono text-xs">optix dashboard</code>) and the full JSON payload from <code class="font-mono text-xs">analysis_cache</code> (populated by <code class="font-mono text-xs">optix analyze</code> or a previous live web request). No IB connection required.
+      </div>
+    </div>
+    <p class="text-gray-600 text-xs mt-3">IB TWS must be running and accepting API connections on the configured host/port for live mode to work. Paper trading (port 7497) and live trading (port 7496) are both supported.</p>
+  </section>
+
+  <div class="h-4"></div>
+</div>
+{{end}}

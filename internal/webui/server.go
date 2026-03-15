@@ -87,6 +87,7 @@ func (s *Server) registerRoutes() {
 	})
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /analyze/{symbol}", s.handleAnalyze)
+	s.mux.HandleFunc("GET /help", s.handleHelp)
 
 	// JSON API
 	s.mux.HandleFunc("GET /api/dashboard", s.handleAPIDashboard)

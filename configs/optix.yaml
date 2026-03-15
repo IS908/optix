@@ -1,0 +1,32 @@
+# Optix Configuration
+# Interactive Brokers TWS connection
+ibkr:
+  host: "127.0.0.1"
+  port: 7497          # 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, 4001 for Gateway live
+  client_id: 1
+
+# gRPC server settings
+grpc:
+  go_server_addr: "localhost:50051"
+  python_server_addr: "localhost:50052"
+
+# SQLite database
+database:
+  path: "./data/optix.db"
+
+# Analysis defaults
+analysis:
+  forecast_days: 14
+  risk_tolerance: "moderate"  # conservative / moderate / aggressive
+  position_size_limit: 0.20   # max 20% of capital per trade
+
+# Alert notification
+notifications:
+  terminal: true
+  webhook_url: ""
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    from: ""
+    to: ""

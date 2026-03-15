@@ -1,0 +1,11 @@
+version: v2
+modules:
+  - path: .
+deps:
+  - buf.build/protocolbuffers/wellknowntypes   # google/protobuf/timestamp.proto etc.
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

@@ -1,0 +1,18 @@
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  # Go protobuf messages
+  - protoc_builtin: go
+    out: gen/go
+    opt: paths=source_relative
+
+  # Go gRPC service stubs
+  - protoc_builtin: go-grpc
+    out: gen/go
+    opt: paths=source_relative
+
+  # Python protobuf messages + gRPC stubs
+  # Uses grpc_tools.protoc via a shell script (buf doesn't have a built-in Python plugin)
+managed:
+  enabled: true

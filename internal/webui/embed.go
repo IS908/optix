@@ -39,7 +39,7 @@ var tmplFuncMap = template.FuncMap{
 }
 
 func init() {
-	pages := []string{"dashboard.html", "analyze.html", "error.html", "help.html"}
+	pages := []string{"dashboard.html", "analyze.html", "error.html", "help.html", "watchlist.html"}
 	pageTemplates = make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		tmpl, err := template.New("").Funcs(tmplFuncMap).ParseFS(staticFS,

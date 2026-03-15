@@ -1,0 +1,103 @@
+{{template "base" .}}
+
+{{define "title"}}Watchlist{{end}}
+
+{{define "content"}}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold">Watchlist</h1>
+    <p class="text-gray-400 text-sm mt-0.5">Manage the symbols you track</p>
+  </div>
+  <a href="/dashboard"
+     class="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm font-medium px-4 py-2 rounded-lg border border-gray-700 transition-colors">
+    → Dashboard
+  </a>
+</div>
+
+{{/* ── Add symbol form ── */}}
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wider">Add Symbols</h2>
+  <form method="POST" action="/watchlist" class="flex gap-3">
+    <input type="text" name="symbols"
+           placeholder="e.g. AAPL TSLA NVDA  (space-separated)"
+           autocomplete="off" autocapitalize="characters" spellcheck="false"
+           class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100
+                  placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" />
+    <button type="submit"
+            class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors">
+      + Add
+    </button>
+  </form>
+
+  {{if .FlashSuccess}}
+  <p class="mt-3 text-sm text-emerald-400 flex items-center gap-1.5">
+    <span>✓</span> {{.FlashSuccess}}
+  </p>
+  {{end}}
+  {{if .FlashError}}
+  <p class="mt-3 text-sm text-red-400 flex items-center gap-1.5">
+    <span>✗</span> {{.FlashError}}
+  </p>
+  {{end}}
+</div>
+
+{{/* ── Watchlist table ── */}}
+{{if .Items}}
+<div class="overflow-x-auto rounded-xl border border-gray-800 shadow-lg">
+  <table class="min-w-full text-sm">
+    <thead>
+      <tr class="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
+        <th class="px-4 py-3 text-left">Symbol</th>
+        <th class="px-4 py-3 text-left">Added</th>
+        <th class="px-4 py-3 text-left">Notes</th>
+        <th class="px-4 py-3 text-center w-28">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800/60">
+      {{range .Items}}
+      <tr class="hover:bg-gray-800/40 transition-colors group">
+
+        {{/* Symbol */}}
+        <td class="px-4 py-3">
+          <a href="/analyze/{{.Symbol}}"
+             class="font-mono font-bold text-emerald-400 hover:text-emerald-300 hover:underline">
+            {{.Symbol}}
+          </a>
+        </td>
+
+        {{/* Added date — trim to date part if ISO8601 */}}
+        <td class="px-4 py-3 text-gray-400 text-xs font-mono">
+          {{if .AddedAt}}{{slice .AddedAt 0 10}}{{else}}<span class="text-gray-600">—</span>{{end}}
+        </td>
+
+        {{/* Notes */}}
+        <td class="px-4 py-3 text-gray-400 text-xs">
+          {{if .Notes}}{{.Notes}}{{else}}<span class="text-gray-600">—</span>{{end}}
+        </td>
+
+        {{/* Remove button */}}
+        <td class="px-4 py-3 text-center">
+          <form method="POST" action="/watchlist/{{.Symbol}}/remove">
+            <button type="submit"
+                    onclick="return confirm('Remove {{.Symbol}} from watchlist?')"
+                    class="text-red-500 hover:text-red-300 hover:bg-red-950 border border-red-900/60
+                           px-2.5 py-0.5 rounded text-xs transition-colors opacity-60 group-hover:opacity-100">
+              Remove
+            </button>
+          </form>
+        </td>
+
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+<p class="text-gray-600 text-xs mt-3">{{len .Items}} symbol{{if ne (len .Items) 1}}s{{end}} in watchlist</p>
+
+{{else}}
+<div class="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center">
+  <p class="text-gray-400 text-lg mb-2">Your watchlist is empty</p>
+  <p class="text-gray-600 text-sm">Type one or more ticker symbols above and click <strong class="text-gray-400">+ Add</strong>.</p>
+</div>
+{{end}}
+{{end}}

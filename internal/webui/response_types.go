@@ -1,6 +1,20 @@
 package webui
 
-import "time"
+import (
+	"time"
+
+	"github.com/IS908/optix/pkg/model"
+)
+
+// ─── Watchlist ────────────────────────────────────────────────────────────────
+
+// WatchlistPageResponse is the template payload for GET /watchlist.
+type WatchlistPageResponse struct {
+	GeneratedAt  time.Time
+	Items        []model.WatchlistItem
+	FlashError   string
+	FlashSuccess string
+}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 

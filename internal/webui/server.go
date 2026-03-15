@@ -89,6 +89,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /analyze/{symbol}", s.handleAnalyze)
 	s.mux.HandleFunc("GET /help", s.handleHelp)
 
+	// Watchlist management
+	s.mux.HandleFunc("GET /watchlist", s.handleWatchlist)
+	s.mux.HandleFunc("POST /watchlist", s.handleWatchlistAdd)
+	s.mux.HandleFunc("POST /watchlist/{symbol}/remove", s.handleWatchlistRemove)
+
 	// JSON API
 	s.mux.HandleFunc("GET /api/dashboard", s.handleAPIDashboard)
 	s.mux.HandleFunc("GET /api/analyze/{symbol}", s.handleAPIAnalyze)

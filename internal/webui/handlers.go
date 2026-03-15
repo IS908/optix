@@ -71,9 +71,32 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	resp, err := s.getDashboardData(r)
-	if err != nil {
-		writeErrorPage(w, err.Error(), http.StatusInternalServerError)
+	var resp *DashboardResponse
+	var finalErr error
+
+	if r.URL.Query().Get("refresh") == "true" {
+		live, liveErr := s.fetchLiveDashboard(r.Context())
+		if liveErr != nil {
+			// Live fetch failed — try to serve cached data with a warning banner.
+			if cached, cacheErr := s.fetchCachedDashboard(r.Context()); cacheErr == nil {
+				resp = cached
+				resp.Error = liveErr.Error()
+			} else {
+				finalErr = liveErr
+			}
+		} else {
+			resp = live
+		}
+	} else {
+		var err error
+		resp, err = s.fetchCachedDashboard(r.Context())
+		if err != nil {
+			finalErr = err
+		}
+	}
+
+	if finalErr != nil {
+		writeErrorPage(w, finalErr.Error(), http.StatusInternalServerError)
 		return
 	}
 	renderPage(w, "dashboard.html", resp)
@@ -92,12 +115,7 @@ func (s *Server) getDashboardData(r *http.Request) (*DashboardResponse, error) {
 	if r.URL.Query().Get("refresh") == "true" {
 		return s.fetchLiveDashboard(r.Context())
 	}
-	resp, err := s.fetchCachedDashboard(r.Context())
-	if err != nil {
-		// Fall-back hint embedded in the error
-		return nil, err
-	}
-	return resp, nil
+	return s.fetchCachedDashboard(r.Context())
 }
 
 // ─── Analyze ─────────────────────────────────────────────────────────────────
@@ -109,14 +127,37 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := s.getAnalyzeData(r, symbol)
-	if err != nil {
-		// No cached data and no live fetch — render a friendly empty-state page
-		// so the user can click "Refresh Live" to trigger an IBKR fetch.
+	var resp *AnalyzeResponse
+	var finalErr error
+
+	if r.URL.Query().Get("refresh") == "true" {
+		live, liveErr := s.fetchLiveAnalysis(r.Context(), symbol)
+		if liveErr != nil {
+			// Live fetch failed — try to serve cached data with a warning banner.
+			if cached, cacheErr := s.fetchCachedAnalysis(r.Context(), symbol); cacheErr == nil {
+				resp = cached
+				resp.Error = liveErr.Error()
+			} else {
+				finalErr = liveErr
+			}
+		} else {
+			resp = live
+		}
+	} else {
+		var err error
+		resp, err = s.fetchCachedAnalysis(r.Context(), symbol)
+		if err != nil {
+			finalErr = err
+		}
+	}
+
+	if finalErr != nil {
+		// No data anywhere — render a friendly empty-state page with the error.
 		freshness, _ := s.store.GetSymbolFreshness(r.Context(), symbol)
 		renderPage(w, "analyze.html", &AnalyzeResponse{
 			Symbol:    symbol,
 			NoData:    true,
+			Error:     finalErr.Error(),
 			Freshness: freshness,
 		})
 		return
@@ -143,9 +184,5 @@ func (s *Server) getAnalyzeData(r *http.Request, symbol string) (*AnalyzeRespons
 	if r.URL.Query().Get("refresh") == "true" {
 		return s.fetchLiveAnalysis(r.Context(), symbol)
 	}
-	resp, err := s.fetchCachedAnalysis(r.Context(), symbol)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return s.fetchCachedAnalysis(r.Context(), symbol)
 }

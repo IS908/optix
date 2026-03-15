@@ -20,9 +20,10 @@ type WatchlistPageResponse struct {
 
 // DashboardResponse is the JSON/template payload for GET /dashboard and /api/dashboard.
 type DashboardResponse struct {
-	GeneratedAt time.Time              `json:"generated_at"`
-	FromCache   bool                   `json:"from_cache"`
-	Symbols     []SymbolSummary        `json:"symbols"`
+	GeneratedAt time.Time               `json:"generated_at"`
+	FromCache   bool                    `json:"from_cache"`
+	Error       string                  `json:"error,omitempty"` // non-empty = live fetch failed (may still have cached data)
+	Symbols     []SymbolSummary         `json:"symbols"`
 	Freshness   []model.SymbolFreshness `json:"freshness,omitempty"`
 }
 
@@ -50,6 +51,7 @@ type AnalyzeResponse struct {
 	FromCache   bool                  `json:"from_cache"`
 	Symbol      string                `json:"symbol"`
 	NoData      bool                  `json:"no_data,omitempty"` // true = no cache, show empty state
+	Error       string                `json:"error,omitempty"`   // non-empty = live fetch failed (may still have cached data)
 	Summary     SummaryData           `json:"summary"`
 	Technical   TechnicalData         `json:"technical"`
 	Options     OptionsData           `json:"options"`

@@ -1,0 +1,50 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Optix — {{block "title" .}}Dashboard{{end}}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#10b981', dark: '#059669' }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/static/css/optix.css"/>
+</head>
+<body class="min-h-full bg-gray-950 text-gray-100">
+
+  <!-- Nav -->
+  <header class="sticky top-0 z-10 bg-gray-900/95 backdrop-blur border-b border-gray-800 px-6 py-3 flex items-center gap-6">
+    <a href="/dashboard" class="font-bold text-emerald-400 text-lg tracking-tight">Optix</a>
+    <nav class="flex gap-4 text-sm">
+      <a href="/dashboard" class="text-gray-300 hover:text-white transition-colors">Dashboard</a>
+    </nav>
+    <div class="ml-auto text-xs text-gray-500">
+      {{block "nav-extra" .}}{{end}}
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    {{block "content" .}}{{end}}
+  </main>
+
+  <!-- Footer -->
+  <footer class="text-center text-gray-600 text-xs py-6 border-t border-gray-900 mt-8">
+    {{if .FromCache}}
+      📦 Served from cache &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+      &bull; <a href="?refresh=true" class="text-emerald-600 hover:text-emerald-400">Refresh live</a>
+    {{else}}
+      ⚡ Live data &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+    {{end}}
+  </footer>
+
+</body>
+</html>{{end}}

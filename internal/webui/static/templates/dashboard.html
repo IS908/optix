@@ -1,0 +1,115 @@
+{{template "base" .}}
+
+{{define "title"}}Dashboard{{end}}
+
+{{define "content"}}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold">Watchlist Dashboard</h1>
+    <p class="text-gray-400 text-sm mt-0.5">{{len .Symbols}} symbols</p>
+  </div>
+  <a href="?refresh=true"
+     class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    ⚡ Refresh Live
+  </a>
+</div>
+
+{{if .Symbols}}
+<div class="overflow-x-auto rounded-xl border border-gray-800 shadow-lg">
+  <table class="min-w-full text-sm">
+    <thead>
+      <tr class="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
+        <th class="px-4 py-3 text-left">Symbol</th>
+        <th class="px-4 py-3 text-right">Price</th>
+        <th class="px-4 py-3 text-center">Trend</th>
+        <th class="px-4 py-3 text-right">RSI</th>
+        <th class="px-4 py-3 text-right">IV Rank</th>
+        <th class="px-4 py-3 text-right">Max Pain</th>
+        <th class="px-4 py-3 text-right">PCR</th>
+        <th class="px-4 py-3 text-center">2W Range (1σ)</th>
+        <th class="px-4 py-3 text-left">Recommendation</th>
+        <th class="px-4 py-3 text-right">Score</th>
+        <th class="px-4 py-3 text-right">Date</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800/60">
+      {{range .Symbols}}
+      <tr class="hover:bg-gray-800/40 transition-colors">
+
+        {{/* Symbol */}}
+        <td class="px-4 py-3">
+          <a href="/analyze/{{.Symbol}}" class="font-mono font-bold text-emerald-400 hover:text-emerald-300 hover:underline">
+            {{if ge .OpportunityScore 50.0}}★ {{end}}{{.Symbol}}
+          </a>
+        </td>
+
+        {{/* Price */}}
+        <td class="px-4 py-3 text-right font-mono">${{printf "%.2f" .Price}}</td>
+
+        {{/* Trend badge */}}
+        <td class="px-4 py-3 text-center">
+          {{if eq .Trend "bullish"}}
+            <span class="inline-block bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-xs">↑ Bull</span>
+          {{else if eq .Trend "bearish"}}
+            <span class="inline-block bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded text-xs">↓ Bear</span>
+          {{else}}
+            <span class="inline-block bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded text-xs">→ Neut</span>
+          {{end}}
+        </td>
+
+        {{/* RSI */}}
+        <td class="px-4 py-3 text-right font-mono
+          {{if gt .RSI 70.0}}text-red-400 font-bold{{else if lt .RSI 30.0}}text-emerald-400 font-bold{{end}}">
+          {{printf "%.0f" .RSI}}
+        </td>
+
+        {{/* IV Rank */}}
+        <td class="px-4 py-3 text-right font-mono
+          {{if gt .IVRank 50.0}}text-amber-400 font-bold{{end}}">
+          {{printf "%.0f" .IVRank}}%
+        </td>
+
+        {{/* Max Pain */}}
+        <td class="px-4 py-3 text-right font-mono text-gray-300">
+          {{if gt .MaxPain 0.0}}${{printf "%.0f" .MaxPain}}{{else}}<span class="text-gray-600">N/A</span>{{end}}
+        </td>
+
+        {{/* PCR */}}
+        <td class="px-4 py-3 text-right font-mono text-gray-300">{{printf "%.2f" .PCR}}</td>
+
+        {{/* Range */}}
+        <td class="px-4 py-3 text-center font-mono text-gray-300 text-xs">
+          {{if and (gt .RangeLow1S 0.0) (gt .RangeHigh1S 0.0)}}
+            ${{printf "%.0f" .RangeLow1S}}–${{printf "%.0f" .RangeHigh1S}}
+          {{else}}<span class="text-gray-600">N/A</span>{{end}}
+        </td>
+
+        {{/* Recommendation */}}
+        <td class="px-4 py-3 text-gray-200 text-xs">{{.Recommendation}}</td>
+
+        {{/* Score */}}
+        <td class="px-4 py-3 text-right font-mono font-bold
+          {{if ge .OpportunityScore 50.0}}text-emerald-400{{else}}text-gray-400{{end}}">
+          {{printf "%.0f" .OpportunityScore}}
+        </td>
+
+        {{/* Date */}}
+        <td class="px-4 py-3 text-right text-gray-500 text-xs">{{.SnapshotDate}}</td>
+
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+<p class="text-gray-600 text-xs mt-3">★ = Opportunity score ≥ 50</p>
+{{else}}
+<div class="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center">
+  <p class="text-gray-400 text-lg mb-2">No dashboard data available</p>
+  <p class="text-gray-600 text-sm mb-6">Run <code class="text-emerald-400">optix dashboard</code> to populate the cache, or click Refresh Live.</p>
+  <a href="?refresh=true"
+     class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    ⚡ Refresh Live
+  </a>
+</div>
+{{end}}
+{{end}}

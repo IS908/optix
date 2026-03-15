@@ -186,6 +186,64 @@ func (s *Store) SaveWatchlistSnapshot(ctx context.Context, snap model.QuickSumma
 	return err
 }
 
+// GetLatestSnapshots returns the most-recent watchlist_snapshot row per symbol,
+// sorted by opportunity_score descending. Used by the web dashboard cache path.
+func (s *Store) GetLatestSnapshots(ctx context.Context) ([]model.QuickSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT symbol, price, trend, rsi, iv_rank, max_pain, pcr,
+		       range_low_1s, range_high_1s, recommendation, opportunity_score,
+		       snapshot_date
+		FROM watchlist_snapshots
+		WHERE (symbol, snapshot_date) IN (
+		    SELECT symbol, MAX(snapshot_date) FROM watchlist_snapshots GROUP BY symbol
+		)
+		ORDER BY opportunity_score DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snaps []model.QuickSummary
+	for rows.Next() {
+		var q model.QuickSummary
+		if err := rows.Scan(
+			&q.Symbol, &q.Price, &q.Trend, &q.RSI, &q.IVRank,
+			&q.MaxPain, &q.PCR, &q.RangeLow1S, &q.RangeHigh1S,
+			&q.Recommendation, &q.OpportunityScore, &q.SnapshotDate,
+		); err != nil {
+			return nil, err
+		}
+		snaps = append(snaps, q)
+	}
+	return snaps, rows.Err()
+}
+
+// SaveAnalysisCache persists a full analysis JSON payload for a symbol.
+func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []byte) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO analysis_cache (symbol, cached_at, payload_json)
+		VALUES (?, ?, ?)
+		ON CONFLICT(symbol) DO UPDATE SET
+			cached_at=excluded.cached_at, payload_json=excluded.payload_json`,
+		symbol, time.Now().Format(time.RFC3339), string(payload),
+	)
+	return err
+}
+
+// GetAnalysisCache retrieves a cached analysis payload for a symbol.
+// Returns sql.ErrNoRows when no entry exists.
+func (s *Store) GetAnalysisCache(ctx context.Context, symbol string) ([]byte, time.Time, error) {
+	var cachedAt, payload string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT cached_at, payload_json FROM analysis_cache WHERE symbol = ?`, symbol,
+	).Scan(&cachedAt, &payload)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	t, _ := time.Parse(time.RFC3339, cachedAt)
+	return []byte(payload), t, nil
+}
+
 // GetWatchlist returns all watchlist symbols.
 func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT symbol, added_at, notes, tags FROM watchlist ORDER BY added_at`)

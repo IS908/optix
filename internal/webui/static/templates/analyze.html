@@ -1,0 +1,358 @@
+{{template "base" .}}
+
+{{define "title"}}{{.Symbol}} Analysis{{end}}
+
+{{define "nav-extra"}}
+  <a href="/dashboard" class="hover:text-gray-300">← Dashboard</a>
+{{end}}
+
+{{define "content"}}
+<div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-3xl font-bold font-mono">{{.Symbol}}</h1>
+    <p class="text-gray-400 text-sm mt-0.5">{{.Outlook.ForecastDays}}-Day Forecast Analysis</p>
+  </div>
+  <a href="?refresh=true"
+     class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    ⚡ Refresh Live
+  </a>
+</div>
+
+<!-- ── Stock Summary ─────────────────────────────────────────────────────── -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">Price</div>
+    <div class="text-2xl font-bold font-mono">${{printf "%.2f" .Summary.Price}}</div>
+    <div class="text-sm {{if gt .Summary.Change 0.0}}text-emerald-400{{else}}text-red-400{{end}} mt-0.5">
+      {{if gt .Summary.Change 0.0}}+{{end}}{{printf "%.2f" .Summary.Change}}
+      ({{if gt .Summary.ChangePct 0.0}}+{{end}}{{printf "%.2f" .Summary.ChangePct}}%)
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">52W Range</div>
+    <div class="text-sm font-mono mt-1">
+      <span class="text-red-400">${{printf "%.2f" .Summary.Low52W}}</span>
+      <span class="text-gray-600 mx-1">–</span>
+      <span class="text-emerald-400">${{printf "%.2f" .Summary.High52W}}</span>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">Volume</div>
+    <div class="text-lg font-mono font-bold mt-1">{{.Summary.TodayVolume}}</div>
+    <div class="text-gray-500 text-xs mt-0.5">avg 20d: {{printf "%.0f" .Summary.AvgVolume20D}}</div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">IV (HV×0.75)</div>
+    <div class="text-lg font-mono font-bold mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+    <div class="text-gray-500 text-xs mt-0.5">Rank {{printf "%.0f" .Options.IVRank}}% · Pctile {{printf "%.0f" .Options.IVPercentile}}%</div>
+  </div>
+
+</div>
+
+<!-- ── Technical Analysis ─────────────────────────────────────────────────── -->
+<section class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+  <div class="flex items-center gap-3 mb-4">
+    <h2 class="text-lg font-semibold">📊 Technical Analysis</h2>
+    {{if eq .Technical.Trend "bullish"}}
+      <span class="bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-xs font-medium">↑ BULLISH</span>
+    {{else if eq .Technical.Trend "bearish"}}
+      <span class="bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded text-xs font-medium">↓ BEARISH</span>
+    {{else}}
+      <span class="bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded text-xs font-medium">→ NEUTRAL</span>
+    {{end}}
+    <span class="text-gray-500 text-sm">score {{printf "%+.2f" .Technical.TrendScore}}</span>
+  </div>
+
+  {{if .Technical.TrendDescription}}
+  <p class="text-gray-400 text-sm mb-4">{{.Technical.TrendDescription}}</p>
+  {{end}}
+
+  <!-- Moving Averages + Oscillators -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">MA20</div>
+      <div class="font-mono text-sm mt-1">${{printf "%.2f" .Technical.MA20}}</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">MA50</div>
+      <div class="font-mono text-sm mt-1">${{printf "%.2f" .Technical.MA50}}</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">MA200</div>
+      <div class="font-mono text-sm mt-1">${{printf "%.2f" .Technical.MA200}}</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">RSI(14)</div>
+      <div class="font-mono text-sm mt-1 {{if gt .Technical.RSI14 70.0}}text-red-400{{else if lt .Technical.RSI14 30.0}}text-emerald-400{{end}}">
+        {{printf "%.1f" .Technical.RSI14}}
+      </div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">MACD</div>
+      <div class="font-mono text-sm mt-1 {{if gt .Technical.MACD 0.0}}text-emerald-400{{else}}text-red-400{{end}}">
+        {{printf "%+.2f" .Technical.MACD}}
+      </div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">MACD Hist</div>
+      <div class="font-mono text-sm mt-1 {{if gt .Technical.MACDHistogram 0.0}}text-emerald-400{{else}}text-red-400{{end}}">
+        {{printf "%+.2f" .Technical.MACDHistogram}}
+      </div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">BB Upper</div>
+      <div class="font-mono text-sm mt-1">${{printf "%.2f" .Technical.BollingerUpper}}</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">BB Lower</div>
+      <div class="font-mono text-sm mt-1">${{printf "%.2f" .Technical.BollingerLower}}</div>
+    </div>
+  </div>
+
+  <!-- Support & Resistance -->
+  {{if or .Technical.SupportLevels .Technical.ResistanceLevels}}
+  <div class="grid md:grid-cols-2 gap-4">
+    {{if .Technical.SupportLevels}}
+    <div>
+      <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Support Levels</h3>
+      <ul class="space-y-1">
+        {{range .Technical.SupportLevels}}
+        <li class="flex items-center justify-between text-sm">
+          <span class="text-emerald-400 font-mono">${{printf "%.2f" .Price}}</span>
+          <span class="text-gray-500 text-xs">{{.Source}}</span>
+          <span class="text-gray-600 text-xs">str {{printf "%.0f" .Strength}}</span>
+        </li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+    {{if .Technical.ResistanceLevels}}
+    <div>
+      <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Resistance Levels</h3>
+      <ul class="space-y-1">
+        {{range .Technical.ResistanceLevels}}
+        <li class="flex items-center justify-between text-sm">
+          <span class="text-red-400 font-mono">${{printf "%.2f" .Price}}</span>
+          <span class="text-gray-500 text-xs">{{.Source}}</span>
+          <span class="text-gray-600 text-xs">str {{printf "%.0f" .Strength}}</span>
+        </li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+
+<!-- ── Options Analysis ──────────────────────────────────────────────────── -->
+<section class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+  <div class="flex items-center gap-3 mb-4">
+    <h2 class="text-lg font-semibold">🎯 Options Analysis</h2>
+    {{if eq .Options.IVEnvironment "high"}}
+      <span class="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-xs font-medium">HIGH IV</span>
+    {{else if eq .Options.IVEnvironment "medium"}}
+      <span class="bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded text-xs font-medium">MEDIUM IV</span>
+    {{else}}
+      <span class="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-xs font-medium">LOW IV</span>
+    {{end}}
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">IV (HV×0.75)</div>
+      <div class="font-mono text-sm mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">IV Rank</div>
+      <div class="font-mono text-sm mt-1 {{if gt .Options.IVRank 50.0}}text-amber-400{{end}}">{{printf "%.1f" .Options.IVRank}}%</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">Max Pain</div>
+      <div class="font-mono text-sm mt-1">
+        {{if gt .Options.MaxPain 0.0}}${{printf "%.2f" .Options.MaxPain}}{{else}}<span class="text-gray-600">N/A</span>{{end}}
+      </div>
+      <div class="text-gray-600 text-xs">{{.Options.MaxPainExpiry}}</div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+      <div class="text-gray-500 text-xs">PCR (OI)</div>
+      <div class="font-mono text-sm mt-1">{{printf "%.2f" .Options.PCROi}}</div>
+    </div>
+  </div>
+
+  {{if .Options.OIClusters}}
+  <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">OI Clusters</h3>
+  <div class="overflow-x-auto">
+    <table class="text-xs w-full">
+      <thead>
+        <tr class="text-gray-500 border-b border-gray-800">
+          <th class="text-left py-1 pr-4">Strike</th>
+          <th class="text-left py-1 pr-4">Type</th>
+          <th class="text-right py-1 pr-4">Open Interest</th>
+          <th class="text-left py-1">Signal</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/50">
+        {{range .Options.OIClusters}}
+        <tr>
+          <td class="py-1 pr-4 font-mono">${{printf "%.0f" .Strike}}</td>
+          <td class="py-1 pr-4">
+            {{if eq .OptionType "PUT"}}
+              <span class="text-red-400">PUT</span>
+            {{else}}
+              <span class="text-emerald-400">CALL</span>
+            {{end}}
+          </td>
+          <td class="py-1 pr-4 text-right font-mono">{{.OpenInterest}}</td>
+          <td class="py-1 text-gray-400">{{.Significance}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  {{if .Options.EarningsBeforeExpiry}}
+  <div class="mt-3 flex items-center gap-2 text-amber-400 text-sm">
+    <span>⚠️</span>
+    <span>Earnings before expiry{{if .Options.NextEarningsDate}} ({{.Options.NextEarningsDate}}){{end}}</span>
+  </div>
+  {{end}}
+</section>
+
+<!-- ── Market Outlook ────────────────────────────────────────────────────── -->
+<section class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+  <div class="flex items-center gap-3 mb-4">
+    <h2 class="text-lg font-semibold">
+      {{if eq .Outlook.Direction "bullish"}}📈{{else if eq .Outlook.Direction "bearish"}}📉{{else}}➡️{{end}}
+      Market Outlook
+    </h2>
+    <span class="text-gray-400 text-sm">Confidence: <strong class="text-white">{{printf "%.1f" .Outlook.Confidence}}%</strong></span>
+  </div>
+
+  {{if .Outlook.Rationale}}
+  <p class="text-gray-300 text-sm mb-4">{{.Outlook.Rationale}}</p>
+  {{end}}
+
+  <div class="grid md:grid-cols-2 gap-4 mb-4">
+    <div class="bg-gray-800/60 rounded-lg p-4">
+      <div class="text-gray-500 text-xs uppercase tracking-wider mb-2">1σ Range (68%)</div>
+      <div class="font-mono text-lg">
+        <span class="text-red-400">${{printf "%.2f" .Outlook.RangeLow1S}}</span>
+        <span class="text-gray-600 mx-2">–</span>
+        <span class="text-emerald-400">${{printf "%.2f" .Outlook.RangeHigh1S}}</span>
+      </div>
+    </div>
+    <div class="bg-gray-800/60 rounded-lg p-4">
+      <div class="text-gray-500 text-xs uppercase tracking-wider mb-2">2σ Range (95%)</div>
+      <div class="font-mono text-lg">
+        <span class="text-red-400/70">${{printf "%.2f" .Outlook.RangeLow2S}}</span>
+        <span class="text-gray-600 mx-2">–</span>
+        <span class="text-emerald-400/70">${{printf "%.2f" .Outlook.RangeHigh2S}}</span>
+      </div>
+    </div>
+  </div>
+
+  {{if .Outlook.RiskEvents}}
+  <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Risk Events</h3>
+  <ul class="space-y-1">
+    {{range .Outlook.RiskEvents}}
+    <li class="flex items-center gap-2 text-sm text-amber-400">
+      <span>⚠️</span><span>{{.}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</section>
+
+<!-- ── Strategy Recommendations ─────────────────────────────────────────── -->
+<section class="mb-4">
+  <h2 class="text-xl font-bold mb-4">💡 Strategy Recommendations</h2>
+
+  {{if .Strategies}}
+    {{range $i, $s := .Strategies}}
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-3">
+
+      <!-- Strategy header -->
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <span class="text-gray-400 text-sm">#{{add $i 1}}</span>
+        <h3 class="text-lg font-bold">{{$s.StrategyName}}</h3>
+        <span class="bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-sm font-mono">
+          Score {{printf "%.0f" $s.Score}}/100
+        </span>
+      </div>
+
+      <!-- Legs -->
+      {{if $s.Legs}}
+      <div class="mb-4">
+        <div class="text-xs uppercase tracking-wider text-gray-500 mb-2">Legs</div>
+        <div class="flex flex-wrap gap-2">
+          {{range $s.Legs}}
+          <span class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm font-mono">
+            {{if lt .Quantity 0}}Sell{{else}}Buy{{end}}
+            ${{printf "%.0f" .Strike}}{{if eq .OptionType "PUT"}}P{{else}}C{{end}}
+            <span class="text-gray-500">({{.Expiration}})</span>
+            <span class="text-emerald-400">@${{printf "%.2f" .Premium}}</span>
+          </span>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      <!-- P&L stats grid -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Net Credit</div>
+          <div class="font-mono text-sm mt-1 text-emerald-400">${{printf "%.2f" $s.NetCredit}}</div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Max Profit</div>
+          <div class="font-mono text-sm mt-1 text-emerald-400">+${{printf "%.0f" $s.MaxProfit}}</div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Max Loss</div>
+          <div class="font-mono text-sm mt-1 text-red-400">-${{printf "%.0f" $s.MaxLoss}}</div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">R/R Ratio</div>
+          <div class="font-mono text-sm mt-1">{{printf "%.2f" $s.RiskRewardRatio}}</div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Prob Win</div>
+          <div class="font-mono text-sm mt-1 font-bold
+            {{if gt $s.ProbabilityOfProfit 60.0}}text-emerald-400{{else}}text-amber-400{{end}}">
+            {{printf "%.1f" $s.ProbabilityOfProfit}}%
+          </div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Breakeven</div>
+          <div class="font-mono text-sm mt-1">${{printf "%.2f" $s.BreakevenPrice}}</div>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-center">
+          <div class="text-gray-500 text-xs">Margin</div>
+          <div class="font-mono text-sm mt-1">${{printf "%.0f" $s.MarginRequired}}</div>
+        </div>
+      </div>
+
+      {{if $s.Rationale}}
+      <p class="text-gray-400 text-sm mb-3">{{$s.Rationale}}</p>
+      {{end}}
+
+      {{range $s.RiskWarnings}}
+      <div class="flex items-center gap-2 text-amber-400 text-sm mt-1">
+        <span>⚠️</span><span>{{.}}</span>
+      </div>
+      {{end}}
+
+    </div>
+    {{end}}
+  {{else}}
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500">
+    No strategy recommendations available.
+  </div>
+  {{end}}
+</section>
+{{end}}

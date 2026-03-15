@@ -28,4 +28,5 @@ type QuickSummary struct {
 	RangeHigh1S      float64
 	Recommendation   string
 	OpportunityScore float64 // 0-100
+	SnapshotDate     string  // YYYY-MM-DD, populated when reading from DB
 }

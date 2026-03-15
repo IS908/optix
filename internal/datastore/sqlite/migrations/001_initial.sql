@@ -81,3 +81,10 @@ CREATE TABLE IF NOT EXISTS watchlist_snapshots (
     opportunity_score REAL,
     UNIQUE(symbol, snapshot_date)
 );
+
+-- Full analysis results cache (for web UI cache mode)
+CREATE TABLE IF NOT EXISTS analysis_cache (
+    symbol       TEXT PRIMARY KEY,
+    cached_at    TEXT NOT NULL,       -- RFC3339 timestamp
+    payload_json TEXT NOT NULL        -- JSON-encoded AnalyzeResponse
+);

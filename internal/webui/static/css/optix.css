@@ -1,0 +1,10 @@
+/* Optix custom styles — supplements Tailwind CDN */
+
+/* Smooth scrollbar for dark theme */
+:root { color-scheme: dark; }
+
+/* Monospace numbers for tables */
+.font-mono { font-variant-numeric: tabular-nums; }
+
+/* Table row highlight animation */
+tr { transition: background-color 0.1s ease; }

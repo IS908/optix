@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package optix.marketdata.v1;
+
+option go_package = "github.com/IS908/optix/gen/go/optix/marketdata/v1;marketdatav1";
+
+import "optix/marketdata/v1/types.proto";
+
+// MarketDataService provides real-time and historical market data.
+// The Go implementation lives in internal/server/marketdata_svc.go.
+service MarketDataService {
+  // GetQuote fetches a live quote for a symbol.
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+
+  // GetHistoricalBars fetches OHLCV bars for a symbol.
+  rpc GetHistoricalBars(GetHistoricalBarsRequest) returns (GetHistoricalBarsResponse);
+}
+
+message GetQuoteRequest {
+  string symbol = 1;
+}
+
+message GetQuoteResponse {
+  StockQuote quote = 1;
+}
+
+message GetHistoricalBarsRequest {
+  string symbol = 1;
+  string timeframe = 2;
+  int32 days = 3;
+}
+
+message GetHistoricalBarsResponse {
+  repeated OHLCV bars = 1;
+}

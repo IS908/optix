@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package optix.analysis.v1;
+
+option go_package = "github.com/IS908/optix/gen/go/optix/analysis/v1;analysisv1";
+
+import "optix/marketdata/v1/types.proto";
+
+// StockSummary holds the high-level price and volume summary for a stock.
+message StockSummary {
+  string symbol = 1;
+  double price = 2;
+  double change = 3;
+  double change_pct = 4;
+  double high_52w = 5;
+  double low_52w = 6;
+  double avg_volume_20d = 7;
+  int64 today_volume = 8;
+}
+
+// PriceLevel represents a significant support or resistance price.
+message PriceLevel {
+  double price = 1;
+  string source = 2;   // e.g. "ma_20", "swing_high", "oi_wall"
+  double strength = 3; // 0–100
+}
+
+// TechnicalAnalysis holds computed technical indicators.
+message TechnicalAnalysis {
+  string trend = 1;              // "bullish" | "bearish" | "neutral"
+  double trend_score = 2;        // -1.0 to +1.0
+  string trend_description = 3;
+
+  double ma_20 = 4;
+  double ma_50 = 5;
+  double ma_200 = 6;
+
+  double rsi_14 = 7;
+  double macd = 8;
+  double macd_signal = 9;
+  double macd_histogram = 10;
+
+  double bollinger_upper = 11;
+  double bollinger_lower = 12;
+  double bollinger_mid = 13;
+
+  repeated PriceLevel support_levels = 14;
+  repeated PriceLevel resistance_levels = 15;
+}
+
+// OICluster represents a concentration of open interest at a specific strike.
+message OICluster {
+  double strike = 1;
+  optix.marketdata.v1.OptionType option_type = 2;
+  int32 open_interest = 3;
+  string significance = 4; // e.g. "support_wall", "resistance_wall"
+}
+
+// OptionsAnalysis holds options-derived metrics.
+message OptionsAnalysis {
+  double iv_current = 1;      // current IV (HV × 0.75 correction applied)
+  double iv_rank = 2;         // 0–100, position in 1-yr HV range
+  double iv_percentile = 3;   // 0–100, fraction of days below current HV
+  string iv_environment = 4;  // "high" | "medium" | "low"
+  double iv_skew = 5;         // put/call IV skew
+
+  double max_pain = 6;
+  string max_pain_expiry = 7;
+
+  double pcr_volume = 8;
+  double pcr_oi = 9;
+
+  repeated OICluster oi_clusters = 10;
+
+  bool earnings_before_expiry = 11;
+  string next_earnings_date = 12;
+}
+
+// MarketOutlook summarises the forward-looking price forecast.
+message MarketOutlook {
+  string direction = 1;   // "bullish" | "bearish" | "neutral"
+  double confidence = 2;  // 0–100
+  string rationale = 3;
+
+  double range_low_1s = 4;
+  double range_high_1s = 5;
+  double range_low_2s = 6;
+  double range_high_2s = 7;
+
+  int32 forecast_days = 8;
+  repeated string risk_events = 9;
+}
+
+// StrategyLeg represents one leg of a multi-leg options strategy.
+message StrategyLeg {
+  optix.marketdata.v1.OptionType option_type = 1;
+  double strike = 2;
+  string expiration = 3;
+  int32 quantity = 4;    // negative = short, positive = long
+  double premium = 5;    // per-share price
+}
+
+// StrategyRecommendation holds a full sell-side options strategy recommendation.
+message StrategyRecommendation {
+  string strategy_name = 1;   // e.g. "Iron Condor"
+  string strategy_type = 2;   // e.g. "iron_condor"
+  double score = 3;           // 0–100 composite score
+
+  repeated StrategyLeg legs = 4;
+
+  double max_profit = 5;
+  double max_loss = 6;
+  double risk_reward_ratio = 7;
+  double margin_required = 8;
+  double probability_of_profit = 9;
+  double breakeven_price = 10;
+  double net_credit = 11;
+
+  string rationale = 12;
+  repeated string risk_warnings = 13;
+}
+
+// StockQuickSummary is a concise per-symbol summary for the dashboard.
+message StockQuickSummary {
+  string symbol = 1;
+  double price = 2;
+  string trend = 3;           // "bullish" | "bearish" | "neutral"
+  double rsi = 4;
+  double iv_rank = 5;
+  double max_pain = 6;
+  double pcr = 7;
+  double range_low_1s = 8;
+  double range_high_1s = 9;
+  string recommendation = 10;
+  double opportunity_score = 11;
+}
+
+// SingleStockData bundles all market data for one symbol (for batch analysis).
+message SingleStockData {
+  string symbol = 1;
+  optix.marketdata.v1.StockQuote quote = 2;
+  repeated optix.marketdata.v1.OHLCV historical_bars = 3;
+  repeated optix.marketdata.v1.OptionChainExpiry option_chain = 4;
+}

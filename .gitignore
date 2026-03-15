@@ -1,10 +1,10 @@
 # Claude project files
 .claude/
 
-# Compiled Go binaries
-optix
-optix-cli
-optix-server
+# Compiled Go binaries (anchored to root so proto/optix/ and gen/go/optix/ are NOT ignored)
+/optix
+/optix-cli
+/optix-server
 bin/
 
 # Python bytecode

@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package optix.analysis.v1;
+
+option go_package = "github.com/IS908/optix/gen/go/optix/analysis/v1;analysisv1";
+
+import "optix/marketdata/v1/types.proto";
+import "optix/analysis/v1/types.proto";
+
+// AnalysisService is implemented by the Python gRPC server
+// (python/src/optix_engine/grpc_server/server.py).
+service AnalysisService {
+  // PriceOption computes Black-Scholes price and Greeks for a single option.
+  rpc PriceOption(PriceOptionRequest) returns (PriceOptionResponse);
+
+  // GetMaxPain computes the Max Pain strike for the nearest expiry.
+  rpc GetMaxPain(MaxPainRequest) returns (MaxPainResponse);
+
+  // AnalyzeStock runs the full analysis pipeline for a single stock.
+  rpc AnalyzeStock(AnalyzeStockRequest) returns (AnalyzeStockResponse);
+
+  // BatchQuickAnalysis runs a fast summary analysis for multiple stocks (dashboard).
+  rpc BatchQuickAnalysis(BatchQuickAnalysisRequest) returns (BatchQuickAnalysisResponse);
+
+  // RecommendStrategies generates sell-side strategy recommendations from
+  // pre-computed technical and options analysis.
+  rpc RecommendStrategies(RecommendStrategiesRequest) returns (RecommendStrategiesResponse);
+
+  // GetSupportResistance computes support and resistance levels from OHLCV bars.
+  rpc GetSupportResistance(SupportResistanceRequest) returns (SupportResistanceResponse);
+}
+
+// ── PriceOption ───────────────────────────────────────────────────────────────
+
+message PriceOptionRequest {
+  double spot_price = 1;
+  double strike = 2;
+  double time_to_expiry = 3;  // in years
+  double risk_free_rate = 4;
+  double volatility = 5;
+  double dividend_yield = 6;
+  optix.marketdata.v1.OptionType option_type = 7;
+}
+
+message PriceOptionResponse {
+  double price = 1;
+  optix.marketdata.v1.Greeks greeks = 2;
+}
+
+// ── GetMaxPain ────────────────────────────────────────────────────────────────
+
+message MaxPainRequest {
+  string underlying = 1;
+  repeated optix.marketdata.v1.OptionChainExpiry chain = 2;
+}
+
+message MaxPainResponse {
+  double max_pain_price = 1;
+  string expiration = 2;
+}
+
+// ── AnalyzeStock ──────────────────────────────────────────────────────────────
+
+message AnalyzeStockRequest {
+  string symbol = 1;
+  int32 forecast_days = 2;
+  double available_capital = 3;
+  string risk_tolerance = 4;  // "conservative" | "moderate" | "aggressive"
+
+  repeated optix.marketdata.v1.OHLCV historical_bars = 5;
+  repeated optix.marketdata.v1.OptionChainExpiry option_chain = 6;
+  optix.marketdata.v1.StockQuote current_quote = 7;
+}
+
+message AnalyzeStockResponse {
+  StockSummary summary = 1;
+  TechnicalAnalysis technical = 2;
+  OptionsAnalysis options = 3;
+  MarketOutlook outlook = 4;
+  repeated StrategyRecommendation strategies = 5;
+}
+
+// ── BatchQuickAnalysis ────────────────────────────────────────────────────────
+
+message BatchQuickAnalysisRequest {
+  repeated SingleStockData stocks = 1;
+  int32 forecast_days = 2;
+  double available_capital = 3;
+}
+
+message BatchQuickAnalysisResponse {
+  repeated StockQuickSummary summaries = 1;
+}
+
+// ── RecommendStrategies ───────────────────────────────────────────────────────
+
+message RecommendStrategiesRequest {
+  string symbol = 1;
+  double underlying_price = 2;
+  double available_capital = 3;
+  string risk_tolerance = 4;
+  int32 forecast_days = 5;
+
+  TechnicalAnalysis technical = 6;
+  OptionsAnalysis options_analysis = 7;
+  repeated optix.marketdata.v1.OptionChainExpiry option_chain = 8;
+}
+
+message RecommendStrategiesResponse {
+  repeated StrategyRecommendation strategies = 1;
+}
+
+// ── GetSupportResistance ──────────────────────────────────────────────────────
+
+message SupportResistanceRequest {
+  repeated optix.marketdata.v1.OHLCV bars = 1;
+  double current_price = 2;
+}
+
+message SupportResistanceResponse {
+  repeated PriceLevel support_levels = 1;
+  repeated PriceLevel resistance_levels = 2;
+}

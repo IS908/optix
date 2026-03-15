@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package optix.marketdata.v1;
+
+option go_package = "github.com/IS908/optix/gen/go/optix/marketdata/v1;marketdatav1";
+
+import "google/protobuf/timestamp.proto";
+
+// OptionType distinguishes calls from puts.
+enum OptionType {
+  OPTION_TYPE_UNSPECIFIED = 0;
+  OPTION_TYPE_CALL = 1;
+  OPTION_TYPE_PUT = 2;
+}
+
+// StockQuote holds a real-time or delayed stock quote.
+message StockQuote {
+  string symbol = 1;
+  double last = 2;
+  double bid = 3;
+  double ask = 4;
+  int64 volume = 5;
+  double change = 6;
+  double change_pct = 7;
+  double high = 8;
+  double low = 9;
+  double open = 10;
+  double close = 11;
+  double high_52w = 12;
+  double low_52w = 13;
+  double avg_volume = 14;
+  google.protobuf.Timestamp timestamp = 15;
+}
+
+// OHLCV is a single candlestick bar.
+message OHLCV {
+  google.protobuf.Timestamp timestamp = 1;
+  double open = 2;
+  double high = 3;
+  double low = 4;
+  double close = 5;
+  int64 volume = 6;
+}
+
+// OptionQuote holds data for a single option contract.
+message OptionQuote {
+  string underlying = 1;
+  string expiration = 2;
+  double strike = 3;
+  OptionType option_type = 4;
+  int32 open_interest = 5;
+  double implied_volatility = 6;
+}
+
+// OptionChainExpiry groups calls and puts for one expiration date.
+message OptionChainExpiry {
+  string expiration = 1;
+  int32 days_to_expiry = 2;
+  repeated OptionQuote calls = 3;
+  repeated OptionQuote puts = 4;
+}
+
+// Greeks holds Black-Scholes option sensitivities.
+message Greeks {
+  double delta = 1;
+  double gamma = 2;
+  double theta = 3;
+  double vega = 4;
+  double rho = 5;
+}

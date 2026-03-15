@@ -14,5 +14,3 @@ plugins:
 
   # Python protobuf messages + gRPC stubs
   # Uses grpc_tools.protoc via a shell script (buf doesn't have a built-in Python plugin)
-managed:
-  enabled: true

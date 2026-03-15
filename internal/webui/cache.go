@@ -14,7 +14,9 @@ func (s *Server) fetchCachedDashboard(ctx context.Context) (*DashboardResponse, 
 		return nil, fmt.Errorf("load snapshots: %w", err)
 	}
 	if len(snaps) == 0 {
-		return nil, fmt.Errorf("no snapshot data — run 'optix dashboard' or use ?refresh=true")
+		// No snapshots yet — return an empty response so the template renders
+		// the "no data" empty state instead of a 500 error page.
+		return &DashboardResponse{GeneratedAt: time.Now().UTC(), FromCache: true}, nil
 	}
 
 	syms := make([]SymbolSummary, 0, len(snaps))

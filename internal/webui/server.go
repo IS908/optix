@@ -97,7 +97,15 @@ func (s *Server) registerRoutes() {
 
 func renderPage(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.ExecuteTemplate(w, name, data); err != nil {
+	tmpl, ok := pageTemplates[name]
+	if !ok {
+		http.Error(w, "unknown template: "+name, http.StatusInternalServerError)
+		return
+	}
+	// Execute "base" — the entry point defined in base.html. Each page's
+	// {{define "content"}} is isolated in its own template set, so there is
+	// no cross-page override.
+	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 	}
 }

@@ -36,15 +36,17 @@
     {{block "content" .}}{{end}}
   </main>
 
-  <!-- Footer -->
+  <!-- Footer — only shown when GeneratedAt is populated (not on error pages) -->
+  {{if .GeneratedAt}}
   <footer class="text-center text-gray-600 text-xs py-6 border-t border-gray-900 mt-8">
     {{if .FromCache}}
-      📦 Served from cache &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+      📦 Cached &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
       &bull; <a href="?refresh=true" class="text-emerald-600 hover:text-emerald-400">Refresh live</a>
     {{else}}
-      ⚡ Live data &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+      ⚡ Live &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
     {{end}}
   </footer>
+  {{end}}
 
 </body>
 </html>{{end}}

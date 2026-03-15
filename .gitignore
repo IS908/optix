@@ -20,8 +20,8 @@ dist/
 .venv/
 venv/
 
-# SQLite data (runtime state, not source)
-data/*.db
+# SQLite data (runtime state, not source) — ignore entire data/ dir
+data/
 
 # OS
 .DS_Store

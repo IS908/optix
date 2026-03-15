@@ -10,7 +10,11 @@
 <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
   <div>
     <h1 class="text-3xl font-bold font-mono">{{.Symbol}}</h1>
-    <p class="text-gray-400 text-sm mt-0.5">{{.Outlook.ForecastDays}}-Day Forecast Analysis</p>
+    {{if .NoData}}
+      <p class="text-gray-500 text-sm mt-0.5">No analysis data cached yet</p>
+    {{else}}
+      <p class="text-gray-400 text-sm mt-0.5">{{.Outlook.ForecastDays}}-Day Forecast Analysis</p>
+    {{end}}
   </div>
   <a href="?refresh=true"
      class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -18,7 +22,46 @@
   </a>
 </div>
 
-{{/* ── Data Freshness strip ── */}}
+{{/* ── No-data empty state ── */}}
+{{if .NoData}}
+<div class="rounded-xl border border-gray-800 bg-gray-900/50 p-10 mb-6 flex flex-col items-center text-center gap-4">
+  <div class="text-4xl">📭</div>
+  <div>
+    <p class="text-gray-300 text-lg font-medium mb-1">No analysis cached for <span class="font-mono text-emerald-400">{{.Symbol}}</span></p>
+    <p class="text-gray-500 text-sm">Click <strong class="text-white">⚡ Refresh Live</strong> to fetch live data from IBKR and run the full analysis pipeline.</p>
+    <p class="text-gray-600 text-xs mt-2">Or run from CLI:&nbsp; <code class="text-emerald-500">optix analyze {{.Symbol}}</code></p>
+  </div>
+  <a href="?refresh=true"
+     class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-6 py-2.5 rounded-lg transition-colors shadow-md">
+    ⚡ Fetch &amp; Analyze Live
+  </a>
+</div>
+
+{{/* Still show freshness strip to visualise the "never fetched" state */}}
+<div class="flex flex-wrap items-center gap-2 mb-2 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
+  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
+        title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Quote&nbsp;·&nbsp;{{timeago .Freshness.QuoteAt}}
+  </span>
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
+        title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    OHLCV&nbsp;·&nbsp;{{timeago .Freshness.OHLCVAt}}
+  </span>
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
+        title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Options&nbsp;·&nbsp;{{timeago .Freshness.OptionsAt}}
+  </span>
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
+        title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+    Analysis&nbsp;·&nbsp;{{timeago .Freshness.CacheAt}}
+  </span>
+</div>
+
+{{/* Skip the rest of the page when there's nothing to show */}}
+{{else}}
+
+{{/* ── Data Freshness strip (normal cache-hit path) ── */}}
 {{if .Freshness.Symbol}}
 <div class="flex flex-wrap items-center gap-2 mb-6 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
   <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
@@ -388,4 +431,6 @@
   </div>
   {{end}}
 </section>
-{{end}}
+
+{{end}}{{/* end {{else}} (NoData = false) */}}
+{{end}}{{/* end {{define "content"}} */}}

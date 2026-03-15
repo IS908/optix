@@ -111,7 +111,14 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.getAnalyzeData(r, symbol)
 	if err != nil {
-		writeErrorPage(w, err.Error(), http.StatusNotFound)
+		// No cached data and no live fetch — render a friendly empty-state page
+		// so the user can click "Refresh Live" to trigger an IBKR fetch.
+		freshness, _ := s.store.GetSymbolFreshness(r.Context(), symbol)
+		renderPage(w, "analyze.html", &AnalyzeResponse{
+			Symbol:    symbol,
+			NoData:    true,
+			Freshness: freshness,
+		})
 		return
 	}
 	renderPage(w, "analyze.html", resp)

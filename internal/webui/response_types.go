@@ -49,6 +49,7 @@ type AnalyzeResponse struct {
 	GeneratedAt time.Time             `json:"generated_at"`
 	FromCache   bool                  `json:"from_cache"`
 	Symbol      string                `json:"symbol"`
+	NoData      bool                  `json:"no_data,omitempty"` // true = no cache, show empty state
 	Summary     SummaryData           `json:"summary"`
 	Technical   TechnicalData         `json:"technical"`
 	Options     OptionsData           `json:"options"`

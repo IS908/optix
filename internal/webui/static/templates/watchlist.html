@@ -3,42 +3,47 @@
 {{define "title"}}Watchlist{{end}}
 
 {{define "content"}}
+
+{{/* ── Toast notification (auto-dismiss) ── */}}
+{{if .FlashSuccess}}
+<div id="toast" class="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-emerald-900 border border-emerald-700
+                        text-emerald-200 text-sm px-4 py-3 rounded-xl shadow-xl transition-opacity duration-500"
+     role="alert">
+  <span class="text-emerald-400 text-base">✓</span>
+  <span>{{.FlashSuccess}}</span>
+  <button onclick="dismissToast()" class="ml-2 text-emerald-500 hover:text-emerald-300 text-lg leading-none">×</button>
+</div>
+{{end}}
+{{if .FlashError}}
+<div id="toast" class="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-red-950 border border-red-800
+                        text-red-200 text-sm px-4 py-3 rounded-xl shadow-xl transition-opacity duration-500"
+     role="alert">
+  <span class="text-red-400 text-base">✗</span>
+  <span>{{.FlashError}}</span>
+  <button onclick="dismissToast()" class="ml-2 text-red-500 hover:text-red-300 text-lg leading-none">×</button>
+</div>
+{{end}}
+
+{{/* ── Page header ── */}}
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
     <h1 class="text-2xl font-bold">Watchlist</h1>
-    <p class="text-gray-400 text-sm mt-0.5">Manage the symbols you track</p>
+    <p class="text-gray-400 text-sm mt-0.5">
+      {{len .Items}} symbol{{if ne (len .Items) 1}}s{{end}} tracked
+    </p>
   </div>
-  <a href="/dashboard"
-     class="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm font-medium px-4 py-2 rounded-lg border border-gray-700 transition-colors">
-    → Dashboard
-  </a>
-</div>
-
-{{/* ── Add symbol form ── */}}
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-  <h2 class="text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wider">Add Symbols</h2>
-  <form method="POST" action="/watchlist" class="flex gap-3">
-    <input type="text" name="symbols"
-           placeholder="e.g. AAPL TSLA NVDA  (space-separated)"
-           autocomplete="off" autocapitalize="characters" spellcheck="false"
-           class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100
-                  placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" />
-    <button type="submit"
-            class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors">
-      + Add
+  <div class="flex items-center gap-3">
+    <a href="/dashboard"
+       class="inline-flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300
+              text-sm font-medium px-4 py-2 rounded-lg border border-gray-700 transition-colors">
+      ← Dashboard
+    </a>
+    <button onclick="openAddModal()"
+            class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500
+                   text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shadow-md">
+      <span class="text-base leading-none">＋</span> Add Symbol
     </button>
-  </form>
-
-  {{if .FlashSuccess}}
-  <p class="mt-3 text-sm text-emerald-400 flex items-center gap-1.5">
-    <span>✓</span> {{.FlashSuccess}}
-  </p>
-  {{end}}
-  {{if .FlashError}}
-  <p class="mt-3 text-sm text-red-400 flex items-center gap-1.5">
-    <span>✗</span> {{.FlashError}}
-  </p>
-  {{end}}
+  </div>
 </div>
 
 {{/* ── Watchlist table ── */}}
@@ -65,7 +70,7 @@
           </a>
         </td>
 
-        {{/* Added date — trim to date part if ISO8601 */}}
+        {{/* Date added (trim ISO8601 to YYYY-MM-DD) */}}
         <td class="px-4 py-3 text-gray-400 text-xs font-mono">
           {{if .AddedAt}}{{slice .AddedAt 0 10}}{{else}}<span class="text-gray-600">—</span>{{end}}
         </td>
@@ -75,16 +80,14 @@
           {{if .Notes}}{{.Notes}}{{else}}<span class="text-gray-600">—</span>{{end}}
         </td>
 
-        {{/* Remove button */}}
+        {{/* Remove — opens modal */}}
         <td class="px-4 py-3 text-center">
-          <form method="POST" action="/watchlist/{{.Symbol}}/remove">
-            <button type="submit"
-                    onclick="return confirm('Remove {{.Symbol}} from watchlist?')"
-                    class="text-red-500 hover:text-red-300 hover:bg-red-950 border border-red-900/60
-                           px-2.5 py-0.5 rounded text-xs transition-colors opacity-60 group-hover:opacity-100">
-              Remove
-            </button>
-          </form>
+          <button onclick="openRemoveModal('{{.Symbol}}')"
+                  class="text-red-500 hover:text-red-300 hover:bg-red-950/60 border border-red-900/50
+                         px-2.5 py-0.5 rounded text-xs font-medium transition-all
+                         opacity-40 group-hover:opacity-100">
+            Remove
+          </button>
         </td>
 
       </tr>
@@ -95,9 +98,230 @@
 <p class="text-gray-600 text-xs mt-3">{{len .Items}} symbol{{if ne (len .Items) 1}}s{{end}} in watchlist</p>
 
 {{else}}
-<div class="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center">
-  <p class="text-gray-400 text-lg mb-2">Your watchlist is empty</p>
-  <p class="text-gray-600 text-sm">Type one or more ticker symbols above and click <strong class="text-gray-400">+ Add</strong>.</p>
+<div class="rounded-xl border border-gray-800 bg-gray-900/50 p-16 text-center">
+  <div class="text-4xl mb-4">📋</div>
+  <p class="text-gray-300 text-lg font-medium mb-2">Your watchlist is empty</p>
+  <p class="text-gray-500 text-sm mb-6">Click <strong class="text-gray-300">＋ Add Symbol</strong> to start tracking stocks.</p>
+  <button onclick="openAddModal()"
+          class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500
+                 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-md">
+    <span class="text-base leading-none">＋</span> Add Symbol
+  </button>
 </div>
 {{end}}
+
+
+{{/* ═══════════════════════════════════════════════════════
+     MODAL: Add Symbol
+     ═══════════════════════════════════════════════════════ */}}
+<div id="addModal"
+     class="hidden fixed inset-0 z-40 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+
+  {{/* Backdrop */}}
+  <div id="addBackdrop"
+       onclick="closeAddModal()"
+       class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200"></div>
+
+  {{/* Panel */}}
+  <div class="relative w-full max-w-md bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl
+              transition-all duration-200 scale-95 opacity-0" id="addPanel">
+    {{/* Header */}}
+    <div class="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-800">
+      <h2 id="addModalTitle" class="text-base font-semibold text-gray-100">Add to Watchlist</h2>
+      <button onclick="closeAddModal()"
+              class="text-gray-500 hover:text-gray-300 transition-colors text-xl leading-none p-1 -mr-1">×</button>
+    </div>
+
+    {{/* Form */}}
+    <form method="POST" action="/watchlist" onsubmit="return validateAddForm()" class="px-6 py-5">
+      <label for="addSymbolInput" class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+        Symbols
+      </label>
+      <input id="addSymbolInput" type="text" name="symbols"
+             placeholder="e.g.  AAPL  TSLA  NVDA"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-gray-100
+                    placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500
+                    transition-colors font-mono tracking-wider" />
+      <p class="text-gray-600 text-xs mt-2">Separate multiple symbols with spaces or commas.</p>
+
+      <div id="addError" class="hidden mt-3 text-red-400 text-xs flex items-center gap-1.5">
+        <span>✗</span><span id="addErrorMsg"></span>
+      </div>
+
+      <div class="flex gap-3 justify-end mt-6">
+        <button type="button" onclick="closeAddModal()"
+                class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700
+                       border border-gray-700 rounded-lg transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500
+                       rounded-lg transition-colors shadow-md">
+          Add
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+{{/* ═══════════════════════════════════════════════════════
+     MODAL: Confirm Remove
+     ═══════════════════════════════════════════════════════ */}}
+<div id="removeModal"
+     class="hidden fixed inset-0 z-40 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="removeModalTitle">
+
+  {{/* Backdrop */}}
+  <div id="removeBackdrop"
+       onclick="closeRemoveModal()"
+       class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200"></div>
+
+  {{/* Panel */}}
+  <div class="relative w-full max-w-sm bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl
+              transition-all duration-200 scale-95 opacity-0" id="removePanel">
+    {{/* Header */}}
+    <div class="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-800">
+      <h2 id="removeModalTitle" class="text-base font-semibold text-gray-100">Remove Symbol</h2>
+      <button onclick="closeRemoveModal()"
+              class="text-gray-500 hover:text-gray-300 transition-colors text-xl leading-none p-1 -mr-1">×</button>
+    </div>
+
+    {{/* Body */}}
+    <div class="px-6 py-5">
+      <div class="flex items-start gap-3 mb-5">
+        <div class="flex-shrink-0 w-9 h-9 rounded-full bg-red-950 border border-red-800 flex items-center justify-center text-red-400 text-base">
+          ✕
+        </div>
+        <div>
+          <p class="text-gray-200 text-sm font-medium">
+            Remove <span id="removeSymbolName" class="font-mono text-red-300"></span> from your watchlist?
+          </p>
+          <p class="text-gray-500 text-xs mt-1">Snapshot history will be preserved. You can re-add it anytime.</p>
+        </div>
+      </div>
+
+      <form id="removeForm" method="POST" action="">
+        <div class="flex gap-3 justify-end">
+          <button type="button" onclick="closeRemoveModal()"
+                  class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700
+                         border border-gray-700 rounded-lg transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-5 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-600
+                         rounded-lg transition-colors shadow-md">
+            Remove
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+{{/* ── JavaScript ── */}}
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function animateIn(panel) {
+  // Force a reflow so transition fires from the initial state
+  panel.getBoundingClientRect();
+  panel.classList.remove('scale-95', 'opacity-0');
+  panel.classList.add('scale-100', 'opacity-100');
+}
+
+function animateOut(panel, cb) {
+  panel.classList.remove('scale-100', 'opacity-100');
+  panel.classList.add('scale-95', 'opacity-0');
+  setTimeout(cb, 180);
+}
+
+// ── Add Modal ─────────────────────────────────────────────────────────────────
+
+function openAddModal() {
+  const modal = document.getElementById('addModal');
+  const panel = document.getElementById('addPanel');
+  const input = document.getElementById('addSymbolInput');
+  modal.classList.remove('hidden');
+  animateIn(panel);
+  // Small delay so the transition plays before focus
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeAddModal() {
+  const modal  = document.getElementById('addModal');
+  const panel  = document.getElementById('addPanel');
+  animateOut(panel, () => {
+    modal.classList.add('hidden');
+    document.getElementById('addSymbolInput').value = '';
+    hideAddError();
+  });
+}
+
+function showAddError(msg) {
+  const box = document.getElementById('addError');
+  document.getElementById('addErrorMsg').textContent = msg;
+  box.classList.remove('hidden');
+}
+
+function hideAddError() {
+  document.getElementById('addError').classList.add('hidden');
+}
+
+function validateAddForm() {
+  const val = document.getElementById('addSymbolInput').value.trim();
+  if (!val) {
+    showAddError('Please enter at least one symbol.');
+    document.getElementById('addSymbolInput').focus();
+    return false;
+  }
+  return true;
+}
+
+// ── Remove Modal ──────────────────────────────────────────────────────────────
+
+function openRemoveModal(symbol) {
+  const modal = document.getElementById('removeModal');
+  const panel = document.getElementById('removePanel');
+  document.getElementById('removeSymbolName').textContent = symbol;
+  document.getElementById('removeForm').action = '/watchlist/' + symbol + '/remove';
+  modal.classList.remove('hidden');
+  animateIn(panel);
+}
+
+function closeRemoveModal() {
+  const modal = document.getElementById('removeModal');
+  const panel = document.getElementById('removePanel');
+  animateOut(panel, () => modal.classList.add('hidden'));
+}
+
+// ── Keyboard shortcut (Escape) ────────────────────────────────────────────────
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!document.getElementById('removeModal').classList.contains('hidden')) {
+    closeRemoveModal();
+  } else if (!document.getElementById('addModal').classList.contains('hidden')) {
+    closeAddModal();
+  }
+});
+
+// ── Toast auto-dismiss ────────────────────────────────────────────────────────
+
+function dismissToast() {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.style.opacity = '0';
+  setTimeout(() => toast.remove(), 500);
+}
+
+(function () {
+  const toast = document.getElementById('toast');
+  if (toast) setTimeout(dismissToast, 3500);
+})();
+</script>
+
 {{end}}

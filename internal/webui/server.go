@@ -111,8 +111,11 @@ func renderPage(w http.ResponseWriter, name string, data any) {
 	// Execute "base" — the entry point defined in base.html. Each page's
 	// {{define "content"}} is isolated in its own template set, so there is
 	// no cross-page override.
+	// Note: once ExecuteTemplate starts writing, we cannot call http.Error
+	// (headers already sent). Log the error instead.
 	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+		// Headers may already be sent; just log — do not call http.Error.
+		fmt.Fprintf(w, "\n<!-- template error: %v -->", err)
 	}
 }
 

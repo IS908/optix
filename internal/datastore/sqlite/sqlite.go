@@ -55,8 +55,12 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(migrationSQL)
-	return err
+	if _, err := s.db.Exec(migrationSQL); err != nil {
+		return err
+	}
+	// Idempotent schema additions — error is swallowed when column already exists.
+	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
+	return nil
 }
 
 // --- Stock Quotes ---
@@ -168,20 +172,23 @@ func (s *Store) RemoveFromWatchlist(ctx context.Context, symbol string) error {
 
 // SaveWatchlistSnapshot upserts a daily snapshot for a watchlist symbol.
 func (s *Store) SaveWatchlistSnapshot(ctx context.Context, snap model.QuickSummary) error {
-	date := time.Now().Format("2006-01-02")
+	now := time.Now()
+	date := now.Format("2006-01-02")
+	refreshedAt := now.Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO watchlist_snapshots
 			(symbol, snapshot_date, price, trend, rsi, iv_rank, max_pain, pcr,
-			 range_low_1s, range_high_1s, recommendation, opportunity_score)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 range_low_1s, range_high_1s, recommendation, opportunity_score, last_refreshed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(symbol, snapshot_date) DO UPDATE SET
 			price=excluded.price, trend=excluded.trend, rsi=excluded.rsi,
 			iv_rank=excluded.iv_rank, max_pain=excluded.max_pain, pcr=excluded.pcr,
 			range_low_1s=excluded.range_low_1s, range_high_1s=excluded.range_high_1s,
-			recommendation=excluded.recommendation, opportunity_score=excluded.opportunity_score`,
+			recommendation=excluded.recommendation, opportunity_score=excluded.opportunity_score,
+			last_refreshed_at=excluded.last_refreshed_at`,
 		snap.Symbol, date, snap.Price, snap.Trend, snap.RSI, snap.IVRank,
 		snap.MaxPain, snap.PCR, snap.RangeLow1S, snap.RangeHigh1S,
-		snap.Recommendation, snap.OpportunityScore,
+		snap.Recommendation, snap.OpportunityScore, refreshedAt,
 	)
 	return err
 }
@@ -290,7 +297,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1D'), '') AS ohlcv_at,
 			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
 			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
-			COALESCE((SELECT MAX(snapshot_date) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
+			COALESCE((SELECT MAX(last_refreshed_at) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
 	`, symbol)
 
 	var quoteAt, ohlcvAt, optAt, cacheAt, snapDate string
@@ -302,7 +309,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 	if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
 	if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
 	if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
-	if snapDate != "" { f.SnapshotAt, _ = time.Parse("2006-01-02", snapDate) }
+	if snapDate != "" { f.SnapshotAt, _ = time.Parse(time.RFC3339, snapDate) }
 	return f, nil
 }
 
@@ -329,7 +336,7 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		) oq ON oq.underlying = w.symbol
 		LEFT JOIN analysis_cache ac ON ac.symbol = w.symbol
 		LEFT JOIN (
-			SELECT symbol, MAX(snapshot_date) AS snap_date
+			SELECT symbol, MAX(last_refreshed_at) AS snap_date
 			FROM watchlist_snapshots GROUP BY symbol
 		) ws ON ws.symbol = w.symbol
 		ORDER BY w.symbol
@@ -350,7 +357,7 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
 		if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
 		if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
-		if snapDate != "" { f.SnapshotAt, _ = time.Parse("2006-01-02", snapDate) }
+		if snapDate != "" { f.SnapshotAt, _ = time.Parse(time.RFC3339, snapDate) }
 		result = append(result, f)
 	}
 	return result, rows.Err()

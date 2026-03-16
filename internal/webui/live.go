@@ -227,6 +227,18 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		})
 	}
 
+	// Backfill CacheAt from DB — live dashboard runs batch quick analysis (not
+	// full analysis), so CacheAt reflects a previous fetchLiveAnalysis run.
+	if dbFreshAll, dbErr := s.store.GetAllSymbolFreshness(ctx); dbErr == nil {
+		cacheAtMap := make(map[string]time.Time, len(dbFreshAll))
+		for _, f := range dbFreshAll {
+			cacheAtMap[f.Symbol] = f.CacheAt
+		}
+		for i := range freshness {
+			freshness[i].CacheAt = cacheAtMap[freshness[i].Symbol]
+		}
+	}
+
 	return &DashboardResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   false,

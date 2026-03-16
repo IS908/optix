@@ -70,13 +70,32 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 		_ = s.store.SaveAnalysisCache(ctx, symbol, payload)
 	}
 
+	// Save a daily watchlist snapshot so the dashboard cache stays up-to-date.
+	snap := model.QuickSummary{
+		Symbol:      symbol,
+		Price:       resp.Summary.Price,
+		Trend:       resp.Technical.Trend,
+		RSI:         resp.Technical.RSI14,
+		IVRank:      resp.Options.IVRank,
+		MaxPain:     resp.Options.MaxPain,
+		PCR:         resp.Options.PCROi,
+		RangeLow1S:  resp.Outlook.RangeLow1S,
+		RangeHigh1S: resp.Outlook.RangeHigh1S,
+	}
+	if len(resp.Strategies) > 0 {
+		snap.Recommendation   = resp.Strategies[0].StrategyName
+		snap.OpportunityScore = resp.Strategies[0].Score
+	}
+	_ = s.store.SaveWatchlistSnapshot(ctx, snap)
+
 	// For a live fetch every layer was just refreshed — use current time.
 	now := time.Now().UTC()
-	resp.Freshness.Symbol    = symbol
-	resp.Freshness.QuoteAt   = now
-	resp.Freshness.OHLCVAt   = now
+	resp.Freshness.Symbol     = symbol
+	resp.Freshness.QuoteAt    = now
+	resp.Freshness.OHLCVAt    = now
 	resp.Freshness.OptionsAt  = now
-	resp.Freshness.CacheAt   = now
+	resp.Freshness.CacheAt    = now
+	resp.Freshness.SnapshotAt = now
 
 	return resp, nil
 }
@@ -160,6 +179,8 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		return nil, fmt.Errorf("batch analysis: %w", err)
 	}
 
+	now := time.Now().UTC()
+
 	syms := make([]SymbolSummary, 0, len(batchResp.Summaries))
 	for _, sm := range batchResp.Summaries {
 		syms = append(syms, SymbolSummary{
@@ -176,18 +197,33 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 			OpportunityScore: sm.OpportunityScore,
 			SnapshotDate:     "live",
 		})
+		// Persist as a daily snapshot so the dashboard cache path stays fresh.
+		_ = s.store.SaveWatchlistSnapshot(ctx, model.QuickSummary{
+			Symbol:           sm.Symbol,
+			Price:            sm.Price,
+			Trend:            sm.Trend,
+			RSI:              sm.Rsi,
+			IVRank:           sm.IvRank,
+			MaxPain:          sm.MaxPain,
+			PCR:              sm.Pcr,
+			RangeLow1S:       sm.RangeLow_1S,
+			RangeHigh1S:      sm.RangeHigh_1S,
+			Recommendation:   sm.Recommendation,
+			OpportunityScore: sm.OpportunityScore,
+		})
 	}
 
-	// Build freshness for each successfully fetched symbol (all layers = now).
-	now := time.Now().UTC()
+	// Build freshness for each successfully fetched symbol (all layers = now,
+	// including SnapshotAt since we just saved the snapshot above).
 	freshness := make([]model.SymbolFreshness, 0, len(syms))
 	for _, sym := range syms {
 		freshness = append(freshness, model.SymbolFreshness{
-			Symbol:    sym.Symbol,
-			QuoteAt:   now,
-			OHLCVAt:   now,
+			Symbol:     sym.Symbol,
+			QuoteAt:    now,
+			OHLCVAt:    now,
 			OptionsAt:  now,
-			// CacheAt and SnapshotAt are not written during a live dashboard refresh
+			SnapshotAt: now,
+			// CacheAt is not written during a live dashboard refresh
 		})
 	}
 

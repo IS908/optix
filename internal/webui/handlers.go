@@ -57,6 +57,11 @@ func (s *Server) handleWatchlistRemove(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/watchlist?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+	// Clean up derived caches so the removed symbol no longer appears in the
+	// dashboard or analyze page (best-effort — don't fail the remove if these error).
+	_ = s.store.DeleteWatchlistSnapshots(r.Context(), symbol)
+	_ = s.store.DeleteAnalysisCache(r.Context(), symbol)
+
 	http.Redirect(w, r, "/watchlist?success="+url.QueryEscape("Removed: "+symbol), http.StatusSeeOther)
 }
 
@@ -154,6 +159,8 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	if finalErr != nil {
 		// No data anywhere — render a friendly empty-state page with the error.
 		freshness, _ := s.store.GetSymbolFreshness(r.Context(), symbol)
+		// Still trigger a background refresh so the next page load may have data.
+		s.maybeBackgroundRefresh(symbol)
 		renderPage(w, "analyze.html", &AnalyzeResponse{
 			Symbol:    symbol,
 			NoData:    true,
@@ -162,6 +169,8 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Trigger a background refresh to keep the cache warm (rate-limited to 3 min).
+	s.maybeBackgroundRefresh(symbol)
 	renderPage(w, "analyze.html", resp)
 }
 

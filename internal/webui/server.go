@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
@@ -26,9 +27,11 @@ type Config struct {
 
 // Server is the Optix web UI HTTP server.
 type Server struct {
-	cfg   Config
-	store *sqlite.Store
-	mux   *http.ServeMux
+	cfg         Config
+	store       *sqlite.Store
+	mux         *http.ServeMux
+	refreshMu   sync.Mutex          // guards lastRefresh
+	lastRefresh map[string]time.Time // symbol → last background refresh time
 }
 
 // New creates a Server and registers all routes.
@@ -40,10 +43,34 @@ func New(cfg Config, store *sqlite.Store) *Server {
 		cfg.RiskTolerance = "moderate"
 	}
 
-	s := &Server{cfg: cfg, store: store}
+	s := &Server{
+		cfg:         cfg,
+		store:       store,
+		lastRefresh: make(map[string]time.Time),
+	}
 	s.mux = http.NewServeMux()
 	s.registerRoutes()
 	return s
+}
+
+// maybeBackgroundRefresh triggers a live analysis refresh for symbol if the
+// last refresh was more than 3 minutes ago. Non-blocking — runs in a goroutine.
+// Errors are silently discarded (IBKR may not be connected; caller is unaffected).
+func (s *Server) maybeBackgroundRefresh(symbol string) {
+	const cooldown = 3 * time.Minute
+	s.refreshMu.Lock()
+	if time.Since(s.lastRefresh[symbol]) < cooldown {
+		s.refreshMu.Unlock()
+		return
+	}
+	s.lastRefresh[symbol] = time.Now()
+	s.refreshMu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		_, _ = s.fetchLiveAnalysis(ctx, symbol)
+	}()
 }
 
 // Start begins serving HTTP requests. It blocks until ctx is cancelled.

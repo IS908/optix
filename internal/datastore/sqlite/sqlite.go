@@ -218,6 +218,20 @@ func (s *Store) GetLatestSnapshots(ctx context.Context) ([]model.QuickSummary, e
 	return snaps, rows.Err()
 }
 
+// DeleteWatchlistSnapshots removes all snapshot rows for a symbol.
+func (s *Store) DeleteWatchlistSnapshots(ctx context.Context, symbol string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM watchlist_snapshots WHERE symbol = ?`, symbol)
+	return err
+}
+
+// DeleteAnalysisCache removes the cached analysis JSON for a symbol.
+func (s *Store) DeleteAnalysisCache(ctx context.Context, symbol string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM analysis_cache WHERE symbol = ?`, symbol)
+	return err
+}
+
 // SaveAnalysisCache persists a full analysis JSON payload for a symbol.
 func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []byte) error {
 	_, err := s.db.ExecContext(ctx, `

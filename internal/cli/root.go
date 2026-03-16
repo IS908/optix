@@ -25,7 +25,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./configs/optix.yaml)")
 	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB TWS/Gateway host")
-	root.PersistentFlags().IntVar(&ibPort, "ib-port", 7497, "IB TWS/Gateway port")
+	root.PersistentFlags().IntVar(&ibPort, "ib-port", 7496, "IB TWS/Gateway port")
 
 	root.AddCommand(newQuoteCmd())
 	root.AddCommand(newWatchCmd())

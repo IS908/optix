@@ -3,6 +3,7 @@ module github.com/IS908/optix
 go 1.26.1
 
 require (
+	github.com/scmhub/ibapi v0.10.44
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
@@ -19,7 +20,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/robaho/fixed v0.0.0-20251201003256-beee5759f86a // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/scmhub/ibapi v0.10.44 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.48.0 // indirect

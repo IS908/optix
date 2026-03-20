@@ -247,8 +247,9 @@ func (s *Server) handleFreshness(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		f, err := s.store.GetSymbolFreshness(r.Context(), item.Symbol)
 		if err != nil {
-			// If freshness not found, skip this symbol
-			continue
+			// If freshness query fails, include with zero timestamps
+			// (This shouldn't happen normally, but handle gracefully)
+			f.Symbol = item.Symbol
 		}
 
 		freshness = append(freshness, FreshnessItem{

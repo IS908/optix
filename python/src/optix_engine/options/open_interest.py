@@ -99,6 +99,6 @@ def put_call_ratio(chain_df: pd.DataFrame, by: str = "oi") -> float:
         put_total = puts["volume"].sum()
 
     if call_total == 0:
-        return float("inf") if put_total > 0 else 1.0
+        return 99.99 if put_total > 0 else 1.0
 
     return put_total / call_total

@@ -141,7 +141,10 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			d, e := server.FetchSymbolData(ctx, sym, svc, ibClient)
+			// Per-symbol timeout so invalid symbols don't block the pool
+			symCtx, symCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer symCancel()
+			d, e := server.FetchSymbolData(symCtx, sym, svc, ibClient)
 			results <- result{idx: idx, data: d, err: e}
 		}(i, item.Symbol)
 	}

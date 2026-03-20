@@ -329,9 +329,9 @@ const FreshnessPoller = {
         // Update IV Rank
         const ivCell = row.querySelector('td:nth-child(5)');
         if (ivCell && data.iv_rank !== undefined) {
-            ivCell.textContent = `${(data.iv_rank * 100).toFixed(0)}%`;
+            ivCell.textContent = `${data.iv_rank.toFixed(0)}%`;
             ivCell.className = 'px-4 py-3 text-right font-mono';
-            if (data.iv_rank > 0.5) ivCell.className += ' text-amber-400 font-bold';
+            if (data.iv_rank > 50) ivCell.className += ' text-amber-400 font-bold';
         }
 
         // Update Max Pain

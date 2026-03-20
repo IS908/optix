@@ -277,7 +277,7 @@ const FreshnessPoller = {
 
         // Update only changed rows
         for (const symbol of symbols) {
-            const snapshot = data.snapshots.find(s => s.symbol === symbol);
+            const snapshot = data.symbols.find(s => s.symbol === symbol);
             if (snapshot) {
                 this.updateRow(symbol, snapshot);
             }

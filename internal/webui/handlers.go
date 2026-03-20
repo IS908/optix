@@ -245,23 +245,30 @@ func (s *Server) handleFreshness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	freshness := make([]FreshnessItem, 0, len(items))
-	for _, item := range items {
-		f, err := s.store.GetSymbolFreshness(r.Context(), item.Symbol)
-		if err != nil {
-			// If freshness query fails, include with zero timestamps
-			// (This shouldn't happen normally, but handle gracefully)
-			f.Symbol = item.Symbol
-		}
-
-		freshness = append(freshness, FreshnessItem{
+	// Single batch query instead of N per-symbol queries.
+	allFresh, err := s.store.GetAllSymbolFreshness(r.Context())
+	if err != nil {
+		writeErrorJSON(w, "failed to load freshness: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	freshMap := make(map[string]FreshnessItem, len(allFresh))
+	for _, f := range allFresh {
+		freshMap[f.Symbol] = FreshnessItem{
 			Symbol:     f.Symbol,
 			QuoteAt:    f.QuoteAt,
 			OHLCVAt:    f.OHLCVAt,
 			OptionsAt:  f.OptionsAt,
 			CacheAt:    f.CacheAt,
 			SnapshotAt: f.SnapshotAt,
-		})
+		}
+	}
+	freshness := make([]FreshnessItem, 0, len(items))
+	for _, item := range items {
+		if fi, ok := freshMap[item.Symbol]; ok {
+			freshness = append(freshness, fi)
+		} else {
+			freshness = append(freshness, FreshnessItem{Symbol: item.Symbol})
+		}
 	}
 
 	resp := FreshnessResponse{

@@ -205,11 +205,21 @@ Before optimizing, measure current performance:
 - Implement high-impact optimizations
 - Document medium/low items for future work
 
+### 3.5 Iterative Verification Loop
+
+After performance fixes are applied, **re-run the full pipeline** (Phase 1 → Phase 2 → Phase 3) to verify:
+1. Fixes did not introduce regressions (re-run Phase 1 static audit on changed files)
+2. Browser E2E still passes (re-run Phase 2 key scenarios)
+3. Re-measure performance baselines to confirm improvement
+
+**Loop termination**: Stop when no high-impact performance issues remain AND all E2E scenarios pass AND baseline measurements meet targets. If after 3 iterations issues persist, document remaining items and stop.
+
 ---
 
 ## Success Criteria
 
 1. **Static audit**: Zero critical data inconsistencies across all transformation paths
 2. **Browser E2E**: All 9 test scenarios pass with real IBKR data
-3. **Performance**: No high-impact optimization issues remaining; baseline measurements recorded
+3. **Performance**: No high-impact optimization issues remaining; baseline measurements show improvement over initial readings
 4. **No regressions**: Existing 16 integration tests still pass
+5. **Iterative convergence**: Performance optimization loop completed with all targets met or documented exceptions

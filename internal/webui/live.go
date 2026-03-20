@@ -100,9 +100,14 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 	return resp, nil
 }
 
-// fetchLiveDashboard fetches all watchlist symbols concurrently (max 2 at a time
-// to respect IB pacing rules) and runs batch quick analysis on the Python engine.
+// fetchLiveDashboard fetches all watchlist symbols concurrently (max 5 at a time)
+// and runs batch quick analysis on the Python engine.
+// Overall timeout: 3 minutes for the entire dashboard refresh.
 func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, error) {
+	// Set overall timeout for the entire operation
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
 	mgr := watchlist.NewManager(s.store)
 	items, err := mgr.List(ctx)
 	if err != nil {
@@ -120,14 +125,14 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 
 	svc := server.NewMarketDataService(ibClient, s.store)
 
-	// Bounded-concurrency fetch (max 2 simultaneous IB requests)
+	// Bounded-concurrency fetch (max 5 simultaneous IB requests for faster processing)
 	type result struct {
 		idx  int
 		data *analysisv1.SingleStockData
 		err  error
 	}
 	results := make(chan result, len(items))
-	sem := make(chan struct{}, 2)
+	sem := make(chan struct{}, 5) // Increased from 2 to 5
 
 	var wg sync.WaitGroup
 	for i, item := range items {
@@ -167,7 +172,8 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 	}
 	defer analysisClient.Close()
 
-	batchCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	// Use remaining time from parent context, or 90 seconds (whichever is shorter)
+	batchCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
 	batchResp, err := analysisClient.BatchQuickAnalysis(batchCtx, &analysisv1.BatchQuickAnalysisRequest{
@@ -176,7 +182,7 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		AvailableCapital: s.cfg.Capital,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("batch analysis: %w", err)
+		return nil, fmt.Errorf("batch analysis (fetched %d/%d symbols): %w", len(stocks), len(items), err)
 	}
 
 	now := time.Now().UTC()

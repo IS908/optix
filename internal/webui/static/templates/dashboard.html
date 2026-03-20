@@ -209,4 +209,212 @@
 </details>
 {{end}}
 
+<script>
+// Frontend polling for automatic data updates
+const FreshnessPoller = {
+    interval: 30000,  // 30 seconds
+    lastFreshness: {},
+    timerId: null,
+
+    start() {
+        this.poll();  // Immediate first poll
+        this.timerId = setInterval(() => this.poll(), this.interval);
+    },
+
+    stop() {
+        if (this.timerId) {
+            clearInterval(this.timerId);
+            this.timerId = null;
+        }
+    },
+
+    async poll() {
+        try {
+            const resp = await fetch('/api/freshness');
+            if (!resp.ok) throw new Error('Freshness fetch failed');
+
+            const data = await resp.json();
+            const changed = this.detectChanges(data.watchlist);
+
+            if (changed.length > 0) {
+                await this.updateData(changed);
+            }
+        } catch (err) {
+            console.error('Freshness poll error:', err);
+        }
+    },
+
+    detectChanges(current) {
+        const changed = [];
+
+        for (const item of current) {
+            const prev = this.lastFreshness[item.symbol];
+
+            // Only compare cache_at timestamp
+            if (!prev || prev.cache_at !== item.cache_at) {
+                changed.push(item.symbol);
+            }
+
+            this.lastFreshness[item.symbol] = item;
+        }
+
+        return changed;
+    },
+
+    async updateData(symbols) {
+        // Fetch full dashboard data
+        const resp = await fetch('/api/dashboard');
+        if (!resp.ok) throw new Error('Dashboard fetch failed');
+
+        const data = await resp.json();
+
+        // Update only changed rows
+        for (const symbol of symbols) {
+            const snapshot = data.snapshots.find(s => s.symbol === symbol);
+            if (snapshot) {
+                this.updateRow(symbol, snapshot);
+            }
+        }
+    },
+
+    updateRow(symbol, data) {
+        const row = document.querySelector(`a[href="/analyze/${symbol}"]`)?.closest('tr');
+        if (!row) return;
+
+        // Flash animation on price cell
+        const priceCell = row.querySelector('td:nth-child(2)');
+        if (priceCell) {
+            priceCell.classList.add('flash-green');
+            priceCell.textContent = `$${data.price.toFixed(2)}`;
+            setTimeout(() => priceCell.classList.remove('flash-green'), 1500);
+        }
+
+        // Update trend badge (create elements safely)
+        const trendCell = row.querySelector('td:nth-child(3)');
+        if (trendCell && data.trend) {
+            const span = document.createElement('span');
+            span.className = 'inline-block px-2 py-0.5 rounded text-xs';
+
+            if (data.trend === 'bullish') {
+                span.className += ' bg-emerald-950 text-emerald-300 border border-emerald-800';
+                span.textContent = '↑ Bull';
+            } else if (data.trend === 'bearish') {
+                span.className += ' bg-red-950 text-red-300 border border-red-800';
+                span.textContent = '↓ Bear';
+            } else {
+                span.className += ' bg-gray-800 text-gray-300 border border-gray-700';
+                span.textContent = '→ Neut';
+            }
+
+            trendCell.textContent = '';
+            trendCell.appendChild(span);
+        }
+
+        // Update RSI
+        const rsiCell = row.querySelector('td:nth-child(4)');
+        if (rsiCell && data.rsi !== undefined) {
+            rsiCell.textContent = data.rsi.toFixed(0);
+            rsiCell.className = 'px-4 py-3 text-right font-mono';
+            if (data.rsi > 70) rsiCell.className += ' text-red-400 font-bold';
+            else if (data.rsi < 30) rsiCell.className += ' text-emerald-400 font-bold';
+        }
+
+        // Update IV Rank
+        const ivCell = row.querySelector('td:nth-child(5)');
+        if (ivCell && data.iv_rank !== undefined) {
+            ivCell.textContent = `${(data.iv_rank * 100).toFixed(0)}%`;
+            ivCell.className = 'px-4 py-3 text-right font-mono';
+            if (data.iv_rank > 0.5) ivCell.className += ' text-amber-400 font-bold';
+        }
+
+        // Update Max Pain
+        const mpCell = row.querySelector('td:nth-child(6)');
+        if (mpCell && data.max_pain !== undefined) {
+            if (data.max_pain > 0) {
+                mpCell.textContent = `$${data.max_pain.toFixed(0)}`;
+            } else {
+                const span = document.createElement('span');
+                span.className = 'text-gray-600';
+                span.textContent = 'N/A';
+                mpCell.textContent = '';
+                mpCell.appendChild(span);
+            }
+        }
+
+        // Update PCR
+        const pcrCell = row.querySelector('td:nth-child(7)');
+        if (pcrCell && data.pcr !== undefined) {
+            pcrCell.textContent = data.pcr.toFixed(2);
+        }
+
+        // Update recommendation
+        const recCell = row.querySelector('td:nth-child(9)');
+        if (recCell && data.recommendation) {
+            recCell.textContent = data.recommendation;
+        }
+
+        // Update score
+        const scoreCell = row.querySelector('td:nth-child(10)');
+        if (scoreCell && data.opportunity_score !== undefined) {
+            scoreCell.textContent = data.opportunity_score.toFixed(0);
+            scoreCell.className = 'px-4 py-3 text-right font-mono font-bold';
+            if (data.opportunity_score >= 50) scoreCell.className += ' text-emerald-400';
+            else scoreCell.className += ' text-gray-400';
+        }
+
+        // Pulse animation on entire row
+        row.classList.add('pulse-green');
+        setTimeout(() => row.classList.remove('pulse-green'), 1500);
+    }
+};
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    FreshnessPoller.start();
+});
+
+// Stop polling when page is hidden (save bandwidth)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        FreshnessPoller.stop();
+    } else {
+        FreshnessPoller.start();
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    FreshnessPoller.stop();
+});
+</script>
+
+<style>
+/* Flash animation for price updates */
+.flash-green {
+    animation: flash-green 1.5s ease-out;
+}
+
+@keyframes flash-green {
+    0% { background-color: rgba(16, 185, 129, 0.3); }
+    100% { background-color: transparent; }
+}
+
+/* Pulse animation for row updates */
+.pulse-green {
+    animation: pulse-green 1.5s ease-out;
+}
+
+@keyframes pulse-green {
+    0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+}
+</style>
+
 {{end}}

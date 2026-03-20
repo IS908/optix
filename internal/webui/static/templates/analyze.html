@@ -446,4 +446,46 @@
 </section>
 
 {{end}}{{/* end {{else}} (NoData = false) */}}
+
+<script>
+// Simplified polling for single-symbol analyze page
+const AnalyzePoller = {
+    interval: 30000,  // 30 seconds
+    symbol: '{{.Summary.Symbol}}',
+    lastCacheAt: null,
+
+    start() {
+        if (!this.symbol) return;  // Skip if no symbol loaded
+        this.poll();
+        setInterval(() => this.poll(), this.interval);
+    },
+
+    async poll() {
+        try {
+            const resp = await fetch('/api/freshness');
+            if (!resp.ok) return;
+
+            const data = await resp.json();
+            const item = data.watchlist.find(s => s.symbol === this.symbol);
+
+            if (item && this.lastCacheAt && item.cache_at !== this.lastCacheAt) {
+                // Data changed - reload page to show updated analysis
+                window.location.reload();
+            }
+
+            if (item) {
+                this.lastCacheAt = item.cache_at;
+            }
+        } catch (err) {
+            console.error('Freshness poll error:', err);
+        }
+    }
+};
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    AnalyzePoller.start();
+});
+</script>
+
 {{end}}{{/* end {{define "content"}} */}}

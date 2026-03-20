@@ -3,6 +3,7 @@ package webui
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,24 @@ func (s *Server) handleWatchlistAdd(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/watchlist?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+
+	// Configure auto-refresh settings for newly added symbols
+	autoRefresh := r.FormValue("auto_refresh") == "true"
+	refreshInterval := 15 // default
+	if intervalStr := r.FormValue("refresh_interval"); intervalStr != "" {
+		if val, err := strconv.Atoi(intervalStr); err == nil && val > 0 {
+			refreshInterval = val
+		}
+	}
+
+	// Apply auto-refresh config to each added symbol
+	for _, symbol := range parts {
+		if err := s.store.UpdateWatchlistConfig(symbol, autoRefresh, refreshInterval); err != nil {
+			// Log error but don't fail the whole operation
+			_ = err
+		}
+	}
+
 	added := strings.Join(parts, ", ")
 	http.Redirect(w, r, "/watchlist?success="+url.QueryEscape("Added: "+added), http.StatusSeeOther)
 }
@@ -194,4 +213,58 @@ func (s *Server) getAnalyzeData(r *http.Request, symbol string) (*AnalyzeRespons
 		return s.fetchLiveAnalysis(r.Context(), symbol)
 	}
 	return s.fetchCachedAnalysis(r.Context(), symbol)
+}
+
+// ─── Freshness API ────────────────────────────────────────────────────────────
+
+// FreshnessResponse contains timestamp information for all watchlist symbols.
+type FreshnessResponse struct {
+	Watchlist  []FreshnessItem `json:"watchlist"`
+	ServerTime time.Time       `json:"server_time"`
+}
+
+// FreshnessItem contains freshness timestamps for a single symbol.
+type FreshnessItem struct {
+	Symbol     string    `json:"symbol"`
+	QuoteAt    time.Time `json:"quote_at"`
+	OHLCVAt    time.Time `json:"ohlcv_at"`
+	OptionsAt  time.Time `json:"options_at"`
+	CacheAt    time.Time `json:"cache_at"`
+	SnapshotAt time.Time `json:"snapshot_at"`
+}
+
+// handleFreshness returns timestamp information for all watchlist symbols.
+// This is called by frontend JavaScript polling to detect data changes.
+func (s *Server) handleFreshness(w http.ResponseWriter, r *http.Request) {
+	wm := watchlist.NewManager(s.store)
+	items, err := wm.List(r.Context())
+	if err != nil {
+		writeErrorJSON(w, "failed to load watchlist: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	freshness := make([]FreshnessItem, 0, len(items))
+	for _, item := range items {
+		f, err := s.store.GetSymbolFreshness(r.Context(), item.Symbol)
+		if err != nil {
+			// If freshness not found, skip this symbol
+			continue
+		}
+
+		freshness = append(freshness, FreshnessItem{
+			Symbol:     f.Symbol,
+			QuoteAt:    f.QuoteAt,
+			OHLCVAt:    f.OHLCVAt,
+			OptionsAt:  f.OptionsAt,
+			CacheAt:    f.CacheAt,
+			SnapshotAt: f.SnapshotAt,
+		})
+	}
+
+	resp := FreshnessResponse{
+		Watchlist:  freshness,
+		ServerTime: time.Now().UTC(),
+	}
+
+	writeJSON(w, resp)
 }

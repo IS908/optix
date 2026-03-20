@@ -15,7 +15,10 @@ import (
 )
 
 //go:embed migrations/001_initial.sql
-var migrationSQL string
+var migration001SQL string
+
+//go:embed migrations/002_background_refresh.sql
+var migration002SQL string
 
 // Store implements data persistence using SQLite.
 type Store struct {
@@ -55,9 +58,16 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(migrationSQL); err != nil {
-		return err
+	// Migration 001: Initial schema
+	if _, err := s.db.Exec(migration001SQL); err != nil {
+		return fmt.Errorf("migration 001: %w", err)
 	}
+
+	// Migration 002: Background refresh system
+	if _, err := s.db.Exec(migration002SQL); err != nil {
+		return fmt.Errorf("migration 002: %w", err)
+	}
+
 	// Idempotent schema additions — error is swallowed when column already exists.
 	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
 	return nil
@@ -361,4 +371,268 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		result = append(result, f)
 	}
 	return result, rows.Err()
+}
+
+// --- Background Refresh ---
+
+// GetSymbolsNeedingRefresh returns symbols that need background refresh based on their
+// auto_refresh_enabled flag and last refresh timestamp.
+func (s *Store) GetSymbolsNeedingRefresh() ([]model.SymbolRefresh, error) {
+	query := `
+		SELECT
+			symbol,
+			refresh_interval_minutes,
+			COALESCE(last_refreshed_at, '1970-01-01T00:00:00Z') as last_refresh
+		FROM watchlist
+		WHERE auto_refresh_enabled = 1
+		  AND (
+			  last_refreshed_at IS NULL
+			  OR datetime(last_refreshed_at, '+' || refresh_interval_minutes || ' minutes') <= datetime('now')
+		  )
+		ORDER BY last_refreshed_at ASC NULLS FIRST
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []model.SymbolRefresh
+	for rows.Next() {
+		var sr model.SymbolRefresh
+		var lastRefreshStr string
+
+		if err := rows.Scan(&sr.Symbol, &sr.Interval, &lastRefreshStr); err != nil {
+			continue
+		}
+
+		sr.LastRefresh, _ = time.Parse(time.RFC3339, lastRefreshStr)
+		results = append(results, sr)
+	}
+
+	return results, nil
+}
+
+// UpdateLastRefreshTime updates the watchlist last refresh timestamp.
+func (s *Store) UpdateLastRefreshTime(symbol string, t time.Time) error {
+	_, err := s.db.Exec(`
+		UPDATE watchlist
+		SET last_refreshed_at = ?
+		WHERE symbol = ?
+	`, t.Format(time.RFC3339), symbol)
+	return err
+}
+
+// UpdateWatchlistConfig updates auto-refresh settings for a symbol.
+func (s *Store) UpdateWatchlistConfig(symbol string, enabled bool, intervalMinutes int) error {
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.Exec(`
+		UPDATE watchlist
+		SET auto_refresh_enabled = ?,
+			refresh_interval_minutes = ?
+		WHERE symbol = ?
+	`, enabledInt, intervalMinutes, symbol)
+	return err
+}
+
+// CreateBackgroundJob inserts a new job record and returns its ID.
+func (s *Store) CreateBackgroundJob(job *model.BackgroundJob) (int64, error) {
+	result, err := s.db.Exec(`
+		INSERT INTO background_jobs
+		(symbol, job_type, status, started_at, error_message, retry_count, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`,
+		job.Symbol,
+		job.JobType,
+		job.Status,
+		timeToString(job.StartedAt),
+		job.ErrorMessage,
+		job.RetryCount,
+		job.CreatedAt.Format(time.RFC3339),
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// UpdateBackgroundJob updates job status after completion/failure.
+func (s *Store) UpdateBackgroundJob(job *model.BackgroundJob) error {
+	_, err := s.db.Exec(`
+		UPDATE background_jobs
+		SET status = ?,
+			completed_at = ?,
+			error_message = ?,
+			retry_count = ?
+		WHERE id = ?
+	`,
+		job.Status,
+		timeToString(job.CompletedAt),
+		job.ErrorMessage,
+		job.RetryCount,
+		job.ID,
+	)
+	return err
+}
+
+// GetBackgroundJob retrieves a single job by ID.
+func (s *Store) GetBackgroundJob(id int64) (*model.BackgroundJob, error) {
+	row := s.db.QueryRow(`
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE id = ?
+	`, id)
+
+	var job model.BackgroundJob
+	var startedStr, completedStr sql.NullString
+	var createdStr string
+
+	err := row.Scan(
+		&job.ID,
+		&job.Symbol,
+		&job.JobType,
+		&job.Status,
+		&startedStr,
+		&completedStr,
+		&job.ErrorMessage,
+		&job.RetryCount,
+		&createdStr,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if startedStr.Valid {
+		t, _ := time.Parse(time.RFC3339, startedStr.String)
+		job.StartedAt = &t
+	}
+
+	if completedStr.Valid {
+		t, _ := time.Parse(time.RFC3339, completedStr.String)
+		job.CompletedAt = &t
+	}
+
+	job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+	return &job, nil
+}
+
+// GetBackgroundJobsForSymbol returns job history for a symbol.
+func (s *Store) GetBackgroundJobsForSymbol(symbol string) ([]*model.BackgroundJob, error) {
+	query := `
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE symbol = ?
+		ORDER BY created_at DESC
+		LIMIT 20
+	`
+
+	rows, err := s.db.Query(query, symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*model.BackgroundJob
+	for rows.Next() {
+		var job model.BackgroundJob
+		var startedStr, completedStr sql.NullString
+		var createdStr string
+
+		err := rows.Scan(
+			&job.ID, &job.Symbol, &job.JobType, &job.Status,
+			&startedStr, &completedStr, &job.ErrorMessage,
+			&job.RetryCount, &createdStr,
+		)
+
+		if err != nil {
+			continue
+		}
+
+		if startedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			job.StartedAt = &t
+		}
+
+		if completedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			job.CompletedAt = &t
+		}
+
+		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+		jobs = append(jobs, &job)
+	}
+
+	return jobs, nil
+}
+
+// GetRecentFailures returns failed jobs from the last N hours.
+func (s *Store) GetRecentFailures(hours int) ([]*model.BackgroundJob, error) {
+	query := `
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE status = 'failed'
+		  AND retry_count >= 3
+		  AND created_at > datetime('now', '-' || ? || ' hours')
+		ORDER BY created_at DESC
+		LIMIT 20
+	`
+
+	rows, err := s.db.Query(query, hours)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*model.BackgroundJob
+	for rows.Next() {
+		var job model.BackgroundJob
+		var startedStr, completedStr sql.NullString
+		var createdStr string
+
+		err := rows.Scan(
+			&job.ID, &job.Symbol, &job.JobType, &job.Status,
+			&startedStr, &completedStr, &job.ErrorMessage,
+			&job.RetryCount, &createdStr,
+		)
+
+		if err != nil {
+			continue
+		}
+
+		if startedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			job.StartedAt = &t
+		}
+
+		if completedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			job.CompletedAt = &t
+		}
+
+		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+		jobs = append(jobs, &job)
+	}
+
+	return jobs, nil
+}
+
+// timeToString converts a nullable time pointer to RFC3339 string.
+func timeToString(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }

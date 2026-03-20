@@ -43,3 +43,23 @@ type QuickSummary struct {
 	OpportunityScore float64 // 0-100
 	SnapshotDate     string  // YYYY-MM-DD, populated when reading from DB
 }
+
+// SymbolRefresh represents a symbol that needs background refresh.
+type SymbolRefresh struct {
+	Symbol      string
+	Interval    int       // Refresh interval in minutes
+	LastRefresh time.Time // Last successful refresh timestamp
+}
+
+// BackgroundJob represents a background task execution record.
+type BackgroundJob struct {
+	ID           int64
+	Symbol       string
+	JobType      string // "analyze"
+	Status       string // "pending", "running", "success", "failed"
+	StartedAt    *time.Time
+	CompletedAt  *time.Time
+	ErrorMessage string
+	RetryCount   int
+	CreatedAt    time.Time
+}

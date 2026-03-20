@@ -124,6 +124,7 @@ func (s *Server) registerRoutes() {
 	// JSON API
 	s.mux.HandleFunc("GET /api/dashboard", s.handleAPIDashboard)
 	s.mux.HandleFunc("GET /api/analyze/{symbol}", s.handleAPIAnalyze)
+	s.mux.HandleFunc("GET /api/freshness", s.handleFreshness)
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

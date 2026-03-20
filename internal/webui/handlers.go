@@ -182,10 +182,11 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		// Still trigger a background refresh so the next page load may have data.
 		s.maybeBackgroundRefresh(symbol)
 		renderPage(w, "analyze.html", &AnalyzeResponse{
-			Symbol:    symbol,
-			NoData:    true,
-			Error:     finalErr.Error(),
-			Freshness: freshness,
+			GeneratedAt: time.Now().UTC(),
+			Symbol:      symbol,
+			NoData:      true,
+			Error:       finalErr.Error(),
+			Freshness:   freshness,
 		})
 		return
 	}

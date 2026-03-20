@@ -136,7 +136,7 @@
 
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
     <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">IV (HV×0.75)</div>
-    <div class="text-lg font-mono font-bold mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+    <div class="text-lg font-mono font-bold mt-1">{{printf "%.1f" (mul .Options.IVCurrent 100)}}%</div>
     <div class="text-gray-500 text-xs mt-0.5">Rank {{printf "%.0f" .Options.IVRank}}% · Pctile {{printf "%.0f" .Options.IVPercentile}}%</div>
   </div>
 
@@ -253,7 +253,7 @@
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="bg-gray-800/60 rounded-lg p-3 text-center">
       <div class="text-gray-500 text-xs">IV (HV×0.75)</div>
-      <div class="font-mono text-sm mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+      <div class="font-mono text-sm mt-1">{{printf "%.1f" (mul .Options.IVCurrent 100)}}%</div>
     </div>
     <div class="bg-gray-800/60 rounded-lg p-3 text-center">
       <div class="text-gray-500 text-xs">IV Rank</div>

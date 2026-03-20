@@ -308,6 +308,13 @@ func (s *Store) DeleteAnalysisCache(ctx context.Context, symbol string) error {
 	return err
 }
 
+// DeleteBackgroundJobs removes all background job records for a symbol.
+func (s *Store) DeleteBackgroundJobs(ctx context.Context, symbol string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM background_jobs WHERE symbol = ?`, symbol)
+	return err
+}
+
 // SaveAnalysisCache persists a full analysis JSON payload for a symbol.
 func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []byte) error {
 	_, err := s.db.ExecContext(ctx, `

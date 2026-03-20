@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func protoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string, live bool) *AnalyzeResponse {
+func ProtoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string, live bool) *AnalyzeResponse {
 	ar := &AnalyzeResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   !live,

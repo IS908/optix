@@ -63,7 +63,7 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 		return nil, fmt.Errorf("analysis engine: %w", err)
 	}
 
-	resp := protoToAnalyzeResponse(protoResp, symbol, true)
+	resp := ProtoToAnalyzeResponse(protoResp, symbol, true)
 
 	// Persist to cache for future cache-mode hits
 	if payload, jerr := json.Marshal(resp); jerr == nil {

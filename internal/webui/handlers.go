@@ -80,6 +80,7 @@ func (s *Server) handleWatchlistRemove(w http.ResponseWriter, r *http.Request) {
 	// dashboard or analyze page (best-effort — don't fail the remove if these error).
 	_ = s.store.DeleteWatchlistSnapshots(r.Context(), symbol)
 	_ = s.store.DeleteAnalysisCache(r.Context(), symbol)
+	_ = s.store.DeleteBackgroundJobs(r.Context(), symbol)
 
 	http.Redirect(w, r, "/watchlist?success="+url.QueryEscape("Removed: "+symbol), http.StatusSeeOther)
 }

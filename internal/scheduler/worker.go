@@ -13,6 +13,7 @@ import (
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
+	"github.com/IS908/optix/internal/webui"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -162,55 +163,34 @@ func (w *Worker) fetchAndCache(ctx context.Context, symbol string) error {
 		return fmt.Errorf("analysis engine: %w", err)
 	}
 
-	// Convert proto response to JSON and save to cache
-	// We use a simplified version that focuses on caching
-	cacheData := map[string]interface{}{
-		"symbol":      symbol,
-		"price":       stockData.Quote.GetLast(),
-		"trend":       "", // Will be filled by analysis
-		"rsi":         0.0,
-		"iv_rank":     0.0,
-		"max_pain":    0.0,
-		"pcr":         0.0,
-		"strategies":  []interface{}{},
-		"cached_at":   time.Now().UTC().Format(time.RFC3339),
-	}
+	// Convert proto response to full AnalyzeResponse (same as webui.fetchLiveAnalysis)
+	resp := webui.ProtoToAnalyzeResponse(protoResp, symbol, true)
 
-	// Extract analysis results
-	if tech := protoResp.GetTechnical(); tech != nil {
-		cacheData["trend"] = tech.GetTrend()
-		cacheData["rsi"] = tech.GetRsi_14()
-	}
-
-	if opts := protoResp.GetOptions(); opts != nil {
-		cacheData["iv_rank"] = opts.GetIvRank()
-		cacheData["max_pain"] = opts.GetMaxPain()
-		cacheData["pcr"] = opts.GetPcrOi()
-	}
-
-	payload, err := json.Marshal(cacheData)
+	payload, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("marshal cache data: %w", err)
+		return fmt.Errorf("marshal analysis response: %w", err)
 	}
 
 	if err := w.store.SaveAnalysisCache(ctx, symbol, payload); err != nil {
 		return fmt.Errorf("save analysis cache: %w", err)
 	}
 
-	// Save watchlist snapshot
+	// Save watchlist snapshot with all fields (including range forecasts)
 	snap := model.QuickSummary{
 		Symbol:      symbol,
-		Price:       stockData.Quote.GetLast(),
-		Trend:       cacheData["trend"].(string),
-		RSI:         cacheData["rsi"].(float64),
-		IVRank:      cacheData["iv_rank"].(float64),
-		MaxPain:     cacheData["max_pain"].(float64),
-		PCR:         cacheData["pcr"].(float64),
+		Price:       resp.Summary.Price,
+		Trend:       resp.Technical.Trend,
+		RSI:         resp.Technical.RSI14,
+		IVRank:      resp.Options.IVRank,
+		MaxPain:     resp.Options.MaxPain,
+		PCR:         resp.Options.PCROi,
+		RangeLow1S:  resp.Outlook.RangeLow1S,
+		RangeHigh1S: resp.Outlook.RangeHigh1S,
 	}
 
-	if strats := protoResp.GetStrategies(); len(strats) > 0 {
-		snap.Recommendation = strats[0].GetStrategyName()
-		snap.OpportunityScore = strats[0].GetScore()
+	if len(resp.Strategies) > 0 {
+		snap.Recommendation = resp.Strategies[0].StrategyName
+		snap.OpportunityScore = resp.Strategies[0].Score
 	}
 
 	if err := w.store.SaveWatchlistSnapshot(ctx, snap); err != nil {

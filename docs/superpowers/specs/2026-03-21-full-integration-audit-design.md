@@ -66,6 +66,35 @@ The Optix project recently completed an async background refresh system implemen
    - `handleWatchlistAdd`: Verify symbol validation (empty, invalid tickers, duplicates)
    - `handleWatchlistRemove`: Verify cascading deletes (snapshots, analysis cache, background jobs)
 
+10. **Metric calculation correctness audit** (`python/src/optix_engine/`)
+
+    All quantitative analysis runs in Python (Go is pass-through only). Verify each metric's formula, parameters, edge cases, and output scale:
+
+    | Metric | File | Key Verification Points |
+    |--------|------|------------------------|
+    | **RSI** | `technical/indicators.py` | Period=14, Wilder's EMA smoothing, output 0-100, NaN when <14 bars |
+    | **MACD** | `technical/indicators.py` | Fast=12, Slow=26, Signal=9, histogram = line - signal |
+    | **Bollinger Bands** | `technical/indicators.py` | Period=20, multiplier=2.0, upper/mid/lower consistent |
+    | **IV Rank** | `grpc_server/analysis_servicer.py:555-565` | Uses HV20 as IV proxy (not actual market IV), scale 0-100, defaults to 50 when <5 data points |
+    | **IV Percentile** | `grpc_server/analysis_servicer.py` | % of days below current HV, distinct from IV Rank |
+    | **HV20** | `grpc_server/analysis_servicer.py:535-544` | Annualized (×√252), floor 5%, default 30% when <2 bars |
+    | **IV Correction** | `analysis_servicer.py:33` | `_IV_HV_RATIO = 0.75` — empirical haircut for pricing; verify NOT applied to IV Rank/Percentile |
+    | **Max Pain** | `options/max_pain.py` | Sum of intrinsic × OI across all strikes, pick minimum pain strike; returns 0.0 if no strikes |
+    | **PCR** | `options/open_interest.py:81-104` | OI-based by default; **edge case**: returns `inf` when call_oi=0 — verify frontend handles this |
+    | **Trend Score** | `analysis_servicer.py:568-638` | Weighted: MA 35% + MACD 25% + RSI 20% + Volume 20%; output -1.0 to +1.0; thresholds ±0.30 for bullish/bearish |
+    | **Support/Resistance** | `technical/support_resistance.py` | 6 sources: MAs, pivots(window=5), Fibonacci(60-bar), Bollinger, OI walls(top 5), max pain; strength scoring |
+    | **Range Forecast** | `analysis_servicer.py:238-243` | 1σ/2σ using IV-for-pricing × price × √(T/365); floor at 0.01; verify 1σ≈68%, 2σ≈95% confidence |
+    | **Strategy Score** | `strategy/recommender.py:472-497` | 5 factors: PoP 30% + R/R 25% + theta 20% + IV 15% + safety 10%; output 0-100 |
+    | **Probability of Profit** | `strategy/recommender.py:250-429` | Delta-as-proxy for probability; sell put: 1-|delta|; spreads: 1-|delta(short)| |
+    | **Black-Scholes** | `options/pricing.py` | Standard BSM; Newton-Raphson IV solver with Brent fallback; σ range 0.001-5.0 |
+    | **IV Environment** | `recommender.py:91-97` | ≥50 high, 30-49 medium, <30 low; low IV → "No Trade" recommendation |
+
+    **Cross-layer verification**:
+    - Verify IV Rank scale is 0-100 at proto, Go, and JS layers (not 0-1) — JS `dashboard.html:332` does `iv_rank * 100` which would be wrong if already 0-100
+    - Verify PCR `inf` value is handled gracefully in JSON serialization (Go `encoding/json` marshals +Inf as error)
+    - Verify trend_score sign convention: positive = bullish (consistent in proto, Go, JS color coding)
+    - Verify opportunity_score output range matches frontend progress bar expectations (0-100?)
+
 ### Output
 - List of issues found with file:line references
 - Fixes applied inline during audit (not batched)

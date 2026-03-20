@@ -57,6 +57,13 @@
           </a>
         </td>
 
+        {{if .NoData}}
+        {{/* No data yet - show placeholder */}}
+        <td colspan="9" class="px-4 py-3 text-center text-gray-500 text-sm italic">
+          等待后台刷新数据中...
+        </td>
+        {{else}}
+        {{/* Normal data display */}}
         {{/* Price */}}
         <td class="px-4 py-3 text-right font-mono">${{printf "%.2f" .Price}}</td>
 
@@ -109,7 +116,7 @@
 
         {{/* Date */}}
         <td class="px-4 py-3 text-right text-gray-500 text-xs">{{.SnapshotDate}}</td>
-
+        {{end}}
       </tr>
       {{end}}
     </tbody>

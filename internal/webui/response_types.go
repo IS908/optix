@@ -41,6 +41,7 @@ type SymbolSummary struct {
 	Recommendation   string  `json:"recommendation"`
 	OpportunityScore float64 `json:"opportunity_score"`
 	SnapshotDate     string  `json:"snapshot_date"`
+	NoData           bool    `json:"no_data,omitempty"` // true = no snapshot yet, show "待刷新"
 }
 
 // ─── Analyze ─────────────────────────────────────────────────────────────────

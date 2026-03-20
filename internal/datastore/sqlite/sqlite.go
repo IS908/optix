@@ -245,16 +245,35 @@ func (s *Store) SaveWatchlistSnapshot(ctx context.Context, snap model.QuickSumma
 
 // GetLatestSnapshots returns the most-recent watchlist_snapshot row per symbol,
 // sorted by opportunity_score descending. Used by the web dashboard cache path.
+// Includes all watchlist symbols, even if they have no snapshot yet (NULL values).
 func (s *Store) GetLatestSnapshots(ctx context.Context) ([]model.QuickSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT symbol, price, trend, rsi, iv_rank, max_pain, pcr,
-		       range_low_1s, range_high_1s, recommendation, opportunity_score,
-		       snapshot_date
-		FROM watchlist_snapshots
-		WHERE (symbol, snapshot_date) IN (
-		    SELECT symbol, MAX(snapshot_date) FROM watchlist_snapshots GROUP BY symbol
-		)
-		ORDER BY opportunity_score DESC`)
+		SELECT
+			w.symbol,
+			COALESCE(ws.price, 0) as price,
+			COALESCE(ws.trend, '') as trend,
+			COALESCE(ws.rsi, 0) as rsi,
+			COALESCE(ws.iv_rank, 0) as iv_rank,
+			COALESCE(ws.max_pain, 0) as max_pain,
+			COALESCE(ws.pcr, 0) as pcr,
+			COALESCE(ws.range_low_1s, 0) as range_low_1s,
+			COALESCE(ws.range_high_1s, 0) as range_high_1s,
+			COALESCE(ws.recommendation, '') as recommendation,
+			COALESCE(ws.opportunity_score, 0) as opportunity_score,
+			COALESCE(ws.snapshot_date, '') as snapshot_date
+		FROM watchlist w
+		LEFT JOIN (
+			SELECT symbol, price, trend, rsi, iv_rank, max_pain, pcr,
+			       range_low_1s, range_high_1s, recommendation, opportunity_score,
+			       snapshot_date
+			FROM watchlist_snapshots
+			WHERE (symbol, snapshot_date) IN (
+				SELECT symbol, MAX(snapshot_date)
+				FROM watchlist_snapshots
+				GROUP BY symbol
+			)
+		) ws ON ws.symbol = w.symbol
+		ORDER BY ws.opportunity_score DESC NULLS LAST, w.symbol ASC`)
 	if err != nil {
 		return nil, err
 	}

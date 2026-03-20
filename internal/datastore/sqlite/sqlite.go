@@ -63,13 +63,53 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("migration 001: %w", err)
 	}
 
-	// Migration 002: Background refresh system
-	if _, err := s.db.Exec(migration002SQL); err != nil {
+	// Migration 002: Background refresh system (idempotent)
+	if err := s.migrate002(); err != nil {
 		return fmt.Errorf("migration 002: %w", err)
 	}
 
 	// Idempotent schema additions — error is swallowed when column already exists.
 	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
+	return nil
+}
+
+// migrate002 applies migration 002 idempotently by checking for existing columns first.
+func (s *Store) migrate002() error {
+	// Add watchlist columns only if they don't exist
+	if err := s.addColumnIfNotExists("watchlist", "auto_refresh_enabled", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfNotExists("watchlist", "refresh_interval_minutes", "INTEGER DEFAULT 15"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfNotExists("watchlist", "last_refreshed_at", "TEXT"); err != nil {
+		return err
+	}
+
+	// Execute the rest of the migration (indexes and tables use IF NOT EXISTS)
+	if _, err := s.db.Exec(migration002SQL); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists adds a column to a table only if it doesn't already exist.
+func (s *Store) addColumnIfNotExists(table, column, columnDef string) error {
+	// Check if column exists by querying pragma_table_info
+	var exists bool
+	row := s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) > 0 FROM pragma_table_info('%s') WHERE name = ?", table), column)
+	if err := row.Scan(&exists); err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+
+	if !exists {
+		query := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnDef)
+		if _, err := s.db.Exec(query); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", table, column, err)
+		}
+	}
+
 	return nil
 }
 

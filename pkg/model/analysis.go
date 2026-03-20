@@ -15,10 +15,12 @@ type SymbolFreshness struct {
 
 // WatchlistItem represents a stock in the user's watchlist.
 type WatchlistItem struct {
-	Symbol  string
-	AddedAt string // ISO8601
-	Notes   string
-	Tags    []string
+	Symbol                 string
+	AddedAt                string // ISO8601
+	Notes                  string
+	Tags                   []string
+	AutoRefreshEnabled     bool
+	RefreshIntervalMinutes int
 }
 
 // PriceLevel represents a support or resistance level.

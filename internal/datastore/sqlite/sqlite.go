@@ -317,7 +317,13 @@ func (s *Store) GetAnalysisCache(ctx context.Context, symbol string) ([]byte, ti
 
 // GetWatchlist returns all watchlist symbols.
 func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT symbol, added_at, notes, tags FROM watchlist ORDER BY added_at`)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT symbol, added_at, notes, tags,
+		       COALESCE(auto_refresh_enabled, 0) as auto_refresh_enabled,
+		       COALESCE(refresh_interval_minutes, 15) as refresh_interval_minutes
+		FROM watchlist
+		ORDER BY added_at
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -327,9 +333,11 @@ func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error)
 	for rows.Next() {
 		var item model.WatchlistItem
 		var tags string
-		if err := rows.Scan(&item.Symbol, &item.AddedAt, &item.Notes, &tags); err != nil {
+		var autoRefreshInt int
+		if err := rows.Scan(&item.Symbol, &item.AddedAt, &item.Notes, &tags, &autoRefreshInt, &item.RefreshIntervalMinutes); err != nil {
 			return nil, err
 		}
+		item.AutoRefreshEnabled = autoRefreshInt == 1
 		// tags is JSON, but we store as simple string for now
 		items = append(items, item)
 	}

@@ -43,6 +43,13 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
 
+	// Set busy timeout so concurrent writers retry instead of immediately
+	// returning SQLITE_BUSY. 5 seconds is generous for short writes.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()

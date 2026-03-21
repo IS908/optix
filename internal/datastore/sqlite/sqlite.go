@@ -32,23 +32,18 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("create db directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Encode PRAGMAs in the DSN so that every connection opened by the
+	// database/sql connection pool inherits them — not just the first one.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Enable WAL mode for better concurrent read performance
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set WAL mode: %w", err)
-	}
-
-	// Set busy timeout so concurrent writers retry instead of immediately
-	// returning SQLITE_BUSY. 5 seconds is generous for short writes.
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set busy_timeout: %w", err)
-	}
+	// SQLite only supports a single concurrent writer.  Limiting the pool
+	// to 2 connections (1 writer + 1 reader) avoids most SQLITE_BUSY errors
+	// while still allowing reads during writes (WAL mode).
+	db.SetMaxOpenConns(2)
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {

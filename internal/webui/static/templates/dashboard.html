@@ -167,37 +167,37 @@
           </td>
 
           <td class="px-4 py-2 text-center">
-            <span class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .QuoteAt}} {{freshclass .QuoteAt}}"
+            <span data-fresh class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .QuoteAt}} {{freshclass .QuoteAt}}"
                   title="{{if not .QuoteAt.IsZero}}{{.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{else}}never fetched{{end}}">
-              {{timeago .QuoteAt}}
+              <span data-ts="{{.QuoteAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .QuoteAt}}</span>
             </span>
           </td>
 
           <td class="px-4 py-2 text-center">
-            <span class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .OHLCVAt}} {{freshclass .OHLCVAt}}"
+            <span data-fresh class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .OHLCVAt}} {{freshclass .OHLCVAt}}"
                   title="{{if not .OHLCVAt.IsZero}}{{.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{else}}never fetched{{end}}">
-              {{timeago .OHLCVAt}}
+              <span data-ts="{{.OHLCVAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .OHLCVAt}}</span>
             </span>
           </td>
 
           <td class="px-4 py-2 text-center">
-            <span class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .OptionsAt}} {{freshclass .OptionsAt}}"
+            <span data-fresh class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .OptionsAt}} {{freshclass .OptionsAt}}"
                   title="{{if not .OptionsAt.IsZero}}{{.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{else}}never fetched{{end}}">
-              {{timeago .OptionsAt}}
+              <span data-ts="{{.OptionsAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .OptionsAt}}</span>
             </span>
           </td>
 
           <td class="px-4 py-2 text-center">
-            <span class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .CacheAt}} {{freshclass .CacheAt}}"
+            <span data-fresh class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .CacheAt}} {{freshclass .CacheAt}}"
                   title="{{if not .CacheAt.IsZero}}{{.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{else}}never cached{{end}}">
-              {{timeago .CacheAt}}
+              <span data-ts="{{.CacheAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .CacheAt}}</span>
             </span>
           </td>
 
           <td class="px-4 py-2 text-center">
-            <span class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .SnapshotAt}} {{freshclass .SnapshotAt}}"
+            <span data-fresh class="inline-block px-2 py-0.5 rounded border font-mono {{freshbg .SnapshotAt}} {{freshclass .SnapshotAt}}"
                   title="{{if not .SnapshotAt.IsZero}}{{.SnapshotAt.Format "2006-01-02"}}{{else}}no snapshot yet{{end}}">
-              {{timeago .SnapshotAt}}
+              <span data-ts="{{.SnapshotAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .SnapshotAt}}</span>
             </span>
           </td>
         </tr>
@@ -257,15 +257,39 @@ const FreshnessPoller = {
         for (const item of current) {
             const prev = this.lastFreshness[item.symbol];
 
-            // Only compare cache_at timestamp
+            // Only compare cache_at timestamp for data row updates
             if (!prev || prev.cache_at !== item.cache_at) {
                 changed.push(item.symbol);
             }
+
+            // Always update the freshness panel timestamps (so they tick live)
+            this.updateFreshnessRow(item);
 
             this.lastFreshness[item.symbol] = item;
         }
 
         return changed;
+    },
+
+    /** Update the freshness panel row for a symbol with new timestamps from API */
+    updateFreshnessRow(item) {
+        const panel = document.querySelector('details table');
+        if (!panel) return;
+        const rows = panel.querySelectorAll('tbody tr');
+        for (const row of rows) {
+            const link = row.querySelector('a');
+            if (link && link.textContent.trim() === item.symbol) {
+                const badges = row.querySelectorAll('[data-ts]');
+                const fields = ['quote_at', 'ohlcv_at', 'options_at', 'cache_at', 'snapshot_at'];
+                badges.forEach((badge, i) => {
+                    if (fields[i] && item[fields[i]]) {
+                        badge.setAttribute('data-ts', item[fields[i]]);
+                        badge.textContent = RelativeTime.format(item[fields[i]]);
+                    }
+                });
+                break;
+            }
+        }
     },
 
     async updateData(symbols) {
@@ -282,13 +306,35 @@ const FreshnessPoller = {
                 this.updateRow(symbol, snapshot);
             }
         }
+
+        // Sync footer timestamp with server's generated_at
+        if (data.generated_at) {
+            const footerTs = document.querySelector('footer [data-ts]');
+            if (footerTs) {
+                footerTs.setAttribute('data-ts', data.generated_at);
+                footerTs.textContent = RelativeTime.format(data.generated_at);
+            }
+        }
+
+        // Sync freshness panel with server's freshness data
+        if (data.freshness) {
+            for (const item of data.freshness) {
+                this.updateFreshnessRow(item);
+            }
+        }
     },
 
     updateRow(symbol, data) {
         const row = document.querySelector(`a[href="/analyze/${symbol}"]`)?.closest('tr');
         if (!row) return;
 
-        // Flash animation on price cell
+        // Update symbol star prefix (col 1)
+        const symLink = row.querySelector('a');
+        if (symLink && data.opportunity_score !== undefined) {
+            symLink.textContent = (data.opportunity_score >= 50 ? '★ ' : '') + symbol;
+        }
+
+        // Flash animation on price cell (col 2)
         const priceCell = row.querySelector('td:nth-child(2)');
         if (priceCell) {
             priceCell.classList.add('flash-green');
@@ -296,7 +342,7 @@ const FreshnessPoller = {
             setTimeout(() => priceCell.classList.remove('flash-green'), 1500);
         }
 
-        // Update trend badge (create elements safely)
+        // Update trend badge (col 3)
         const trendCell = row.querySelector('td:nth-child(3)');
         if (trendCell && data.trend) {
             const span = document.createElement('span');
@@ -317,7 +363,7 @@ const FreshnessPoller = {
             trendCell.appendChild(span);
         }
 
-        // Update RSI
+        // Update RSI (col 4)
         const rsiCell = row.querySelector('td:nth-child(4)');
         if (rsiCell && data.rsi !== undefined) {
             rsiCell.textContent = data.rsi.toFixed(0);
@@ -326,7 +372,7 @@ const FreshnessPoller = {
             else if (data.rsi < 30) rsiCell.className += ' text-emerald-400 font-bold';
         }
 
-        // Update IV Rank
+        // Update IV Rank (col 5)
         const ivCell = row.querySelector('td:nth-child(5)');
         if (ivCell && data.iv_rank !== undefined) {
             ivCell.textContent = `${data.iv_rank.toFixed(0)}%`;
@@ -334,7 +380,7 @@ const FreshnessPoller = {
             if (data.iv_rank > 50) ivCell.className += ' text-amber-400 font-bold';
         }
 
-        // Update Max Pain
+        // Update Max Pain (col 6)
         const mpCell = row.querySelector('td:nth-child(6)');
         if (mpCell && data.max_pain !== undefined) {
             if (data.max_pain > 0) {
@@ -348,25 +394,45 @@ const FreshnessPoller = {
             }
         }
 
-        // Update PCR
+        // Update PCR (col 7)
         const pcrCell = row.querySelector('td:nth-child(7)');
         if (pcrCell && data.pcr !== undefined) {
             pcrCell.textContent = data.pcr.toFixed(2);
         }
 
-        // Update recommendation
+        // Update Range (col 8)
+        const rangeCell = row.querySelector('td:nth-child(8)');
+        if (rangeCell) {
+            if (data.range_low_1s > 0 && data.range_high_1s > 0) {
+                rangeCell.textContent = `$${data.range_low_1s.toFixed(0)}\u2013$${data.range_high_1s.toFixed(0)}`;
+            } else {
+                rangeCell.textContent = '';
+                const span = document.createElement('span');
+                span.className = 'text-gray-600';
+                span.textContent = 'N/A';
+                rangeCell.appendChild(span);
+            }
+        }
+
+        // Update recommendation (col 9)
         const recCell = row.querySelector('td:nth-child(9)');
         if (recCell && data.recommendation) {
             recCell.textContent = data.recommendation;
         }
 
-        // Update score
+        // Update score (col 10)
         const scoreCell = row.querySelector('td:nth-child(10)');
         if (scoreCell && data.opportunity_score !== undefined) {
             scoreCell.textContent = data.opportunity_score.toFixed(0);
             scoreCell.className = 'px-4 py-3 text-right font-mono font-bold';
             if (data.opportunity_score >= 50) scoreCell.className += ' text-emerald-400';
             else scoreCell.className += ' text-gray-400';
+        }
+
+        // Update date (col 11)
+        const dateCell = row.querySelector('td:nth-child(11)');
+        if (dateCell && data.snapshot_date) {
+            dateCell.textContent = data.snapshot_date;
         }
 
         // Pulse animation on entire row

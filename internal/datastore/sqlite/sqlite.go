@@ -180,6 +180,44 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 	return tx.Commit()
 }
 
+// UpsertOptionChain saves an option chain snapshot so freshness tracking can
+// detect when options data was last fetched.  Only OI is stored (no Greeks).
+func (s *Store) UpsertOptionChain(ctx context.Context, chain *model.OptionChain) error {
+	if chain == nil || len(chain.Expirations) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO option_quotes (underlying, expiration, strike, option_type, open_interest, implied_volatility, snapshot_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(underlying, expiration, strike, option_type, snapshot_time) DO UPDATE SET
+			open_interest=excluded.open_interest, implied_volatility=excluded.implied_volatility`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().Format(time.RFC3339)
+	for _, exp := range chain.Expirations {
+		for _, c := range exp.Calls {
+			if _, err := stmt.ExecContext(ctx, chain.Underlying, exp.Expiration, c.Strike, "C", c.OpenInterest, c.ImpliedVolatility, now); err != nil {
+				return err
+			}
+		}
+		for _, p := range exp.Puts {
+			if _, err := stmt.ExecContext(ctx, chain.Underlying, exp.Expiration, p.Strike, "P", p.OpenInterest, p.ImpliedVolatility, now); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
 // GetBars retrieves historical bars for a symbol.
 func (s *Store) GetBars(ctx context.Context, symbol, timeframe string, limit int) ([]model.OHLCV, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -380,7 +418,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE((SELECT updated_at  FROM stock_quotes  WHERE symbol    = ?1), '') AS quote_at,
-			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1D'), '') AS ohlcv_at,
+			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
 			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
 			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
 			COALESCE((SELECT MAX(last_refreshed_at) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
@@ -414,7 +452,7 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		LEFT JOIN stock_quotes sq ON sq.symbol = w.symbol
 		LEFT JOIN (
 			SELECT symbol, MAX(open_time) AS ohlcv_at
-			FROM ohlcv_bars WHERE timeframe = '1D' GROUP BY symbol
+			FROM ohlcv_bars WHERE timeframe = '1 day' GROUP BY symbol
 		) ob ON ob.symbol = w.symbol
 		LEFT JOIN (
 			SELECT underlying, MAX(snapshot_time) AS opt_at

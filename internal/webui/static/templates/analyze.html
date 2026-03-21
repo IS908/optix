@@ -53,21 +53,21 @@
 {{/* Still show freshness strip to visualise the "never fetched" state */}}
 <div class="flex flex-wrap items-center gap-2 mb-2 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
   <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
         title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Quote&nbsp;·&nbsp;{{timeago .Freshness.QuoteAt}}
+    Quote&nbsp;·&nbsp;<span data-ts="{{.Freshness.QuoteAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.QuoteAt}}</span>
   </span>
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
         title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    OHLCV&nbsp;·&nbsp;{{timeago .Freshness.OHLCVAt}}
+    OHLCV&nbsp;·&nbsp;<span data-ts="{{.Freshness.OHLCVAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OHLCVAt}}</span>
   </span>
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
         title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Options&nbsp;·&nbsp;{{timeago .Freshness.OptionsAt}}
+    Options&nbsp;·&nbsp;<span data-ts="{{.Freshness.OptionsAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OptionsAt}}</span>
   </span>
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
         title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Analysis&nbsp;·&nbsp;{{timeago .Freshness.CacheAt}}
+    Analysis&nbsp;·&nbsp;<span data-ts="{{.Freshness.CacheAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.CacheAt}}</span>
   </span>
 </div>
 
@@ -79,28 +79,28 @@
 <div class="flex flex-wrap items-center gap-2 mb-6 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
   <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
 
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
         title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Quote&nbsp;·&nbsp;{{timeago .Freshness.QuoteAt}}
+    Quote&nbsp;·&nbsp;<span data-ts="{{.Freshness.QuoteAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.QuoteAt}}</span>
   </span>
 
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
         title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    OHLCV&nbsp;·&nbsp;{{timeago .Freshness.OHLCVAt}}
+    OHLCV&nbsp;·&nbsp;<span data-ts="{{.Freshness.OHLCVAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OHLCVAt}}</span>
   </span>
 
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
         title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Options&nbsp;·&nbsp;{{timeago .Freshness.OptionsAt}}
+    Options&nbsp;·&nbsp;<span data-ts="{{.Freshness.OptionsAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OptionsAt}}</span>
   </span>
 
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
+  <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
         title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
-    Analysis&nbsp;·&nbsp;{{timeago .Freshness.CacheAt}}
+    Analysis&nbsp;·&nbsp;<span data-ts="{{.Freshness.CacheAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.CacheAt}}</span>
   </span>
 
   <span class="ml-auto text-gray-700 text-xs pr-2 hidden sm:inline">Hover badge for UTC time</span>
@@ -136,7 +136,7 @@
 
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
     <div class="text-gray-400 text-xs uppercase tracking-wider mb-1">IV (HV×0.75)</div>
-    <div class="text-lg font-mono font-bold mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+    <div class="text-lg font-mono font-bold mt-1">{{printf "%.1f" (mul .Options.IVCurrent 100)}}%</div>
     <div class="text-gray-500 text-xs mt-0.5">Rank {{printf "%.0f" .Options.IVRank}}% · Pctile {{printf "%.0f" .Options.IVPercentile}}%</div>
   </div>
 
@@ -253,7 +253,7 @@
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="bg-gray-800/60 rounded-lg p-3 text-center">
       <div class="text-gray-500 text-xs">IV (HV×0.75)</div>
-      <div class="font-mono text-sm mt-1">{{printf "%.1f" .Options.IVCurrent}}%</div>
+      <div class="font-mono text-sm mt-1">{{printf "%.1f" (mul .Options.IVCurrent 100)}}%</div>
     </div>
     <div class="bg-gray-800/60 rounded-lg p-3 text-center">
       <div class="text-gray-500 text-xs">IV Rank</div>
@@ -446,4 +446,68 @@
 </section>
 
 {{end}}{{/* end {{else}} (NoData = false) */}}
+
+<script>
+// Simplified polling for single-symbol analyze page
+const AnalyzePoller = {
+    interval: 30000,  // 30 seconds
+    symbol: '{{.Symbol}}',
+    lastCacheAt: null,
+
+    start() {
+        if (!this.symbol) return;  // Skip if no symbol loaded
+        this.poll();
+        setInterval(() => this.poll(), this.interval);
+    },
+
+    async poll() {
+        try {
+            const resp = await fetch('/api/freshness');
+            if (!resp.ok) return;
+
+            const data = await resp.json();
+            const item = data.watchlist.find(s => s.symbol === this.symbol);
+            if (!item) return;
+
+            // Sync freshness badge timestamps from server
+            this.syncBadges(item);
+
+            if (this.lastCacheAt && item.cache_at !== this.lastCacheAt) {
+                // Data changed - reload page to show updated analysis
+                window.location.reload();
+                return;
+            }
+
+            this.lastCacheAt = item.cache_at;
+        } catch (err) {
+            console.error('Freshness poll error:', err);
+        }
+    },
+
+    /** Update freshness strip badges with latest server timestamps */
+    syncBadges(item) {
+        const badges = document.querySelectorAll('.rounded-xl [data-ts]');
+        const fields = ['quote_at', 'ohlcv_at', 'options_at', 'cache_at'];
+        badges.forEach((badge, i) => {
+            if (fields[i] && item[fields[i]]) {
+                badge.setAttribute('data-ts', item[fields[i]]);
+                badge.textContent = RelativeTime.format(item[fields[i]]);
+            }
+        });
+
+        // Also sync footer
+        const footerTs = document.querySelector('footer [data-ts]');
+        if (footerTs && item.cache_at) {
+            footerTs.setAttribute('data-ts', item.cache_at);
+            footerTs.textContent = RelativeTime.format(item.cache_at);
+        }
+    }
+};
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    AnalyzePoller.start();
+});
+</script>
+
 {{end}}{{/* end {{define "content"}} */}}

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/datastore/sqlite"
@@ -48,10 +47,8 @@ func (svc *MarketDataService) GetHistoricalBars(ctx context.Context, symbol, tim
 		return bars, nil
 	}
 
-	// Fetch from broker
-	endDate := time.Now().Format("2006-01-02")
-	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	bars, err = svc.broker.GetHistoricalBars(ctx, symbol, timeframe, startDate, endDate)
+	// Fetch from broker — pass empty start/end so IB uses its defaults (~1 year)
+	bars, err = svc.broker.GetHistoricalBars(ctx, symbol, timeframe, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("get historical bars for %s: %w", symbol, err)
 	}
@@ -64,11 +61,17 @@ func (svc *MarketDataService) GetHistoricalBars(ctx context.Context, symbol, tim
 	return bars, nil
 }
 
-// GetOptionChain fetches the option chain from the broker.
+// GetOptionChain fetches the option chain from the broker and caches OI data.
 func (svc *MarketDataService) GetOptionChain(ctx context.Context, underlying, expiration string) (*model.OptionChain, error) {
 	chain, err := svc.broker.GetOptionChain(ctx, underlying, expiration)
 	if err != nil {
 		return nil, fmt.Errorf("get option chain for %s: %w", underlying, err)
 	}
+
+	// Cache to option_quotes so freshness tracking picks it up
+	if err := svc.store.UpsertOptionChain(ctx, chain); err != nil {
+		fmt.Printf("warning: failed to cache option chain: %v\n", err)
+	}
+
 	return chain, nil
 }

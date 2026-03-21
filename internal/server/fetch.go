@@ -27,8 +27,8 @@ func FetchSymbolData(
 		return nil, fmt.Errorf("get quote: %w", err)
 	}
 
-	// 2. Historical bars (~1 year daily).  Pass empty dates to avoid IB date-format errors.
-	bars, err := ibClient.GetHistoricalBars(ctx, symbol, "1 day", "", "")
+	// 2. Historical bars (~1 year daily) via service (caches to ohlcv_bars).
+	bars, err := svc.GetHistoricalBars(ctx, symbol, "1 day", 365)
 	if err != nil {
 		return nil, fmt.Errorf("get historical bars: %w", err)
 	}
@@ -36,8 +36,9 @@ func FetchSymbolData(
 		return nil, fmt.Errorf("insufficient historical data: %d bars (need ≥ 20)", len(bars))
 	}
 
-	// 3. Option chain — non-fatal (structure-only from IB without live subscription)
-	chain, chainErr := ibClient.GetOptionChain(ctx, symbol, "")
+	// 3. Option chain — non-fatal (structure-only from IB without live subscription).
+	// Fetched via service for consistency; saves snapshot_time to option_quotes.
+	chain, chainErr := svc.GetOptionChain(ctx, symbol, "")
 	if chainErr != nil {
 		chain = &model.OptionChain{Underlying: symbol}
 	}

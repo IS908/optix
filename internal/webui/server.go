@@ -110,7 +110,11 @@ func (s *Server) registerRoutes() {
 
 	// HTML pages
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard", http.StatusFound)
+		target := "/dashboard"
+		if qs := r.URL.RawQuery; qs != "" {
+			target += "?" + qs
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 	})
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /analyze/{symbol}", s.handleAnalyze)
@@ -124,6 +128,7 @@ func (s *Server) registerRoutes() {
 	// JSON API
 	s.mux.HandleFunc("GET /api/dashboard", s.handleAPIDashboard)
 	s.mux.HandleFunc("GET /api/analyze/{symbol}", s.handleAPIAnalyze)
+	s.mux.HandleFunc("GET /api/freshness", s.handleFreshness)
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

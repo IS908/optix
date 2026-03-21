@@ -60,7 +60,7 @@
 
       {{template "field" dict "Name" "Trend" "Badge" "technical"
         "Desc" "Overall directional bias derived from a weighted signal score:"
-        "Note" "score = MA_cross×0.30 + MACD×0.25 + RSI×0.20 + price_vs_SR×0.15 + volume×0.10  —  Bullish > +0.3 · Bearish < −0.3 · Neutral otherwise"}}
+        "Note" "score = MA_signal×0.35 + MACD×0.25 + RSI×0.20 + volume×0.20  —  Bullish > +0.3 · Bearish < −0.3 · Neutral otherwise"}}
 
       {{template "field" dict "Name" "RSI" "Badge" "technical"
         "Desc" "14-period Relative Strength Index. Measures momentum as the ratio of average gains to average losses over the lookback window."

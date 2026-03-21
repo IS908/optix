@@ -21,6 +21,7 @@ var tmplFuncMap = template.FuncMap{
 	"dollar":  func(f float64) string { return fmt.Sprintf("$%.2f", f) },
 	"int":     func(f float64) int64 { return int64(f) },
 	"add":     func(a, b int) int { return a + b },
+	"mul":     func(a, b float64) float64 { return a * b },
 
 	// timeago formats t as a human-readable relative time ("2h ago", "3d ago", "—").
 	"timeago": func(t time.Time) string {

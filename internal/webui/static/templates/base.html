@@ -39,16 +39,102 @@
   </main>
 
   <!-- Footer — only shown when GeneratedAt is populated (not on error pages) -->
-  {{if .GeneratedAt}}
+  {{if not .GeneratedAt.IsZero}}
   <footer class="text-center text-gray-600 text-xs py-6 border-t border-gray-900 mt-8">
     {{if .FromCache}}
-      📦 Cached &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+      📦 Cached &bull; <span data-ts="{{.GeneratedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .GeneratedAt}}</span>
       &bull; <a href="?refresh=true" class="text-emerald-600 hover:text-emerald-400">Refresh live</a>
     {{else}}
-      ⚡ Live &bull; {{.GeneratedAt.Format "2006-01-02 15:04:05"}} UTC
+      ⚡ Live &bull; <span data-ts="{{.GeneratedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .GeneratedAt}}</span>
     {{end}}
   </footer>
   {{end}}
+
+  <!-- Shared relative-time ticker: updates all [data-ts] elements every 30s -->
+  <script>
+  const RelativeTime = {
+    tickInterval: 30000,
+    timerId: null,
+
+    /** Convert an ISO-8601 string to a human-friendly relative label. */
+    format(isoStr) {
+      if (!isoStr || isoStr.startsWith('0001')) return '—';
+      const ms = Date.now() - new Date(isoStr).getTime();
+      if (ms < 0) return 'just now';
+      const sec = ms / 1000;
+      if (sec < 60) return 'just now';
+      const min = Math.floor(sec / 60);
+      if (min < 60) return min + 'm ago';
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return hr + 'h ago';
+      const day = Math.floor(hr / 24);
+      if (day < 7) return day + 'd ago';
+      return isoStr.slice(0, 10); // fallback: YYYY-MM-DD
+    },
+
+    /** Freshness color class: green < 6h, amber < 48h, red >= 48h, gray = never */
+    freshColorClass(isoStr) {
+      if (!isoStr || isoStr.startsWith('0001')) return 'text-gray-600';
+      const hr = (Date.now() - new Date(isoStr).getTime()) / 3600000;
+      if (hr < 6) return 'text-emerald-400';
+      if (hr < 48) return 'text-amber-400';
+      return 'text-red-400';
+    },
+
+    /** Freshness background classes */
+    freshBgClass(isoStr) {
+      if (!isoStr || isoStr.startsWith('0001')) return 'bg-gray-800/40 border-gray-700/40';
+      const hr = (Date.now() - new Date(isoStr).getTime()) / 3600000;
+      if (hr < 6) return 'bg-emerald-950/60 border-emerald-800/60';
+      if (hr < 48) return 'bg-amber-950/60 border-amber-800/60';
+      return 'bg-red-950/60 border-red-800/60';
+    },
+
+    /** Apply freshness color to a badge's parent element */
+    applyFreshStyle(badgeParent, isoStr) {
+      if (!badgeParent) return;
+      // Strip old freshness classes
+      badgeParent.className = badgeParent.className
+        .replace(/\b(text|bg|border)-(emerald|amber|red|gray)-(400|600|700|800|950)(\/\d+)?\b/g, '')
+        .replace(/\s+/g, ' ').trim();
+      // Re-add base classes and fresh colors
+      this.freshColorClass(isoStr).split(' ').forEach(c => badgeParent.classList.add(c));
+      this.freshBgClass(isoStr).split(' ').forEach(c => badgeParent.classList.add(c));
+    },
+
+    /** Tick: update every element that carries a data-ts attribute. */
+    tick() {
+      document.querySelectorAll('[data-ts]').forEach(el => {
+        const ts = el.getAttribute('data-ts');
+        el.textContent = this.format(ts);
+        // If parent is a freshness badge, update its color too
+        const parent = el.parentElement;
+        if (parent && parent.hasAttribute('data-fresh')) {
+          this.applyFreshStyle(parent, ts);
+        }
+      });
+    },
+
+    start() {
+      this.tick();
+      if (!this.timerId) {
+        this.timerId = setInterval(() => this.tick(), this.tickInterval);
+      }
+    },
+
+    stop() {
+      if (this.timerId) {
+        clearInterval(this.timerId);
+        this.timerId = null;
+      }
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', () => RelativeTime.start());
+  document.addEventListener('visibilitychange', () => {
+    document.hidden ? RelativeTime.stop() : RelativeTime.start();
+  });
+  </script>
 
 </body>
 </html>{{end}}

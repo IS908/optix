@@ -15,7 +15,10 @@ import (
 )
 
 //go:embed migrations/001_initial.sql
-var migrationSQL string
+var migration001SQL string
+
+//go:embed migrations/002_background_refresh.sql
+var migration002SQL string
 
 // Store implements data persistence using SQLite.
 type Store struct {
@@ -29,16 +32,18 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("create db directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Encode PRAGMAs in the DSN so that every connection opened by the
+	// database/sql connection pool inherits them — not just the first one.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Enable WAL mode for better concurrent read performance
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set WAL mode: %w", err)
-	}
+	// SQLite only supports a single concurrent writer.  Limiting the pool
+	// to 2 connections (1 writer + 1 reader) avoids most SQLITE_BUSY errors
+	// while still allowing reads during writes (WAL mode).
+	db.SetMaxOpenConns(2)
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
@@ -55,11 +60,58 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(migrationSQL); err != nil {
-		return err
+	// Migration 001: Initial schema
+	if _, err := s.db.Exec(migration001SQL); err != nil {
+		return fmt.Errorf("migration 001: %w", err)
 	}
+
+	// Migration 002: Background refresh system (idempotent)
+	if err := s.migrate002(); err != nil {
+		return fmt.Errorf("migration 002: %w", err)
+	}
+
 	// Idempotent schema additions — error is swallowed when column already exists.
 	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
+	return nil
+}
+
+// migrate002 applies migration 002 idempotently by checking for existing columns first.
+func (s *Store) migrate002() error {
+	// Add watchlist columns only if they don't exist
+	if err := s.addColumnIfNotExists("watchlist", "auto_refresh_enabled", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfNotExists("watchlist", "refresh_interval_minutes", "INTEGER DEFAULT 15"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfNotExists("watchlist", "last_refreshed_at", "TEXT"); err != nil {
+		return err
+	}
+
+	// Execute the rest of the migration (indexes and tables use IF NOT EXISTS)
+	if _, err := s.db.Exec(migration002SQL); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists adds a column to a table only if it doesn't already exist.
+func (s *Store) addColumnIfNotExists(table, column, columnDef string) error {
+	// Check if column exists by querying pragma_table_info
+	var exists bool
+	row := s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) > 0 FROM pragma_table_info('%s') WHERE name = ?", table), column)
+	if err := row.Scan(&exists); err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+
+	if !exists {
+		query := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnDef)
+		if _, err := s.db.Exec(query); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", table, column, err)
+		}
+	}
+
 	return nil
 }
 
@@ -123,6 +175,44 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 			b.Open, b.High, b.Low, b.Close, b.Volume)
 		if err != nil {
 			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// UpsertOptionChain saves an option chain snapshot so freshness tracking can
+// detect when options data was last fetched.  Only OI is stored (no Greeks).
+func (s *Store) UpsertOptionChain(ctx context.Context, chain *model.OptionChain) error {
+	if chain == nil || len(chain.Expirations) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO option_quotes (underlying, expiration, strike, option_type, open_interest, implied_volatility, snapshot_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(underlying, expiration, strike, option_type, snapshot_time) DO UPDATE SET
+			open_interest=excluded.open_interest, implied_volatility=excluded.implied_volatility`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().Format(time.RFC3339)
+	for _, exp := range chain.Expirations {
+		for _, c := range exp.Calls {
+			if _, err := stmt.ExecContext(ctx, chain.Underlying, exp.Expiration, c.Strike, "C", c.OpenInterest, c.ImpliedVolatility, now); err != nil {
+				return err
+			}
+		}
+		for _, p := range exp.Puts {
+			if _, err := stmt.ExecContext(ctx, chain.Underlying, exp.Expiration, p.Strike, "P", p.OpenInterest, p.ImpliedVolatility, now); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -195,16 +285,35 @@ func (s *Store) SaveWatchlistSnapshot(ctx context.Context, snap model.QuickSumma
 
 // GetLatestSnapshots returns the most-recent watchlist_snapshot row per symbol,
 // sorted by opportunity_score descending. Used by the web dashboard cache path.
+// Includes all watchlist symbols, even if they have no snapshot yet (NULL values).
 func (s *Store) GetLatestSnapshots(ctx context.Context) ([]model.QuickSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT symbol, price, trend, rsi, iv_rank, max_pain, pcr,
-		       range_low_1s, range_high_1s, recommendation, opportunity_score,
-		       snapshot_date
-		FROM watchlist_snapshots
-		WHERE (symbol, snapshot_date) IN (
-		    SELECT symbol, MAX(snapshot_date) FROM watchlist_snapshots GROUP BY symbol
-		)
-		ORDER BY opportunity_score DESC`)
+		SELECT
+			w.symbol,
+			COALESCE(ws.price, 0) as price,
+			COALESCE(ws.trend, '') as trend,
+			COALESCE(ws.rsi, 0) as rsi,
+			COALESCE(ws.iv_rank, 0) as iv_rank,
+			COALESCE(ws.max_pain, 0) as max_pain,
+			COALESCE(ws.pcr, 0) as pcr,
+			COALESCE(ws.range_low_1s, 0) as range_low_1s,
+			COALESCE(ws.range_high_1s, 0) as range_high_1s,
+			COALESCE(ws.recommendation, '') as recommendation,
+			COALESCE(ws.opportunity_score, 0) as opportunity_score,
+			COALESCE(ws.snapshot_date, '') as snapshot_date
+		FROM watchlist w
+		LEFT JOIN (
+			SELECT symbol, price, trend, rsi, iv_rank, max_pain, pcr,
+			       range_low_1s, range_high_1s, recommendation, opportunity_score,
+			       snapshot_date
+			FROM watchlist_snapshots
+			WHERE (symbol, snapshot_date) IN (
+				SELECT symbol, MAX(snapshot_date)
+				FROM watchlist_snapshots
+				GROUP BY symbol
+			)
+		) ws ON ws.symbol = w.symbol
+		ORDER BY ws.opportunity_score DESC NULLS LAST, w.symbol ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +348,13 @@ func (s *Store) DeleteAnalysisCache(ctx context.Context, symbol string) error {
 	return err
 }
 
+// DeleteBackgroundJobs removes all background job records for a symbol.
+func (s *Store) DeleteBackgroundJobs(ctx context.Context, symbol string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM background_jobs WHERE symbol = ?`, symbol)
+	return err
+}
+
 // SaveAnalysisCache persists a full analysis JSON payload for a symbol.
 func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []byte) error {
 	_, err := s.db.ExecContext(ctx, `
@@ -267,7 +383,13 @@ func (s *Store) GetAnalysisCache(ctx context.Context, symbol string) ([]byte, ti
 
 // GetWatchlist returns all watchlist symbols.
 func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT symbol, added_at, notes, tags FROM watchlist ORDER BY added_at`)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT symbol, added_at, notes, tags,
+		       COALESCE(auto_refresh_enabled, 0) as auto_refresh_enabled,
+		       COALESCE(refresh_interval_minutes, 15) as refresh_interval_minutes
+		FROM watchlist
+		ORDER BY added_at
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -277,9 +399,11 @@ func (s *Store) GetWatchlist(ctx context.Context) ([]model.WatchlistItem, error)
 	for rows.Next() {
 		var item model.WatchlistItem
 		var tags string
-		if err := rows.Scan(&item.Symbol, &item.AddedAt, &item.Notes, &tags); err != nil {
+		var autoRefreshInt int
+		if err := rows.Scan(&item.Symbol, &item.AddedAt, &item.Notes, &tags, &autoRefreshInt, &item.RefreshIntervalMinutes); err != nil {
 			return nil, err
 		}
+		item.AutoRefreshEnabled = autoRefreshInt == 1
 		// tags is JSON, but we store as simple string for now
 		items = append(items, item)
 	}
@@ -294,7 +418,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE((SELECT updated_at  FROM stock_quotes  WHERE symbol    = ?1), '') AS quote_at,
-			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1D'), '') AS ohlcv_at,
+			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
 			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
 			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
 			COALESCE((SELECT MAX(last_refreshed_at) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
@@ -328,7 +452,7 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		LEFT JOIN stock_quotes sq ON sq.symbol = w.symbol
 		LEFT JOIN (
 			SELECT symbol, MAX(open_time) AS ohlcv_at
-			FROM ohlcv_bars WHERE timeframe = '1D' GROUP BY symbol
+			FROM ohlcv_bars WHERE timeframe = '1 day' GROUP BY symbol
 		) ob ON ob.symbol = w.symbol
 		LEFT JOIN (
 			SELECT underlying, MAX(snapshot_time) AS opt_at
@@ -361,4 +485,268 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		result = append(result, f)
 	}
 	return result, rows.Err()
+}
+
+// --- Background Refresh ---
+
+// GetSymbolsNeedingRefresh returns symbols that need background refresh based on their
+// auto_refresh_enabled flag and last refresh timestamp.
+func (s *Store) GetSymbolsNeedingRefresh() ([]model.SymbolRefresh, error) {
+	query := `
+		SELECT
+			symbol,
+			refresh_interval_minutes,
+			COALESCE(last_refreshed_at, '1970-01-01T00:00:00Z') as last_refresh
+		FROM watchlist
+		WHERE auto_refresh_enabled = 1
+		  AND (
+			  last_refreshed_at IS NULL
+			  OR datetime(last_refreshed_at, '+' || refresh_interval_minutes || ' minutes') <= datetime('now')
+		  )
+		ORDER BY last_refreshed_at ASC NULLS FIRST
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []model.SymbolRefresh
+	for rows.Next() {
+		var sr model.SymbolRefresh
+		var lastRefreshStr string
+
+		if err := rows.Scan(&sr.Symbol, &sr.Interval, &lastRefreshStr); err != nil {
+			continue
+		}
+
+		sr.LastRefresh, _ = time.Parse(time.RFC3339, lastRefreshStr)
+		results = append(results, sr)
+	}
+
+	return results, nil
+}
+
+// UpdateLastRefreshTime updates the watchlist last refresh timestamp.
+func (s *Store) UpdateLastRefreshTime(symbol string, t time.Time) error {
+	_, err := s.db.Exec(`
+		UPDATE watchlist
+		SET last_refreshed_at = ?
+		WHERE symbol = ?
+	`, t.Format(time.RFC3339), symbol)
+	return err
+}
+
+// UpdateWatchlistConfig updates auto-refresh settings for a symbol.
+func (s *Store) UpdateWatchlistConfig(symbol string, enabled bool, intervalMinutes int) error {
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.Exec(`
+		UPDATE watchlist
+		SET auto_refresh_enabled = ?,
+			refresh_interval_minutes = ?
+		WHERE symbol = ?
+	`, enabledInt, intervalMinutes, symbol)
+	return err
+}
+
+// CreateBackgroundJob inserts a new job record and returns its ID.
+func (s *Store) CreateBackgroundJob(job *model.BackgroundJob) (int64, error) {
+	result, err := s.db.Exec(`
+		INSERT INTO background_jobs
+		(symbol, job_type, status, started_at, error_message, retry_count, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`,
+		job.Symbol,
+		job.JobType,
+		job.Status,
+		timeToString(job.StartedAt),
+		job.ErrorMessage,
+		job.RetryCount,
+		job.CreatedAt.Format(time.RFC3339),
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// UpdateBackgroundJob updates job status after completion/failure.
+func (s *Store) UpdateBackgroundJob(job *model.BackgroundJob) error {
+	_, err := s.db.Exec(`
+		UPDATE background_jobs
+		SET status = ?,
+			completed_at = ?,
+			error_message = ?,
+			retry_count = ?
+		WHERE id = ?
+	`,
+		job.Status,
+		timeToString(job.CompletedAt),
+		job.ErrorMessage,
+		job.RetryCount,
+		job.ID,
+	)
+	return err
+}
+
+// GetBackgroundJob retrieves a single job by ID.
+func (s *Store) GetBackgroundJob(id int64) (*model.BackgroundJob, error) {
+	row := s.db.QueryRow(`
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE id = ?
+	`, id)
+
+	var job model.BackgroundJob
+	var startedStr, completedStr sql.NullString
+	var createdStr string
+
+	err := row.Scan(
+		&job.ID,
+		&job.Symbol,
+		&job.JobType,
+		&job.Status,
+		&startedStr,
+		&completedStr,
+		&job.ErrorMessage,
+		&job.RetryCount,
+		&createdStr,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if startedStr.Valid {
+		t, _ := time.Parse(time.RFC3339, startedStr.String)
+		job.StartedAt = &t
+	}
+
+	if completedStr.Valid {
+		t, _ := time.Parse(time.RFC3339, completedStr.String)
+		job.CompletedAt = &t
+	}
+
+	job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+	return &job, nil
+}
+
+// GetBackgroundJobsForSymbol returns job history for a symbol.
+func (s *Store) GetBackgroundJobsForSymbol(symbol string) ([]*model.BackgroundJob, error) {
+	query := `
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE symbol = ?
+		ORDER BY created_at DESC
+		LIMIT 20
+	`
+
+	rows, err := s.db.Query(query, symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*model.BackgroundJob
+	for rows.Next() {
+		var job model.BackgroundJob
+		var startedStr, completedStr sql.NullString
+		var createdStr string
+
+		err := rows.Scan(
+			&job.ID, &job.Symbol, &job.JobType, &job.Status,
+			&startedStr, &completedStr, &job.ErrorMessage,
+			&job.RetryCount, &createdStr,
+		)
+
+		if err != nil {
+			continue
+		}
+
+		if startedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			job.StartedAt = &t
+		}
+
+		if completedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			job.CompletedAt = &t
+		}
+
+		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+		jobs = append(jobs, &job)
+	}
+
+	return jobs, nil
+}
+
+// GetRecentFailures returns failed jobs from the last N hours.
+func (s *Store) GetRecentFailures(hours int) ([]*model.BackgroundJob, error) {
+	query := `
+		SELECT id, symbol, job_type, status, started_at, completed_at,
+			   error_message, retry_count, created_at
+		FROM background_jobs
+		WHERE status = 'failed'
+		  AND retry_count >= 3
+		  AND created_at > datetime('now', '-' || ? || ' hours')
+		ORDER BY created_at DESC
+		LIMIT 20
+	`
+
+	rows, err := s.db.Query(query, hours)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*model.BackgroundJob
+	for rows.Next() {
+		var job model.BackgroundJob
+		var startedStr, completedStr sql.NullString
+		var createdStr string
+
+		err := rows.Scan(
+			&job.ID, &job.Symbol, &job.JobType, &job.Status,
+			&startedStr, &completedStr, &job.ErrorMessage,
+			&job.RetryCount, &createdStr,
+		)
+
+		if err != nil {
+			continue
+		}
+
+		if startedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			job.StartedAt = &t
+		}
+
+		if completedStr.Valid {
+			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			job.CompletedAt = &t
+		}
+
+		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+
+		jobs = append(jobs, &job)
+	}
+
+	return jobs, nil
+}
+
+// timeToString converts a nullable time pointer to RFC3339 string.
+func timeToString(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }

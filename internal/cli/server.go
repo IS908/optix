@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"github.com/IS908/optix/internal/scheduler"
 	"github.com/IS908/optix/internal/webui"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -55,16 +58,45 @@ Examples:
 			// 3. Create server
 			srv := webui.New(cfg, store)
 
-			// 4. Listen for OS signals → cancel context for graceful shutdown
+			// 4. Initialize and start background scheduler
+			schedulerCfg := scheduler.Config{
+				WorkerCount:    5,
+				QueueSize:      100,
+				TickInterval:   1 * time.Minute,
+				WorkerThrottle: 12 * time.Second,
+			}
+
+			sched := scheduler.New(
+				schedulerCfg,
+				store,
+				scheduler.IBConfig{Host: ibHost, Port: ibPort},
+				scheduler.AnalysisConfig{
+					Addr:          analysisAddr,
+					Capital:       capital,
+					ForecastDays:  int32(forecastDays),
+					RiskTolerance: riskTol,
+				},
+			)
+
+			// 5. Listen for OS signals → cancel context for graceful shutdown
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+
+			// Start scheduler in the background
+			if err := sched.Start(ctx); err != nil {
+				return fmt.Errorf("start scheduler: %w", err)
+			}
+			log.Info().
+				Int("workers", schedulerCfg.WorkerCount).
+				Dur("tick_interval", schedulerCfg.TickInterval).
+				Msg("Background scheduler started")
 
 			fmt.Printf("IB TWS:           %s:%d\n", ibHost, ibPort)
 			fmt.Printf("Analysis engine:  %s\n", analysisAddr)
 			fmt.Printf("Database:         %s\n", dbPath)
 			fmt.Printf("Capital:          $%.0f\n", capital)
 
-			// 5. Start serving (blocks until ctx cancelled or fatal error)
+			// 6. Start serving (blocks until ctx cancelled or fatal error)
 			return srv.Start(ctx)
 		},
 	}

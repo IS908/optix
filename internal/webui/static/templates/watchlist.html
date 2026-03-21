@@ -53,6 +53,7 @@
     <thead>
       <tr class="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
         <th class="px-4 py-3 text-left">Symbol</th>
+        <th class="px-4 py-3 text-left">Refresh Status</th>
         <th class="px-4 py-3 text-left">Added</th>
         <th class="px-4 py-3 text-left">Notes</th>
         <th class="px-4 py-3 text-center w-28">Actions</th>
@@ -68,6 +69,21 @@
              class="font-mono font-bold text-emerald-400 hover:text-emerald-300 hover:underline">
             {{.Symbol}}
           </a>
+        </td>
+
+        {{/* Refresh Status */}}
+        <td class="px-4 py-3">
+          {{if .AutoRefreshEnabled}}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
+                         bg-emerald-900/30 border border-emerald-700/40 text-emerald-400">
+              ⏱ {{.RefreshIntervalMinutes}}分钟
+            </span>
+          {{else}}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
+                         bg-gray-800/50 border border-gray-700/40 text-gray-500">
+              手动
+            </span>
+          {{end}}
         </td>
 
         {{/* Date added (trim ISO8601 to YYYY-MM-DD) */}}
@@ -145,6 +161,32 @@
                     placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500
                     transition-colors font-mono tracking-wider" />
       <p class="text-gray-600 text-xs mt-2">Separate multiple symbols with spaces or commas.</p>
+
+      {{/* Auto-refresh configuration */}}
+      <div class="mt-4 pt-4 border-t border-gray-800">
+        <div class="mb-3">
+          <div class="form-check flex items-center">
+            <input class="form-check-input" type="checkbox" name="auto_refresh" id="auto-refresh" value="true">
+            <label class="ml-2 text-sm text-gray-300" for="auto-refresh">
+              启用自动后台刷新
+            </label>
+          </div>
+        </div>
+
+        <div class="mb-0" id="refresh-interval-group" style="display: none;">
+          <label for="refresh-interval" class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+            刷新间隔
+          </label>
+          <select class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-gray-100
+                         focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+                  name="refresh_interval" id="refresh-interval">
+            <option value="5">5 分钟</option>
+            <option value="15" selected>15 分钟</option>
+            <option value="30">30 分钟</option>
+            <option value="60">60 分钟</option>
+          </select>
+        </div>
+      </div>
 
       <div id="addError" class="hidden mt-3 text-red-400 text-xs flex items-center gap-1.5">
         <span>✗</span><span id="addErrorMsg"></span>
@@ -296,6 +338,21 @@ function closeRemoveModal() {
   const modal = document.getElementById('removeModal');
   const panel = document.getElementById('removePanel');
   animateOut(panel, () => modal.classList.add('hidden'));
+}
+
+// ── Auto-refresh checkbox toggle ──────────────────────────────────────────────
+
+const autoRefreshCheckbox = document.getElementById('auto-refresh');
+const refreshIntervalGroup = document.getElementById('refresh-interval-group');
+
+if (autoRefreshCheckbox && refreshIntervalGroup) {
+  autoRefreshCheckbox.addEventListener('change', function() {
+    if (this.checked) {
+      refreshIntervalGroup.style.display = 'block';
+    } else {
+      refreshIntervalGroup.style.display = 'none';
+    }
+  });
 }
 
 // ── Keyboard shortcut (Escape) ────────────────────────────────────────────────

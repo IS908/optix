@@ -3,6 +3,7 @@ package webui
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,24 @@ func (s *Server) handleWatchlistAdd(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/watchlist?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
+
+	// Configure auto-refresh settings for newly added symbols
+	autoRefresh := r.FormValue("auto_refresh") == "true"
+	refreshInterval := 15 // default
+	if intervalStr := r.FormValue("refresh_interval"); intervalStr != "" {
+		if val, err := strconv.Atoi(intervalStr); err == nil && val > 0 {
+			refreshInterval = val
+		}
+	}
+
+	// Apply auto-refresh config to each added symbol
+	for _, symbol := range parts {
+		if err := s.store.UpdateWatchlistConfig(symbol, autoRefresh, refreshInterval); err != nil {
+			// Log error but don't fail the whole operation
+			_ = err
+		}
+	}
+
 	added := strings.Join(parts, ", ")
 	http.Redirect(w, r, "/watchlist?success="+url.QueryEscape("Added: "+added), http.StatusSeeOther)
 }
@@ -61,6 +80,7 @@ func (s *Server) handleWatchlistRemove(w http.ResponseWriter, r *http.Request) {
 	// dashboard or analyze page (best-effort — don't fail the remove if these error).
 	_ = s.store.DeleteWatchlistSnapshots(r.Context(), symbol)
 	_ = s.store.DeleteAnalysisCache(r.Context(), symbol)
+	_ = s.store.DeleteBackgroundJobs(r.Context(), symbol)
 
 	http.Redirect(w, r, "/watchlist?success="+url.QueryEscape("Removed: "+symbol), http.StatusSeeOther)
 }
@@ -162,10 +182,11 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		// Still trigger a background refresh so the next page load may have data.
 		s.maybeBackgroundRefresh(symbol)
 		renderPage(w, "analyze.html", &AnalyzeResponse{
-			Symbol:    symbol,
-			NoData:    true,
-			Error:     finalErr.Error(),
-			Freshness: freshness,
+			GeneratedAt: time.Now().UTC(),
+			Symbol:      symbol,
+			NoData:      true,
+			Error:       finalErr.Error(),
+			Freshness:   freshness,
 		})
 		return
 	}
@@ -194,4 +215,66 @@ func (s *Server) getAnalyzeData(r *http.Request, symbol string) (*AnalyzeRespons
 		return s.fetchLiveAnalysis(r.Context(), symbol)
 	}
 	return s.fetchCachedAnalysis(r.Context(), symbol)
+}
+
+// ─── Freshness API ────────────────────────────────────────────────────────────
+
+// FreshnessResponse contains timestamp information for all watchlist symbols.
+type FreshnessResponse struct {
+	Watchlist  []FreshnessItem `json:"watchlist"`
+	ServerTime time.Time       `json:"server_time"`
+}
+
+// FreshnessItem contains freshness timestamps for a single symbol.
+type FreshnessItem struct {
+	Symbol     string    `json:"symbol"`
+	QuoteAt    time.Time `json:"quote_at"`
+	OHLCVAt    time.Time `json:"ohlcv_at"`
+	OptionsAt  time.Time `json:"options_at"`
+	CacheAt    time.Time `json:"cache_at"`
+	SnapshotAt time.Time `json:"snapshot_at"`
+}
+
+// handleFreshness returns timestamp information for all watchlist symbols.
+// This is called by frontend JavaScript polling to detect data changes.
+func (s *Server) handleFreshness(w http.ResponseWriter, r *http.Request) {
+	wm := watchlist.NewManager(s.store)
+	items, err := wm.List(r.Context())
+	if err != nil {
+		writeErrorJSON(w, "failed to load watchlist: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Single batch query instead of N per-symbol queries.
+	allFresh, err := s.store.GetAllSymbolFreshness(r.Context())
+	if err != nil {
+		writeErrorJSON(w, "failed to load freshness: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	freshMap := make(map[string]FreshnessItem, len(allFresh))
+	for _, f := range allFresh {
+		freshMap[f.Symbol] = FreshnessItem{
+			Symbol:     f.Symbol,
+			QuoteAt:    f.QuoteAt,
+			OHLCVAt:    f.OHLCVAt,
+			OptionsAt:  f.OptionsAt,
+			CacheAt:    f.CacheAt,
+			SnapshotAt: f.SnapshotAt,
+		}
+	}
+	freshness := make([]FreshnessItem, 0, len(items))
+	for _, item := range items {
+		if fi, ok := freshMap[item.Symbol]; ok {
+			freshness = append(freshness, fi)
+		} else {
+			freshness = append(freshness, FreshnessItem{Symbol: item.Symbol})
+		}
+	}
+
+	resp := FreshnessResponse{
+		Watchlist:  freshness,
+		ServerTime: time.Now().UTC(),
+	}
+
+	writeJSON(w, resp)
 }

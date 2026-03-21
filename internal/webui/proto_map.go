@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func protoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string, live bool) *AnalyzeResponse {
+func ProtoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string, live bool) *AnalyzeResponse {
 	ar := &AnalyzeResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   !live,
@@ -132,6 +132,9 @@ func protoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string
 }
 
 func snapToSymbolSummary(s model.QuickSummary) SymbolSummary {
+	// Detect if this is an empty snapshot (symbol in watchlist but no data yet)
+	noData := s.SnapshotDate == "" && s.Price == 0
+
 	return SymbolSummary{
 		Symbol:           s.Symbol,
 		Price:            s.Price,
@@ -145,5 +148,6 @@ func snapToSymbolSummary(s model.QuickSummary) SymbolSummary {
 		Recommendation:   s.Recommendation,
 		OpportunityScore: s.OpportunityScore,
 		SnapshotDate:     s.SnapshotDate,
+		NoData:           noData,
 	}
 }

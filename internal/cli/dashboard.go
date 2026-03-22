@@ -69,6 +69,7 @@ Examples:
 				return fmt.Errorf("connect to broker: %w", err)
 			}
 			defer b.Disconnect()
+			fmt.Println(b.SourceBanner())
 
 			svc := server.NewMarketDataService(b, store)
 
@@ -179,7 +180,7 @@ Examples:
 			}
 
 			// 9. Print table
-			printDashboard(summaries, sortBy)
+			printDashboard(summaries, sortBy, b.SourceName())
 			return nil
 		},
 	}
@@ -291,7 +292,7 @@ func dashTrendArrow(trend string) string {
 	}
 }
 
-func printDashboard(summaries []*analysisv1.StockQuickSummary, sortBy string) {
+func printDashboard(summaries []*analysisv1.StockQuickSummary, sortBy, dataSource string) {
 	if len(summaries) == 0 {
 		fmt.Println("No results to display.")
 		return
@@ -342,6 +343,6 @@ func printDashboard(summaries []*analysisv1.StockQuickSummary, sortBy string) {
 	}
 
 	fmt.Println(bot)
-	fmt.Printf("\n★ = Opportunity score ≥ 50  │  Sort: %s  │  %s\n\n",
-		sortBy, time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("\n★ = Opportunity score ≥ 50  │  Sort: %s  │  Source: %s  │  %s\n\n",
+		sortBy, dataSource, time.Now().Format("2006-01-02 15:04:05"))
 }

@@ -35,6 +35,7 @@ func newQuoteCmd() *cobra.Command {
 				return fmt.Errorf("connect to broker: %w", err)
 			}
 			defer b.Disconnect()
+			fmt.Println(b.SourceBanner())
 
 			svc := server.NewMarketDataService(b, store)
 			q, err := svc.GetQuote(ctx, symbol)

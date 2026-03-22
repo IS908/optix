@@ -22,7 +22,8 @@ type WatchlistPageResponse struct {
 type DashboardResponse struct {
 	GeneratedAt time.Time               `json:"generated_at"`
 	FromCache   bool                    `json:"from_cache"`
-	Error       string                  `json:"error,omitempty"` // non-empty = live fetch failed (may still have cached data)
+	DataSource  string                  `json:"data_source,omitempty"` // "IBKR" | "Yahoo Finance" | "" (cached)
+	Error       string                  `json:"error,omitempty"`       // non-empty = live fetch failed (may still have cached data)
 	Symbols     []SymbolSummary         `json:"symbols"`
 	Freshness   []model.SymbolFreshness `json:"freshness,omitempty"`
 }
@@ -50,6 +51,7 @@ type SymbolSummary struct {
 type AnalyzeResponse struct {
 	GeneratedAt time.Time             `json:"generated_at"`
 	FromCache   bool                  `json:"from_cache"`
+	DataSource  string                `json:"data_source,omitempty"` // "IBKR" | "Yahoo Finance" | "" (cached)
 	Symbol      string                `json:"symbol"`
 	NoData      bool                  `json:"no_data,omitempty"` // true = no cache, show empty state
 	Error       string                `json:"error,omitempty"`   // non-empty = live fetch failed (may still have cached data)

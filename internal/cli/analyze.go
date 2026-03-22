@@ -67,6 +67,7 @@ Examples:
 				return fmt.Errorf("connect to broker: %w", err)
 			}
 			defer b.Disconnect()
+			fmt.Println(b.SourceBanner())
 
 			// Create MarketDataService with SQLite caching
 			svc := server.NewMarketDataService(b, store)
@@ -151,6 +152,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 		return fmt.Errorf("connect to broker: %w", err)
 	}
 	defer b.Disconnect()
+	fmt.Println(b.SourceBanner())
 
 	svc := server.NewMarketDataService(b, store)
 

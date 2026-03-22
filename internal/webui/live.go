@@ -65,6 +65,7 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 	}
 
 	resp := ProtoToAnalyzeResponse(protoResp, symbol, true)
+	resp.DataSource = b.SourceName()
 
 	// Persist to cache for future cache-mode hits
 	if payload, jerr := json.Marshal(resp); jerr == nil {
@@ -252,6 +253,7 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 	return &DashboardResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   false,
+		DataSource:  b.SourceName(),
 		Symbols:     syms,
 		Freshness:   freshness,
 	}, nil

@@ -27,6 +27,17 @@
 </div>
 {{end}}
 
+{{/* ── Data source indicator ── */}}
+{{if .DataSource}}
+<div class="flex items-center gap-2 mb-4 text-xs">
+  <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+    {{if eq .DataSource "IBKR"}}bg-emerald-950/60 border border-emerald-800/50 text-emerald-400{{else}}bg-amber-950/60 border border-amber-800/50 text-amber-400{{end}}">
+    <span class="w-1.5 h-1.5 rounded-full {{if eq .DataSource "IBKR"}}bg-emerald-400{{else}}bg-amber-400{{end}}"></span>
+    {{if eq .DataSource "IBKR"}}📡 IBKR (real-time){{else}}📡 Yahoo Finance (delayed ~15 min, no options){{end}}
+  </span>
+</div>
+{{end}}
+
 {{/* ── Watchlist summary table ── */}}
 {{if .Symbols}}
 <div class="overflow-x-auto rounded-xl border border-gray-800 shadow-lg">

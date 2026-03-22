@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"sync"
 	"time"
@@ -105,9 +106,17 @@ func (s *Server) Start(ctx context.Context) error {
 
 // registerRoutes wires all HTTP routes using Go 1.22+ pattern matching.
 func (s *Server) registerRoutes() {
-	// Static assets (CSS, etc.)
+	// Static assets (CSS, favicon, etc.)
+	// staticFS embeds files under "static/" directory; fs.Sub strips that prefix
+	// so /static/css/optix.css maps to css/optix.css in the sub-FS.
+	subFS, _ := fs.Sub(staticFS, "static")
 	s.mux.Handle("GET /static/",
-		http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+		http.StripPrefix("/static/", http.FileServer(http.FS(subFS))))
+
+	// Serve favicon at root /favicon.ico (browsers request this automatically)
+	s.mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/favicon.svg", http.StatusMovedPermanently)
+	})
 
 	// HTML pages
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {

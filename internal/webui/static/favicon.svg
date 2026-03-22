@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#064e3b"/>
+  <path d="M6 20 L10 16 L14 18 L19 11 L22 14 L26 8" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="26" cy="8" r="2" fill="#6ee7b7"/>
+  <text x="16" y="28" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="9" fill="#a7f3d0">OPTIX</text>
+</svg>

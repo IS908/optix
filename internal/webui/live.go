@@ -9,34 +9,35 @@ import (
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/watchlist"
 	"github.com/IS908/optix/pkg/model"
 )
 
-// newIBClient creates a new IB client with the configured host/port.
+// newBroker creates a FallbackBroker (tries IBKR, falls back to yfinance).
 // clientID 4 is reserved for web UI single-symbol analyze;
 // clientID 5 is reserved for web UI dashboard live refresh.
-func (s *Server) newIBClient(clientID int) *ibkr.Client {
-	return ibkr.New(ibkr.Config{
+func (s *Server) newBroker(clientID int) *broker.FallbackBroker {
+	return broker.NewWithFallback(ibkr.Config{
 		Host:     s.cfg.IBHost,
 		Port:     s.cfg.IBPort,
 		ClientID: int64(clientID),
-	})
+	}, s.cfg.PythonBin)
 }
 
-// fetchLiveAnalysis runs the full IB + Python pipeline for one symbol.
+// fetchLiveAnalysis runs the full broker + Python pipeline for one symbol.
 func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*AnalyzeResponse, error) {
-	ibClient := s.newIBClient(4)
-	if err := ibClient.Connect(ctx); err != nil {
-		return nil, fmt.Errorf("connect to IB TWS: %w", err)
+	b := s.newBroker(4)
+	if err := b.Connect(ctx); err != nil {
+		return nil, fmt.Errorf("connect to broker: %w", err)
 	}
-	defer ibClient.Disconnect()
+	defer b.Disconnect()
 
-	svc := server.NewMarketDataService(ibClient, s.store)
+	svc := server.NewMarketDataService(b, s.store)
 
-	stockData, err := server.FetchSymbolData(ctx, symbol, svc, ibClient)
+	stockData, err := server.FetchSymbolData(ctx, symbol, svc)
 	if err != nil {
 		return nil, fmt.Errorf("fetch market data: %w", err)
 	}
@@ -117,13 +118,13 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		return nil, fmt.Errorf("watchlist is empty — add symbols with 'optix watch add AAPL'")
 	}
 
-	ibClient := s.newIBClient(5)
-	if err := ibClient.Connect(ctx); err != nil {
-		return nil, fmt.Errorf("connect to IB TWS: %w", err)
+	b := s.newBroker(5)
+	if err := b.Connect(ctx); err != nil {
+		return nil, fmt.Errorf("connect to broker: %w", err)
 	}
-	defer ibClient.Disconnect()
+	defer b.Disconnect()
 
-	svc := server.NewMarketDataService(ibClient, s.store)
+	svc := server.NewMarketDataService(b, s.store)
 
 	// Bounded-concurrency fetch (max 5 simultaneous IB requests for faster processing)
 	type result struct {
@@ -144,7 +145,7 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 			// Per-symbol timeout so invalid symbols don't block the pool
 			symCtx, symCancel := context.WithTimeout(ctx, 30*time.Second)
 			defer symCancel()
-			d, e := server.FetchSymbolData(symCtx, sym, svc, ibClient)
+			d, e := server.FetchSymbolData(symCtx, sym, svc)
 			results <- result{idx: idx, data: d, err: e}
 		}(i, item.Symbol)
 	}

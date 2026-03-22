@@ -89,11 +89,7 @@ IB_PORT="${OPTIX_IB_PORT:-7496}"
 case "${1:-}" in
     quote|analyze|dashboard|chain)
         if ! nc -z "$IB_HOST" "$IB_PORT" 2>/dev/null; then
-            echo "⚠️  IBKR TWS/Gateway is not running at ${IB_HOST}:${IB_PORT}" >&2
-            echo "   Please start TWS or IB Gateway and enable API connections." >&2
-            echo "   TWS: File → Global Configuration → API → Settings → Enable ActiveX and Socket Clients" >&2
-            echo "   Ports: TWS live=7496, paper=7497 | Gateway live=4001, paper=4002" >&2
-            exit 1
+            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT} — will use Yahoo Finance (delayed data, no options)" >&2
         fi
         ;;
 esac
@@ -137,7 +133,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$SKILL_ROOT/bin/optix" --db "$SKILL_ROOT/data/optix.db" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+"$SKILL_ROOT/bin/optix" --db "$SKILL_ROOT/data/optix.db" --python "$SKILL_ROOT/python/.venv/bin/python" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 WRAPPER_EOF
     chmod +x "$TARGET_DIR/bin/optix.sh"
 }

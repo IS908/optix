@@ -363,10 +363,11 @@ func (c *Client) quoteFromHistory(ctx context.Context, symbol string) (*model.St
 }
 
 // parseIBDate parses IB historical bar date strings ("20240101" or "20240101 09:30:00").
+// Parsed in UTC to ensure consistent storage regardless of server timezone.
 func parseIBDate(s string) (time.Time, error) {
 	if len(s) == 8 {
-		return time.ParseInLocation("20060102", s, time.Local)
+		return time.ParseInLocation("20060102", s, time.UTC)
 	}
-	return time.ParseInLocation("20060102 15:04:05", s, time.Local)
+	return time.ParseInLocation("20060102 15:04:05", s, time.UTC)
 }
 

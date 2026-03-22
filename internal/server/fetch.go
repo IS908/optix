@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/IS908/optix/internal/broker/ibkr"
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
 	"github.com/IS908/optix/pkg/model"
@@ -19,7 +18,6 @@ func FetchSymbolData(
 	ctx context.Context,
 	symbol string,
 	svc *MarketDataService,
-	ibClient *ibkr.Client,
 ) (*analysisv1.SingleStockData, error) {
 	// 1. Current quote
 	quote, err := svc.GetQuote(ctx, symbol)
@@ -73,10 +71,10 @@ func modelChainToProto(chain *model.OptionChain) []*marketdatav1.OptionChainExpi
 		return nil
 	}
 	out := make([]*marketdatav1.OptionChainExpiry, 0, len(chain.Expirations))
-	now := time.Now()
+	now := time.Now().UTC()
 	for _, exp := range chain.Expirations {
 		dte := 0
-		if t, err := time.ParseInLocation("20060102", exp.Expiration, time.Local); err == nil {
+		if t, err := time.ParseInLocation("20060102", exp.Expiration, time.UTC); err == nil {
 			dte = int(t.Sub(now).Hours() / 24)
 			if dte < 0 {
 				dte = 0

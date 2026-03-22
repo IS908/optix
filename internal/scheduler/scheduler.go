@@ -83,10 +83,20 @@ func (s *Scheduler) Start(ctx context.Context) error {
 
 // generateTasks runs the task generation loop.
 func (s *Scheduler) generateTasks(ctx context.Context) {
+	// Periodic prune: clean stale data once per hour
+	pruneTicker := time.NewTicker(1 * time.Hour)
+	defer pruneTicker.Stop()
+
 	for {
 		select {
 		case <-s.ticker.C:
 			s.generateBatch()
+		case <-pruneTicker.C:
+			if n, err := s.store.PruneStaleData(ctx); err != nil {
+				log.Error().Err(err).Msg("Failed to prune stale data")
+			} else if n > 0 {
+				log.Info().Int64("deleted_rows", n).Msg("Pruned stale data")
+			}
 		case <-ctx.Done():
 			s.ticker.Stop()
 			return

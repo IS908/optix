@@ -53,6 +53,7 @@ Examples:
 				Capital:       capital,
 				ForecastDays:  int32(forecastDays),
 				RiskTolerance: riskTol,
+				PythonBin:     pythonBin,
 			}
 
 			// 3. Create server
@@ -69,7 +70,7 @@ Examples:
 			sched := scheduler.New(
 				schedulerCfg,
 				store,
-				scheduler.IBConfig{Host: ibHost, Port: ibPort},
+				scheduler.IBConfig{Host: ibHost, Port: ibPort, PythonBin: pythonBin},
 				scheduler.AnalysisConfig{
 					Addr:          analysisAddr,
 					Capital:       capital,

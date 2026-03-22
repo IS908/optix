@@ -10,6 +10,7 @@ import (
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -30,8 +31,9 @@ type Worker struct {
 
 // IBConfig holds IBKR connection parameters.
 type IBConfig struct {
-	Host string
-	Port int
+	Host      string
+	Port      int
+	PythonBin string // Python interpreter for yfinance fallback
 }
 
 // AnalysisConfig holds Python analysis engine parameters.
@@ -120,21 +122,21 @@ func (w *Worker) executeTask(ctx context.Context, task Task) {
 // fetchAndCache connects to IBKR, fetches data, calls Python analysis, and saves to SQLite.
 // This replicates the logic from webui.fetchLiveAnalysis() but runs in background.
 func (w *Worker) fetchAndCache(ctx context.Context, symbol string) error {
-	// Create IB client with unique client ID (10 + worker_id)
-	ibClient := ibkr.New(ibkr.Config{
+	// Create broker with fallback (IBKR → yfinance)
+	b := broker.NewWithFallback(ibkr.Config{
 		Host:     w.ibCfg.Host,
 		Port:     w.ibCfg.Port,
 		ClientID: int64(10 + w.id),
-	})
+	}, w.ibCfg.PythonBin)
 
-	if err := ibClient.Connect(ctx); err != nil {
-		return fmt.Errorf("connect to IB TWS: %w", err)
+	if err := b.Connect(ctx); err != nil {
+		return fmt.Errorf("connect to broker: %w", err)
 	}
-	defer ibClient.Disconnect()
+	defer b.Disconnect()
 
 	// Fetch market data
-	svc := server.NewMarketDataService(ibClient, w.store)
-	stockData, err := server.FetchSymbolData(ctx, symbol, svc, ibClient)
+	svc := server.NewMarketDataService(b, w.store)
+	stockData, err := server.FetchSymbolData(ctx, symbol, svc)
 	if err != nil {
 		return fmt.Errorf("fetch market data: %w", err)
 	}

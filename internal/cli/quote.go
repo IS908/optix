@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -25,17 +26,17 @@ func newQuoteCmd() *cobra.Command {
 			}
 			defer store.Close()
 
-			client := ibkr.New(ibkr.Config{
+			b := broker.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 1,
-			})
-			if err := client.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to IB: %w", err)
+			}, pythonBin)
+			if err := b.Connect(ctx); err != nil {
+				return fmt.Errorf("connect to broker: %w", err)
 			}
-			defer client.Disconnect()
+			defer b.Disconnect()
 
-			svc := server.NewMarketDataService(client, store)
+			svc := server.NewMarketDataService(b, store)
 			q, err := svc.GetQuote(ctx, symbol)
 			if err != nil {
 				return err

@@ -130,7 +130,7 @@ func (s *Store) UpsertStockQuote(ctx context.Context, q *model.StockQuote) error
 			updated_at=excluded.updated_at`,
 		q.Symbol, q.Last, q.Bid, q.Ask, q.Volume, q.Change, q.ChangePct,
 		q.High, q.Low, q.Open, q.Close, q.High52W, q.Low52W, q.AvgVolume,
-		q.Timestamp.Format(time.RFC3339),
+		q.Timestamp.UTC().Format(time.RFC3339),
 	)
 	return err
 }
@@ -155,6 +155,9 @@ func (s *Store) GetStockQuote(ctx context.Context, symbol string) (*model.StockQ
 // --- OHLCV Bars ---
 
 // InsertBars inserts historical bars (ignoring duplicates).
+// Timestamps are normalized to UTC before storage so that the same bar
+// received with different timezone offsets (e.g. +08:00 vs -04:00) is
+// correctly deduplicated by the UNIQUE(symbol, timeframe, open_time) constraint.
 func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars []model.OHLCV) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -163,7 +166,7 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT OR IGNORE INTO ohlcv_bars (symbol, timeframe, open_time, open, high, low, close, volume)
+		INSERT OR REPLACE INTO ohlcv_bars (symbol, timeframe, open_time, open, high, low, close, volume)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
@@ -171,7 +174,17 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 	defer stmt.Close()
 
 	for _, b := range bars {
-		_, err := stmt.ExecContext(ctx, symbol, timeframe, b.Timestamp.Format(time.RFC3339),
+		// For daily bars, truncate to date (YYYY-MM-DDT00:00:00Z) so that
+		// the same trading day from different sources (IBKR vs yfinance)
+		// or timezone contexts always maps to one unique row.
+		// For intraday bars, keep full UTC timestamp.
+		var key string
+		if timeframe == "1 day" || timeframe == "1d" {
+			key = b.Timestamp.UTC().Truncate(24*time.Hour).Format(time.RFC3339)
+		} else {
+			key = b.Timestamp.UTC().Format(time.RFC3339)
+		}
+		_, err := stmt.ExecContext(ctx, symbol, timeframe, key,
 			b.Open, b.High, b.Low, b.Close, b.Volume)
 		if err != nil {
 			return err
@@ -202,7 +215,7 @@ func (s *Store) UpsertOptionChain(ctx context.Context, chain *model.OptionChain)
 	}
 	defer stmt.Close()
 
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339)
 	for _, exp := range chain.Expirations {
 		for _, c := range exp.Calls {
 			if _, err := stmt.ExecContext(ctx, chain.Underlying, exp.Expiration, c.Strike, "C", c.OpenInterest, c.ImpliedVolatility, now); err != nil {
@@ -215,17 +228,32 @@ func (s *Store) UpsertOptionChain(ctx context.Context, chain *model.OptionChain)
 			}
 		}
 	}
+
+	// Prune old snapshots: keep only the current snapshot_time per underlying.
+	// Uses != instead of < to avoid lexicographic comparison issues with
+	// mixed timezone offsets (e.g. "+08:00" vs "Z") in SQLite string comparison.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM option_quotes
+		WHERE underlying = ? AND snapshot_time != ?`,
+		chain.Underlying, now); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 
 // GetBars retrieves historical bars for a symbol.
 func (s *Store) GetBars(ctx context.Context, symbol, timeframe string, limit int) ([]model.OHLCV, error) {
+	// Return the latest N bars in chronological order (ASC).
+	// Subquery selects latest N by DESC, outer sorts ASC.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT open_time, open, high, low, close, volume
-		FROM ohlcv_bars
-		WHERE symbol = ? AND timeframe = ?
-		ORDER BY open_time DESC
-		LIMIT ?`, symbol, timeframe, limit)
+		SELECT open_time, open, high, low, close, volume FROM (
+			SELECT open_time, open, high, low, close, volume
+			FROM ohlcv_bars
+			WHERE symbol = ? AND timeframe = ?
+			ORDER BY open_time DESC
+			LIMIT ?
+		) ORDER BY open_time ASC`, symbol, timeframe, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +278,7 @@ func (s *Store) GetBars(ctx context.Context, symbol, timeframe string, limit int
 func (s *Store) AddToWatchlist(ctx context.Context, symbol string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO watchlist (symbol, added_at) VALUES (?, ?)`,
-		symbol, time.Now().Format(time.RFC3339))
+		symbol, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -262,7 +290,7 @@ func (s *Store) RemoveFromWatchlist(ctx context.Context, symbol string) error {
 
 // SaveWatchlistSnapshot upserts a daily snapshot for a watchlist symbol.
 func (s *Store) SaveWatchlistSnapshot(ctx context.Context, snap model.QuickSummary) error {
-	now := time.Now()
+	now := time.Now().UTC()
 	date := now.Format("2006-01-02")
 	refreshedAt := now.Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
@@ -355,6 +383,42 @@ func (s *Store) DeleteBackgroundJobs(ctx context.Context, symbol string) error {
 	return err
 }
 
+// PruneStaleData removes expired data across all tables:
+//   - background_jobs: keep only last 7 days
+//   - ohlcv_bars: remove bars for symbols not in watchlist
+//   - watchlist_snapshots: keep only last 90 days
+//   - option_quotes: remove all rows with non-UTC snapshot_time (legacy cleanup)
+//
+// Safe to call periodically (e.g., daily from the scheduler).
+func (s *Store) PruneStaleData(ctx context.Context) (int64, error) {
+	var totalDeleted int64
+
+	cutoff7d := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+	cutoff90d := time.Now().UTC().Add(-90 * 24 * time.Hour).Format("2006-01-02")
+
+	queries := []string{
+		// Background jobs older than 7 days
+		`DELETE FROM background_jobs WHERE created_at < '` + cutoff7d + `'`,
+		// Watchlist snapshots older than 90 days
+		`DELETE FROM watchlist_snapshots WHERE snapshot_date < '` + cutoff90d + `'`,
+		// Bars for symbols not in watchlist
+		`DELETE FROM ohlcv_bars WHERE symbol NOT IN (SELECT symbol FROM watchlist)`,
+		// Quotes for symbols not in watchlist
+		`DELETE FROM stock_quotes WHERE symbol NOT IN (SELECT symbol FROM watchlist)`,
+	}
+
+	for _, q := range queries {
+		result, err := s.db.ExecContext(ctx, q)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("prune: %w", err)
+		}
+		n, _ := result.RowsAffected()
+		totalDeleted += n
+	}
+
+	return totalDeleted, nil
+}
+
 // SaveAnalysisCache persists a full analysis JSON payload for a symbol.
 func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []byte) error {
 	_, err := s.db.ExecContext(ctx, `
@@ -362,7 +426,7 @@ func (s *Store) SaveAnalysisCache(ctx context.Context, symbol string, payload []
 		VALUES (?, ?, ?)
 		ON CONFLICT(symbol) DO UPDATE SET
 			cached_at=excluded.cached_at, payload_json=excluded.payload_json`,
-		symbol, time.Now().Format(time.RFC3339), string(payload),
+		symbol, time.Now().UTC().Format(time.RFC3339), string(payload),
 	)
 	return err
 }
@@ -534,7 +598,7 @@ func (s *Store) UpdateLastRefreshTime(symbol string, t time.Time) error {
 		UPDATE watchlist
 		SET last_refreshed_at = ?
 		WHERE symbol = ?
-	`, t.Format(time.RFC3339), symbol)
+	`, t.UTC().Format(time.RFC3339), symbol)
 	return err
 }
 
@@ -566,7 +630,7 @@ func (s *Store) CreateBackgroundJob(job *model.BackgroundJob) (int64, error) {
 		timeToString(job.StartedAt),
 		job.ErrorMessage,
 		job.RetryCount,
-		job.CreatedAt.Format(time.RFC3339),
+		job.CreatedAt.UTC().Format(time.RFC3339),
 	)
 
 	if err != nil {
@@ -748,5 +812,5 @@ func timeToString(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
-	return t.Format(time.RFC3339)
+	return t.UTC().Format(time.RFC3339)
 }

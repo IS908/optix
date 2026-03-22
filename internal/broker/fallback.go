@@ -70,6 +70,23 @@ func (fb *FallbackBroker) UsingFallback() bool {
 	return fb.usingFallback
 }
 
+// SourceName returns a display-friendly data source identifier.
+func (fb *FallbackBroker) SourceName() string {
+	if fb.usingFallback {
+		return "Yahoo Finance"
+	}
+	return "IBKR"
+}
+
+// SourceBanner returns a one-line status banner showing data source and delay info.
+// Suitable for printing after Connect().
+func (fb *FallbackBroker) SourceBanner() string {
+	if fb.usingFallback {
+		return "📡 Data source: Yahoo Finance (delayed ~15 min, no options data)"
+	}
+	return "📡 Data source: IBKR (real-time)"
+}
+
 // GetQuote delegates to the active broker.
 func (fb *FallbackBroker) GetQuote(ctx context.Context, symbol string) (*model.StockQuote, error) {
 	return fb.active.GetQuote(ctx, symbol)

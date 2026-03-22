@@ -524,12 +524,32 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
 # ─── Helper functions ─────────────────────────────────────────────────────────
 
 def _bars_to_dataframe(bars) -> pd.DataFrame:
-    """Convert proto OHLCV repeated field to pandas DataFrame."""
-    rows = [
-        {"open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
-        for b in bars
-    ]
-    return pd.DataFrame(rows)
+    """Convert proto OHLCV repeated field to pandas DataFrame.
+
+    Bars are sorted by timestamp (oldest first) and deduplicated by date
+    to ensure indicators compute correctly regardless of input order.
+    """
+    rows = []
+    for b in bars:
+        ts = b.timestamp.ToDatetime() if b.timestamp else None
+        rows.append({
+            "timestamp": ts,
+            "open": b.open,
+            "high": b.high,
+            "low": b.low,
+            "close": b.close,
+            "volume": b.volume,
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    # Sort chronologically and deduplicate by calendar date
+    if df["timestamp"].notna().any():
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        df["_date"] = df["timestamp"].dt.date
+        df = df.drop_duplicates(subset="_date", keep="last").reset_index(drop=True)
+        df = df.drop(columns=["_date"])
+    return df
 
 
 def _compute_hv(df: pd.DataFrame, period: int = 20) -> float:

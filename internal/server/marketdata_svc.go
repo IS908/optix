@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/datastore/sqlite"
@@ -40,25 +41,37 @@ func (svc *MarketDataService) GetQuote(ctx context.Context, symbol string) (*mod
 }
 
 // GetHistoricalBars fetches historical bars, using cache when available.
+// Cache is considered stale if the most recent bar is older than 2 calendar days
+// (accounts for weekends: Friday's bar is still valid on Sunday).
 func (svc *MarketDataService) GetHistoricalBars(ctx context.Context, symbol, timeframe string, days int) ([]model.OHLCV, error) {
 	// Try cache first
 	bars, err := svc.store.GetBars(ctx, symbol, timeframe, days)
 	if err == nil && len(bars) >= days {
-		return bars, nil
+		// Check freshness: most recent bar should be within last 2 calendar days
+		latest := bars[len(bars)-1].Timestamp
+		if time.Since(latest) < 48*time.Hour {
+			return bars, nil
+		}
+		// Cache is stale — fall through to broker fetch
 	}
 
 	// Fetch from broker — pass empty start/end so IB uses its defaults (~1 year)
-	bars, err = svc.broker.GetHistoricalBars(ctx, symbol, timeframe, "", "")
+	fresh, err := svc.broker.GetHistoricalBars(ctx, symbol, timeframe, "", "")
 	if err != nil {
+		// If broker fetch fails but we have cached data, return stale cache
+		// rather than failing entirely (stale data is better than no data).
+		if len(bars) > 0 {
+			return bars, nil
+		}
 		return nil, fmt.Errorf("get historical bars for %s: %w", symbol, err)
 	}
 
 	// Cache
-	if err := svc.store.InsertBars(ctx, symbol, timeframe, bars); err != nil {
+	if err := svc.store.InsertBars(ctx, symbol, timeframe, fresh); err != nil {
 		fmt.Printf("warning: failed to cache bars: %v\n", err)
 	}
 
-	return bars, nil
+	return fresh, nil
 }
 
 // GetOptionChain fetches the option chain from the broker and caches OI data.

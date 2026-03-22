@@ -61,12 +61,18 @@ func newWatchRemoveCmd() *cobra.Command {
 			}
 			defer store.Close()
 
+			symbol := args[0]
 			mgr := watchlist.NewManager(store)
-			if err := mgr.Remove(ctx, args[0]); err != nil {
+			if err := mgr.Remove(ctx, symbol); err != nil {
 				return err
 			}
 
-			fmt.Printf("Removed %s from watchlist\n", args[0])
+			// Cascade: clean up related data for the removed symbol
+			_ = store.DeleteWatchlistSnapshots(ctx, symbol)
+			_ = store.DeleteAnalysisCache(ctx, symbol)
+			_ = store.DeleteBackgroundJobs(ctx, symbol)
+
+			fmt.Printf("Removed %s from watchlist\n", symbol)
 			return nil
 		},
 	}

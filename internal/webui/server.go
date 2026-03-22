@@ -16,13 +16,14 @@ import (
 
 // Config holds all configuration for the web UI server.
 type Config struct {
-	Addr         string  // HTTP listen address, e.g. "0.0.0.0:8080"
-	IBHost       string
-	IBPort       int
-	AnalysisAddr string
-	Capital      float64
-	ForecastDays int32
+	Addr          string // HTTP listen address, e.g. "0.0.0.0:8080"
+	IBHost        string
+	IBPort        int
+	AnalysisAddr  string
+	Capital       float64
+	ForecastDays  int32
 	RiskTolerance string
+	PythonBin     string // Python interpreter for yfinance fallback
 }
 
 // Server is the Optix web UI HTTP server.

@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	cfgFile string
-	dbPath  string
-	ibHost  string
-	ibPort  int
+	cfgFile   string
+	dbPath    string
+	ibHost    string
+	ibPort    int
+	pythonBin string
 )
 
 // NewRootCmd creates the root cobra command.
@@ -26,6 +27,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB TWS/Gateway host")
 	root.PersistentFlags().IntVar(&ibPort, "ib-port", 7496, "IB TWS/Gateway port")
+	root.PersistentFlags().StringVar(&pythonBin, "python", "python3", "Python interpreter for yfinance fallback")
 
 	root.AddCommand(newQuoteCmd())
 	root.AddCommand(newWatchCmd())

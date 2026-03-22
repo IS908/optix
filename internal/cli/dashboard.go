@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/analysis"
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -56,20 +57,20 @@ Examples:
 			}
 
 			fmt.Printf("📋 Dashboard — %d symbols\n", len(items))
-			fmt.Printf("⏳ Connecting to IB TWS at %s:%d...\n", ibHost, ibPort)
+			fmt.Printf("⏳ Connecting to market data source...\n")
 
-			// 3. Connect to IB TWS (ClientID 3 reserved for dashboard)
-			ibClient := ibkr.New(ibkr.Config{
+			// 3. Connect to broker (IBKR with yfinance fallback)
+			b := broker.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 3,
-			})
-			if err := ibClient.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to IB: %w", err)
+			}, pythonBin)
+			if err := b.Connect(ctx); err != nil {
+				return fmt.Errorf("connect to broker: %w", err)
 			}
-			defer ibClient.Disconnect()
+			defer b.Disconnect()
 
-			svc := server.NewMarketDataService(ibClient, store)
+			svc := server.NewMarketDataService(b, store)
 
 			// 4. Fetch data for each symbol (bounded concurrency = 2)
 			fmt.Printf("📊 Fetching market data...\n")
@@ -91,7 +92,7 @@ Examples:
 					sem <- struct{}{}
 					defer func() { <-sem }()
 
-					data, fetchErr := fetchSymbolData(ctx, sym, svc, ibClient)
+					data, fetchErr := fetchSymbolData(ctx, sym, svc)
 					resultsCh <- fetchResult{idx: idx, data: data, err: fetchErr}
 					if fetchErr != nil {
 						fmt.Printf("  ⚠️  %-6s  %v\n", sym, fetchErr)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/analysis"
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -47,7 +48,7 @@ Examples:
 
 			symbol := strings.ToUpper(args[0])
 
-			fmt.Printf("⏳ Connecting to IB TWS at %s:%d...\n", ibHost, ibPort)
+			fmt.Printf("⏳ Connecting to market data source...\n")
 
 			// Open SQLite store for caching
 			store, err := sqlite.New(dbPath)
@@ -56,23 +57,23 @@ Examples:
 			}
 			defer store.Close()
 
-			// Connect to IB TWS
-			ibClient := ibkr.New(ibkr.Config{
+			// Connect to broker (IBKR with yfinance fallback)
+			b := broker.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
-				ClientID: 2, // use client ID 2 for analyze (avoids conflict with quote cmd)
-			})
-			if err := ibClient.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to IB: %w", err)
+				ClientID: 2,
+			}, pythonBin)
+			if err := b.Connect(ctx); err != nil {
+				return fmt.Errorf("connect to broker: %w", err)
 			}
-			defer ibClient.Disconnect()
+			defer b.Disconnect()
 
 			// Create MarketDataService with SQLite caching
-			svc := server.NewMarketDataService(ibClient, store)
+			svc := server.NewMarketDataService(b, store)
 
 			// Fetch all data for this symbol
 			fmt.Printf("📊 Fetching data for %s...\n", symbol)
-			stockData, err := fetchSymbolData(ctx, symbol, svc, ibClient)
+			stockData, err := fetchSymbolData(ctx, symbol, svc)
 			if err != nil {
 				return fmt.Errorf("fetch data: %w", err)
 			}
@@ -138,20 +139,20 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 
 	weeks := int(forecastDays / 7)
 	fmt.Printf("📋 Watchlist Deep Analysis — %d symbols\n", len(items))
-	fmt.Printf("⏳ Connecting to IB TWS at %s:%d...\n", ibHost, ibPort)
+	fmt.Printf("⏳ Connecting to market data source...\n")
 
-	// Connect to IB TWS once for all symbols
-	ibClient := ibkr.New(ibkr.Config{
+	// Connect to broker (IBKR with yfinance fallback)
+	b := broker.NewWithFallback(ibkr.Config{
 		Host:     ibHost,
 		Port:     ibPort,
-		ClientID: 5, // dedicated ClientID for batch watchlist analysis
-	})
-	if err := ibClient.Connect(ctx); err != nil {
-		return fmt.Errorf("connect to IB: %w", err)
+		ClientID: 5,
+	}, pythonBin)
+	if err := b.Connect(ctx); err != nil {
+		return fmt.Errorf("connect to broker: %w", err)
 	}
-	defer ibClient.Disconnect()
+	defer b.Disconnect()
 
-	svc := server.NewMarketDataService(ibClient, store)
+	svc := server.NewMarketDataService(b, store)
 
 	// Connect to Python analysis engine once
 	fmt.Printf("🔬 Analysis engine at %s\n", analysisAddr)
@@ -166,7 +167,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 		sym := strings.ToUpper(item.Symbol)
 		fmt.Printf("\n[%d/%d] Analyzing %s...\n", i+1, len(items), sym)
 
-		stockData, fetchErr := fetchSymbolData(ctx, sym, svc, ibClient)
+		stockData, fetchErr := fetchSymbolData(ctx, sym, svc)
 		if fetchErr != nil {
 			fmt.Printf("  ⚠️  %s: fetch error: %v — skipping\n", sym, fetchErr)
 			continue
@@ -197,8 +198,8 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 }
 
 // fetchSymbolData delegates to server.FetchSymbolData (shared with the web UI).
-func fetchSymbolData(ctx context.Context, symbol string, svc *server.MarketDataService, ibClient *ibkr.Client) (*analysisv1.SingleStockData, error) {
-	return server.FetchSymbolData(ctx, symbol, svc, ibClient)
+func fetchSymbolData(ctx context.Context, symbol string, svc *server.MarketDataService) (*analysisv1.SingleStockData, error) {
+	return server.FetchSymbolData(ctx, symbol, svc)
 }
 
 // ─── Report printing ──────────────────────────────────────────────────────────

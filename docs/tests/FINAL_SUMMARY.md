@@ -260,7 +260,7 @@ const FreshnessPoller = {
 ### 前置条件
 ```bash
 # 1. Python 环境
-python3.14 -m venv python/.venv
+python3 -m venv python/.venv  # Python 3.11+
 python/.venv/bin/pip install -e python/
 
 # 2. 构建

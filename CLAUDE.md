@@ -17,7 +17,7 @@ Optix is a **US stock & options strategy analysis tool** that helps identify sel
 ### First-Time Setup
 ```bash
 # 1. Install Python dependencies (REQUIRED before first run)
-python3.14 -m venv python/.venv
+python3 -m venv python/.venv  # requires Python 3.11+
 python/.venv/bin/pip install -e python/
 
 # 2. Build Go binaries
@@ -141,7 +141,7 @@ make clean  # Removes bin/ and data/optix.db
 - Black-Scholes model, implied volatility calculations
 
 **`technical/`**: Technical analysis indicators
-- Custom implementations (SMA, EMA, RSI, MACD, Bollinger Bands, ATR) to avoid `pandas-ta` numba incompatibility with Python 3.14
+- Custom implementations (SMA, EMA, RSI, MACD, Bollinger Bands, ATR) to avoid `pandas-ta` numba incompatibility with Python >= 3.13
 
 **`strategy/`**: Strategy recommendation logic
 - Evaluates covered calls, cash-secured puts, credit spreads based on technical signals, IV rank, support/resistance

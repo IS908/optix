@@ -17,7 +17,7 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 ### Prerequisites
 
 - **Go** 1.22+
-- **Python** 3.14+
+- **Python** 3.11+ (3.14 recommended)
 - **Interactive Brokers** TWS or IB Gateway running with API enabled
 
 ### Setup
@@ -28,7 +28,7 @@ git clone https://github.com/IS908/optix.git
 cd optix
 
 # Python dependencies
-python3.14 -m venv python/.venv
+python3 -m venv python/.venv
 python/.venv/bin/pip install -e python/
 
 # Build Go binaries

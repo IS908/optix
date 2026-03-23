@@ -33,6 +33,7 @@ func newWatchAddCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			mgr := watchlist.NewManager(store)
@@ -59,6 +60,7 @@ func newWatchRemoveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			symbol := args[0]
@@ -88,6 +90,7 @@ func newWatchListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			mgr := watchlist.NewManager(store)

@@ -30,6 +30,8 @@ func NewFallbackBroker(primary, fallback Broker) *FallbackBroker {
 }
 
 // Connect tries the primary broker; on failure, switches to fallback for this session.
+// Explicitly disconnects the primary after failure to release any partial TCP connection
+// that may have been established before the handshake timed out.
 func (fb *FallbackBroker) Connect(ctx context.Context) error {
 	err := fb.primary.Connect(ctx)
 	if err == nil {
@@ -37,6 +39,11 @@ func (fb *FallbackBroker) Connect(ctx context.Context) error {
 		fb.usingFallback = false
 		return nil
 	}
+
+	// Ensure any partial IBKR TCP connection is released before falling back.
+	// Connect() already calls Disconnect() internally on timeout/cancel, but we
+	// call it again here defensively in case the ibapi library left state behind.
+	_ = fb.primary.Disconnect()
 
 	log.Printf("⚠️  IBKR unavailable (%v), falling back to Yahoo Finance (delayed data, no options)", err)
 
@@ -85,6 +92,18 @@ func (fb *FallbackBroker) SourceBanner() string {
 		return "📡 Data source: Yahoo Finance (delayed ~15 min, no options data)"
 	}
 	return "📡 Data source: IBKR (real-time)"
+}
+
+// Ping delegates to the active broker if it implements Pinger, otherwise
+// returns nil (yfinance is stateless and always "connected").
+func (fb *FallbackBroker) Ping(ctx context.Context) error {
+	if fb.active == nil {
+		return fmt.Errorf("broker: not connected")
+	}
+	if p, ok := fb.active.(Pinger); ok {
+		return p.Ping(ctx)
+	}
+	return nil // fallback (yfinance) is always available
 }
 
 // GetQuote delegates to the active broker.

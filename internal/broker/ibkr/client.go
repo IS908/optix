@@ -3,6 +3,7 @@ package ibkr
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -26,8 +27,9 @@ type Client struct {
 	wrapper  *IbWrapper
 	ibClient *ibapi.EClient
 
-	mu        sync.RWMutex
-	connected bool
+	mu          sync.RWMutex
+	connected   bool
+	watchCancel context.CancelFunc // stops the disconnect-watcher goroutine; nil if not running
 
 	reqIDCounter int64 // atomic counter for request IDs
 }
@@ -62,10 +64,14 @@ func (c *Client) Connect(ctx context.Context) error {
 	case firstID := <-c.wrapper.nextValidID:
 		atomic.StoreInt64(&c.reqIDCounter, firstID)
 	case <-time.After(10 * time.Second):
-		_ = c.ibClient.Disconnect()
+		if dErr := c.ibClient.Disconnect(); dErr != nil {
+			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", c.cfg.ClientID, dErr)
+		}
 		return fmt.Errorf("timeout waiting for IB TWS handshake")
 	case <-ctx.Done():
-		_ = c.ibClient.Disconnect()
+		if dErr := c.ibClient.Disconnect(); dErr != nil {
+			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", c.cfg.ClientID, dErr)
+		}
 		return ctx.Err()
 	}
 
@@ -76,6 +82,22 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.ibClient.ReqMarketDataType(3)
 
 	c.connected = true
+
+	// Drain any stale disconnect signal that may linger from a prior session.
+	select {
+	case <-c.wrapper.disconnectCh:
+	default:
+	}
+	// Start a goroutine that watches for TCP-drop callbacks from ibapi and
+	// immediately marks the client as disconnected without waiting for the
+	// next health check.
+	watchCtx, watchCancel := context.WithCancel(context.Background())
+	if c.watchCancel != nil {
+		c.watchCancel() // stop previous watcher if any
+	}
+	c.watchCancel = watchCancel
+	go c.watchDisconnect(watchCtx)
+
 	return nil
 }
 
@@ -89,7 +111,47 @@ func (c *Client) Disconnect() error {
 	}
 	err := c.ibClient.Disconnect()
 	c.connected = false
+	// Stop the watcher goroutine so it doesn't fire after an intentional disconnect.
+	if c.watchCancel != nil {
+		c.watchCancel()
+		c.watchCancel = nil
+	}
 	return err
+}
+
+// watchDisconnect runs in a goroutine while the client is connected. When
+// ibapi fires ConnectionClosed() (TCP drop), it sets connected=false so the
+// broker pool can detect the dead slot without waiting for the health ticker.
+func (c *Client) watchDisconnect(ctx context.Context) {
+	select {
+	case <-c.wrapper.disconnectCh:
+		c.mu.Lock()
+		c.connected = false
+		c.mu.Unlock()
+		log.Printf("ibkr: TCP connection dropped (clientID %d) — slot marked unhealthy", c.cfg.ClientID)
+	case <-ctx.Done():
+	}
+}
+
+// Ping sends a lightweight ReqCurrentTime round-trip to verify the connection
+// is alive. Returns an error if TWS does not respond within the context deadline.
+// Implements broker.Pinger.
+func (c *Client) Ping(ctx context.Context) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("ibkr: not connected (clientID %d)", c.cfg.ClientID)
+	}
+	// Drain any stale response from a prior ping.
+	select {
+	case <-c.wrapper.pingCh:
+	default:
+	}
+	c.ibClient.ReqCurrentTime()
+	select {
+	case <-c.wrapper.pingCh:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("ibkr: ping timeout (clientID %d): %w", c.cfg.ClientID, ctx.Err())
+	}
 }
 
 // IsConnected returns the connection status.

@@ -56,6 +56,14 @@ type IbWrapper struct {
 	contractDetails map[int64]*pendingContractDetails
 	errors          map[int64]chan error
 	nextValidID     chan int64
+
+	// disconnectCh is signaled when ibapi detects a TCP connection drop.
+	// Buffered 1 so ConnectionClosed() never blocks.
+	disconnectCh chan struct{}
+
+	// pingCh receives a signal on each CurrentTime() callback, used by Ping().
+	// Buffered 1 so the callback never blocks.
+	pingCh chan struct{}
 }
 
 func newIbWrapper() *IbWrapper {
@@ -66,6 +74,8 @@ func newIbWrapper() *IbWrapper {
 		contractDetails: make(map[int64]*pendingContractDetails),
 		errors:          make(map[int64]chan error),
 		nextValidID:     make(chan int64, 1),
+		disconnectCh:    make(chan struct{}, 1),
+		pingCh:          make(chan struct{}, 1),
 	}
 }
 
@@ -268,6 +278,25 @@ func (w *IbWrapper) SecurityDefinitionOptionParameterEnd(reqID int64) {
 	}
 }
 
+// ConnectionClosed is called by ibapi when the TCP connection to TWS is dropped
+// (e.g., TWS restart, network failure). We forward the signal to Client so it
+// can mark the connection unhealthy immediately, before the next health check.
+func (w *IbWrapper) ConnectionClosed() {
+	select {
+	case w.disconnectCh <- struct{}{}:
+	default: // already signaled; Client hasn't drained it yet
+	}
+}
+
+// CurrentTime is called in response to ReqCurrentTime. Used by Ping() as a
+// lightweight round-trip probe to verify the TCP connection is still alive.
+func (w *IbWrapper) CurrentTime(_ int64) {
+	select {
+	case w.pingCh <- struct{}{}:
+	default:
+	}
+}
+
 // Error routes IB errors to the corresponding pending request's error channel,
 // or logs them as informational messages (errCode < 2000 are often warnings).
 func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errString string, _ string) {
@@ -305,6 +334,13 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 			case <-pp.done:
 			default:
 				close(pp.done)
+			}
+		}
+		if pcd, has := w.contractDetails[reqID]; has {
+			select {
+			case <-pcd.done:
+			default:
+				close(pcd.done)
 			}
 		}
 		w.mu.Unlock()

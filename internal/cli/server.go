@@ -17,11 +17,12 @@ import (
 
 func newServerCmd() *cobra.Command {
 	var (
-		webAddr      string
+		webAddr    string
 		analysisAddr string
 		capital      float64
 		forecastDays int
 		riskTol      string
+		maxBrokers   int
 	)
 
 	cmd := &cobra.Command{
@@ -42,18 +43,20 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			// 2. Build web UI config
 			cfg := webui.Config{
-				Addr:          webAddr,
-				IBHost:        ibHost,
-				IBPort:        ibPort,
-				AnalysisAddr:  analysisAddr,
-				Capital:       capital,
-				ForecastDays:  int32(forecastDays),
-				RiskTolerance: riskTol,
-				PythonBin:     pythonBin,
+				Addr:                 webAddr,
+				IBHost:               ibHost,
+				IBPort:               ibPort,
+				AnalysisAddr:         analysisAddr,
+				Capital:              capital,
+				ForecastDays:         int32(forecastDays),
+				RiskTolerance:        riskTol,
+				PythonBin:            pythonBin,
+				MaxConcurrentBrokers: maxBrokers,
 			}
 
 			// 3. Create server
@@ -107,6 +110,7 @@ Examples:
 	cmd.Flags().Float64Var(&capital, "capital", 100000, "Available capital for strategy sizing")
 	cmd.Flags().IntVar(&forecastDays, "forecast-days", 14, "Forecast horizon in days")
 	cmd.Flags().StringVar(&riskTol, "risk-tolerance", "moderate", "Risk tolerance: conservative, moderate, aggressive")
+	cmd.Flags().IntVar(&maxBrokers, "max-brokers", 0, "Max concurrent IBKR connections (0 = default 8; keep < 32 minus CLI/scheduler slots)")
 
 	return cmd
 }

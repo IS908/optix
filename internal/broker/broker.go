@@ -6,6 +6,13 @@ import (
 	"github.com/IS908/optix/pkg/model"
 )
 
+// Pinger is an optional interface for brokers that support lightweight
+// connectivity probes. If a broker implements Pinger, the connection pool
+// uses it for active health checks instead of relying solely on IsConnected().
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 // Broker defines the interface for interacting with a brokerage.
 type Broker interface {
 	// Connect establishes a connection to the broker.

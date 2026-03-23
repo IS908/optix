@@ -24,6 +24,7 @@ func newQuoteCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			b := broker.NewWithFallback(ibkr.Config{

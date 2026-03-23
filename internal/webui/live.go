@@ -9,36 +9,41 @@ import (
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
-	"github.com/IS908/optix/internal/broker"
-	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/watchlist"
 	"github.com/IS908/optix/pkg/model"
 )
 
-// newBroker creates a FallbackBroker (tries IBKR, falls back to yfinance).
-// clientID 4 is reserved for web UI single-symbol analyze;
-// clientID 5 is reserved for web UI dashboard live refresh.
-func (s *Server) newBroker(clientID int) *broker.FallbackBroker {
-	return broker.NewWithFallback(ibkr.Config{
-		Host:     s.cfg.IBHost,
-		Port:     s.cfg.IBPort,
-		ClientID: int64(clientID),
-	}, s.cfg.PythonBin)
+// fetchLiveAnalysis deduplicates concurrent requests for the same symbol via
+// singleflight: only one live fetch runs at a time per symbol.
+func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*AnalyzeResponse, error) {
+	v, err, _ := s.sfGroup.Do("analyze:"+symbol, func() (any, error) {
+		return s.doFetchLiveAnalysis(ctx, symbol)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*AnalyzeResponse), nil
 }
 
-// fetchLiveAnalysis runs the full broker + Python pipeline for one symbol.
-func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*AnalyzeResponse, error) {
-	b := s.newBroker(4)
-	if err := b.Connect(ctx); err != nil {
+// doFetchLiveAnalysis runs the full broker + Python pipeline for one symbol.
+// It acquires a slot from the broker pool (blocking if all slots are busy),
+// uses the pool's persistent connection, and releases the slot on return.
+// The slot is marked unhealthy if the broker drops mid-request, triggering
+// an async reconnect before the slot re-enters the pool.
+func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*AnalyzeResponse, error) {
+	conn, err := s.brokerPool.acquire(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("connect to broker: %w", err)
 	}
-	defer b.Disconnect()
+	healthy := true
+	defer func() { s.brokerPool.release(conn, healthy) }()
 
-	svc := server.NewMarketDataService(b, s.store)
+	svc := server.NewMarketDataService(conn.b, s.store)
 
 	stockData, err := server.FetchSymbolData(ctx, symbol, svc)
 	if err != nil {
+		healthy = conn.isConnected()
 		return nil, fmt.Errorf("fetch market data: %w", err)
 	}
 
@@ -65,7 +70,7 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 	}
 
 	resp := ProtoToAnalyzeResponse(protoResp, symbol, true)
-	resp.DataSource = b.SourceName()
+	resp.DataSource = conn.sourceName()
 
 	// Persist to cache for future cache-mode hits
 	if payload, jerr := json.Marshal(resp); jerr == nil {
@@ -102,10 +107,22 @@ func (s *Server) fetchLiveAnalysis(ctx context.Context, symbol string) (*Analyze
 	return resp, nil
 }
 
-// fetchLiveDashboard fetches all watchlist symbols concurrently (max 5 at a time)
+// fetchLiveDashboard deduplicates concurrent dashboard refresh requests via
+// singleflight: only one live fetch runs at a time.
+func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, error) {
+	v, err, _ := s.sfGroup.Do("dashboard", func() (any, error) {
+		return s.doFetchLiveDashboard(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*DashboardResponse), nil
+}
+
+// doFetchLiveDashboard fetches all watchlist symbols concurrently (max 5 at a time)
 // and runs batch quick analysis on the Python engine.
 // Overall timeout: 3 minutes for the entire dashboard refresh.
-func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, error) {
+func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, error) {
 	// Set overall timeout for the entire operation
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -119,13 +136,14 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 		return nil, fmt.Errorf("watchlist is empty — add symbols with 'optix watch add AAPL'")
 	}
 
-	b := s.newBroker(5)
-	if err := b.Connect(ctx); err != nil {
+	conn, err := s.brokerPool.acquire(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("connect to broker: %w", err)
 	}
-	defer b.Disconnect()
+	healthy := true
+	defer func() { s.brokerPool.release(conn, healthy) }()
 
-	svc := server.NewMarketDataService(b, s.store)
+	svc := server.NewMarketDataService(conn.b, s.store)
 
 	// Bounded-concurrency fetch (max 5 simultaneous IB requests for faster processing)
 	type result struct {
@@ -253,7 +271,7 @@ func (s *Server) fetchLiveDashboard(ctx context.Context) (*DashboardResponse, er
 	return &DashboardResponse{
 		GeneratedAt: time.Now().UTC(),
 		FromCache:   false,
-		DataSource:  b.SourceName(),
+		DataSource:  conn.sourceName(),
 		Symbols:     syms,
 		Freshness:   freshness,
 	}, nil

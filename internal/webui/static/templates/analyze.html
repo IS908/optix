@@ -63,21 +63,21 @@
 
 {{/* Still show freshness strip to visualise the "never fetched" state */}}
 <div class="flex flex-wrap items-center gap-2 mb-2 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
-  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
+  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last refreshed:</span>
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
-        title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Quote last updated{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Quote&nbsp;·&nbsp;<span data-ts="{{.Freshness.QuoteAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.QuoteAt}}</span>
   </span>
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
-        title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="OHLCV bars last fetched{{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     OHLCV&nbsp;·&nbsp;<span data-ts="{{.Freshness.OHLCVAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OHLCVAt}}</span>
   </span>
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
-        title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Option chain snapshot taken{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Options&nbsp;·&nbsp;<span data-ts="{{.Freshness.OptionsAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OptionsAt}}</span>
   </span>
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
-        title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Analysis last computed{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Analysis&nbsp;·&nbsp;<span data-ts="{{.Freshness.CacheAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.CacheAt}}</span>
   </span>
 </div>
@@ -88,29 +88,29 @@
 {{/* ── Data Freshness strip (normal cache-hit path) ── */}}
 {{if .Freshness.Symbol}}
 <div class="flex flex-wrap items-center gap-2 mb-6 px-1 py-2 rounded-xl bg-gray-900/40 border border-gray-800/60">
-  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last fetch:</span>
+  <span class="text-gray-600 text-xs font-medium pl-2">📡 Last refreshed:</span>
 
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.QuoteAt}} {{freshclass .Freshness.QuoteAt}}"
-        title="stock_quotes.updated_at{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Quote last updated{{if not .Freshness.QuoteAt.IsZero}} — {{.Freshness.QuoteAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Quote&nbsp;·&nbsp;<span data-ts="{{.Freshness.QuoteAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.QuoteAt}}</span>
   </span>
 
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.OHLCVAt}} {{freshclass .Freshness.OHLCVAt}}"
-        title="ohlcv_bars (1D){{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="OHLCV bars last fetched{{if not .Freshness.OHLCVAt.IsZero}} — {{.Freshness.OHLCVAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     OHLCV&nbsp;·&nbsp;<span data-ts="{{.Freshness.OHLCVAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OHLCVAt}}</span>
   </span>
 
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.OptionsAt}} {{freshclass .Freshness.OptionsAt}}"
-        title="option_quotes.snapshot_time{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Option chain snapshot taken{{if not .Freshness.OptionsAt.IsZero}} — {{.Freshness.OptionsAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Options&nbsp;·&nbsp;<span data-ts="{{.Freshness.OptionsAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.OptionsAt}}</span>
   </span>
 
   <span data-fresh class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono
                {{freshbg .Freshness.CacheAt}} {{freshclass .Freshness.CacheAt}}"
-        title="analysis_cache.cached_at{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
+        title="Analysis last computed{{if not .Freshness.CacheAt.IsZero}} — {{.Freshness.CacheAt.Format "2006-01-02 15:04:05"}} UTC{{end}}">
     Analysis&nbsp;·&nbsp;<span data-ts="{{.Freshness.CacheAt.Format "2006-01-02T15:04:05Z07:00"}}">{{timeago .Freshness.CacheAt}}</span>
   </span>
 

@@ -95,14 +95,11 @@ func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*Analy
 	}
 	_ = s.store.SaveWatchlistSnapshot(ctx, snap)
 
-	// For a live fetch every layer was just refreshed — use current time.
-	now := time.Now().UTC()
-	resp.Freshness.Symbol     = symbol
-	resp.Freshness.QuoteAt    = now
-	resp.Freshness.OHLCVAt    = now
-	resp.Freshness.OptionsAt  = now
-	resp.Freshness.CacheAt    = now
-	resp.Freshness.SnapshotAt = now
+	// Read freshness from SQLite so it reflects actual per-layer timestamps
+	// (e.g. quote trade time, bar open_time) rather than a blanket time.Now().
+	// This also avoids a visual "jump" when the frontend polls /api/freshness
+	// 30s later — both the initial render and the poll read from the same source.
+	resp.Freshness, _ = s.store.GetSymbolFreshness(ctx, symbol)
 
 	return resp, nil
 }
@@ -208,8 +205,6 @@ func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, 
 		return nil, fmt.Errorf("batch analysis (fetched %d/%d symbols): %w", len(stocks), len(items), err)
 	}
 
-	now := time.Now().UTC()
-
 	syms := make([]SymbolSummary, 0, len(batchResp.Summaries))
 	for _, sm := range batchResp.Summaries {
 		syms = append(syms, SymbolSummary{
@@ -242,31 +237,11 @@ func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, 
 		})
 	}
 
-	// Build freshness for each successfully fetched symbol (all layers = now,
-	// including SnapshotAt since we just saved the snapshot above).
-	freshness := make([]model.SymbolFreshness, 0, len(syms))
-	for _, sym := range syms {
-		freshness = append(freshness, model.SymbolFreshness{
-			Symbol:     sym.Symbol,
-			QuoteAt:    now,
-			OHLCVAt:    now,
-			OptionsAt:  now,
-			SnapshotAt: now,
-			// CacheAt is not written during a live dashboard refresh
-		})
-	}
-
-	// Backfill CacheAt from DB — live dashboard runs batch quick analysis (not
-	// full analysis), so CacheAt reflects a previous fetchLiveAnalysis run.
-	if dbFreshAll, dbErr := s.store.GetAllSymbolFreshness(ctx); dbErr == nil {
-		cacheAtMap := make(map[string]time.Time, len(dbFreshAll))
-		for _, f := range dbFreshAll {
-			cacheAtMap[f.Symbol] = f.CacheAt
-		}
-		for i := range freshness {
-			freshness[i].CacheAt = cacheAtMap[freshness[i].Symbol]
-		}
-	}
+	// Read freshness from SQLite so each column reflects its actual timestamp
+	// (quote trade time, bar open_time, option snapshot_time, etc.) rather
+	// than a blanket time.Now(). This also keeps the initial render consistent
+	// with subsequent /api/freshness polls, avoiding visual "jumps".
+	freshness, _ := s.store.GetAllSymbolFreshness(ctx) // best-effort
 
 	return &DashboardResponse{
 		GeneratedAt: time.Now().UTC(),

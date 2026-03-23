@@ -153,7 +153,7 @@
   <summary class="flex items-center gap-2 cursor-pointer list-none select-none py-1">
     <span class="text-gray-500 text-xs transition-transform duration-150 group-open:rotate-90 inline-block">▶</span>
     <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-300 transition-colors">
-      📡 Data Sources — Last Fetch Time
+      📡 Data Freshness — Last Refreshed
     </span>
     <span class="ml-auto text-gray-700 text-xs hidden group-open:hidden">click to expand</span>
   </summary>
@@ -163,11 +163,11 @@
       <thead>
         <tr class="bg-gray-900/80 text-gray-500 uppercase tracking-wider">
           <th class="px-4 py-2.5 text-left">Symbol</th>
-          <th class="px-4 py-2.5 text-center" title="stock_quotes.updated_at — real-time price from IBKR TWS">Quote</th>
-          <th class="px-4 py-2.5 text-center" title="ohlcv_bars — newest daily bar fetched from IBKR historical API">OHLCV&nbsp;1D</th>
-          <th class="px-4 py-2.5 text-center" title="option_quotes.snapshot_time — newest option chain from IBKR">Options</th>
-          <th class="px-4 py-2.5 text-center" title="analysis_cache.cached_at — last full Python analysis stored">Analysis</th>
-          <th class="px-4 py-2.5 text-center" title="watchlist_snapshots — last 'optix dashboard' CLI snapshot date">Snapshot</th>
+          <th class="px-4 py-2.5 text-center" title="When the stock quote was last updated (IBKR trade timestamp)">Quote</th>
+          <th class="px-4 py-2.5 text-center" title="When daily OHLCV bars were last fetched from IBKR">OHLCV&nbsp;1D</th>
+          <th class="px-4 py-2.5 text-center" title="When the option chain snapshot was taken by IBKR">Options</th>
+          <th class="px-4 py-2.5 text-center" title="When the full Python analysis was last computed and cached">Analysis</th>
+          <th class="px-4 py-2.5 text-center" title="When the dashboard snapshot was last saved">Snapshot</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-800/40">
@@ -222,7 +222,7 @@
     <span class="text-amber-600 font-bold">●</span> 6–48 h &nbsp;
     <span class="text-red-700 font-bold">●</span> &gt; 48 h &nbsp;
     <span class="text-gray-600 font-bold">●</span> never &nbsp;·&nbsp;
-    Hover a badge for exact UTC timestamp.
+    Hover a badge for exact UTC timestamp. Times reflect when each data layer was last updated, not when the refresh button was clicked.
   </p>
 </details>
 {{end}}

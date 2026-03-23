@@ -489,7 +489,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE((SELECT updated_at  FROM stock_quotes  WHERE symbol    = ?1), '') AS quote_at,
-			COALESCE((SELECT MAX(COALESCE(fetched_at, open_time)) FROM ohlcv_bars WHERE symbol = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
+			COALESCE((SELECT MAX(fetched_at) FROM ohlcv_bars WHERE symbol = ?1 AND timeframe = '1 day' AND fetched_at IS NOT NULL), (SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
 			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
 			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
 			COALESCE((SELECT MAX(last_refreshed_at) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
@@ -522,7 +522,8 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		FROM watchlist w
 		LEFT JOIN stock_quotes sq ON sq.symbol = w.symbol
 		LEFT JOIN (
-			SELECT symbol, MAX(COALESCE(fetched_at, open_time)) AS ohlcv_at
+			SELECT symbol,
+			       COALESCE(MAX(fetched_at), MAX(open_time)) AS ohlcv_at
 			FROM ohlcv_bars WHERE timeframe = '1 day' GROUP BY symbol
 		) ob ON ob.symbol = w.symbol
 		LEFT JOIN (

@@ -48,8 +48,17 @@ bundle_to() {
 
     # --- Python environment strategy ---
     # Try host Python first; create a venv only if dependencies are missing.
+    # Minimum Python version: 3.11 (matches pyproject.toml requires-python).
     local PYTHON_BIN
-    PYTHON_BIN="$(command -v python3.14 || command -v python3 || echo python3)"
+    PYTHON_BIN="$(command -v python3.14 || command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3 || echo python3)"
+
+    # Verify minimum version
+    if ! "$PYTHON_BIN" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>/dev/null; then
+        echo "ERROR: Python >= 3.11 is required (found: $("$PYTHON_BIN" --version 2>&1 || echo 'none'))" >&2
+        echo "  Install Python 3.11+ and try again." >&2
+        return 1
+    fi
+    echo "  Using Python: $("$PYTHON_BIN" --version 2>&1)"
 
     local HOST_OK=true
     # Check all runtime imports on the host interpreter
@@ -380,6 +389,17 @@ echo "Checking prerequisites..."
 
 if ! command -v go &>/dev/null; then
     echo "ERROR: Go compiler not found. Install Go first." >&2
+    exit 1
+fi
+
+if ! command -v python3 &>/dev/null; then
+    echo "ERROR: Python 3 not found. Install Python 3.11+ first." >&2
+    exit 1
+fi
+
+PY_VER="$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")"
+if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>/dev/null; then
+    echo "ERROR: Python >= 3.11 is required (found: $PY_VER)" >&2
     exit 1
 fi
 

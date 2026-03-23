@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"golang.org/x/sync/singleflight"
 )
 
 // Config holds all configuration for the web UI server.
@@ -25,6 +26,13 @@ type Config struct {
 	ForecastDays  int32
 	RiskTolerance string
 	PythonBin     string // Python interpreter for yfinance fallback
+
+	// MaxConcurrentBrokers is the size of the IBKR connection pool used for
+	// live web UI fetches. Each slot holds one unique ClientID (starting at
+	// poolClientIDBase = 30). 0 → defaultPoolSize (8).
+	// Keep well below TWS's 32-connection limit when accounting for CLI and
+	// scheduler workers that also hold connections.
+	MaxConcurrentBrokers int
 }
 
 // Server is the Optix web UI HTTP server.
@@ -34,6 +42,8 @@ type Server struct {
 	mux         *http.ServeMux
 	refreshMu   sync.Mutex          // guards lastRefresh
 	lastRefresh map[string]time.Time // symbol → last background refresh time
+	sfGroup     singleflight.Group  // deduplicates concurrent live fetches per symbol
+	brokerPool  *brokerPool         // bounded IBKR connection pool
 }
 
 // New creates a Server and registers all routes.
@@ -49,6 +59,10 @@ func New(cfg Config, store *sqlite.Store) *Server {
 		cfg:         cfg,
 		store:       store,
 		lastRefresh: make(map[string]time.Time),
+		brokerPool: newBrokerPool(
+			cfg.MaxConcurrentBrokers,
+			defaultBrokerFactory(cfg.IBHost, cfg.IBPort, cfg.PythonBin),
+		),
 	}
 	s.mux = http.NewServeMux()
 	s.registerRoutes()
@@ -76,7 +90,9 @@ func (s *Server) maybeBackgroundRefresh(symbol string) {
 }
 
 // Start begins serving HTTP requests. It blocks until ctx is cancelled.
+// The broker pool is closed (all connections disconnected) before returning.
 func (s *Server) Start(ctx context.Context) error {
+	defer s.brokerPool.close()
 	srv := &http.Server{
 		Addr:         s.cfg.Addr,
 		Handler:      s.mux,

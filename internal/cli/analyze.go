@@ -146,7 +146,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	b := broker.NewWithFallback(ibkr.Config{
 		Host:     ibHost,
 		Port:     ibPort,
-		ClientID: 5,
+		ClientID: 6,
 	}, pythonBin)
 	if err := b.Connect(ctx); err != nil {
 		return fmt.Errorf("connect to broker: %w", err)

@@ -77,6 +77,7 @@ func (s *Store) migrate() error {
 
 	// Idempotent schema additions — error is swallowed when column already exists.
 	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE ohlcv_bars ADD COLUMN fetched_at TEXT`)
 	return nil
 }
 
@@ -171,13 +172,14 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT OR REPLACE INTO ohlcv_bars (symbol, timeframe, open_time, open, high, low, close, volume)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		INSERT OR REPLACE INTO ohlcv_bars (symbol, timeframe, open_time, open, high, low, close, volume, fetched_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	for _, b := range bars {
 		// For daily bars, truncate to date (YYYY-MM-DDT00:00:00Z) so that
 		// the same trading day from different sources (IBKR vs yfinance)
@@ -190,7 +192,7 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 			key = b.Timestamp.UTC().Format(time.RFC3339)
 		}
 		_, err := stmt.ExecContext(ctx, symbol, timeframe, key,
-			b.Open, b.High, b.Low, b.Close, b.Volume)
+			b.Open, b.High, b.Low, b.Close, b.Volume, now)
 		if err != nil {
 			return err
 		}
@@ -487,7 +489,7 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE((SELECT updated_at  FROM stock_quotes  WHERE symbol    = ?1), '') AS quote_at,
-			COALESCE((SELECT MAX(open_time) FROM ohlcv_bars WHERE symbol   = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
+			COALESCE((SELECT MAX(COALESCE(fetched_at, open_time)) FROM ohlcv_bars WHERE symbol = ?1 AND timeframe = '1 day'), '') AS ohlcv_at,
 			COALESCE((SELECT MAX(snapshot_time) FROM option_quotes WHERE underlying = ?1), '') AS opt_at,
 			COALESCE((SELECT cached_at   FROM analysis_cache WHERE symbol  = ?1), '') AS cache_at,
 			COALESCE((SELECT MAX(last_refreshed_at) FROM watchlist_snapshots WHERE symbol = ?1), '') AS snap_date
@@ -520,7 +522,7 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		FROM watchlist w
 		LEFT JOIN stock_quotes sq ON sq.symbol = w.symbol
 		LEFT JOIN (
-			SELECT symbol, MAX(open_time) AS ohlcv_at
+			SELECT symbol, MAX(COALESCE(fetched_at, open_time)) AS ohlcv_at
 			FROM ohlcv_bars WHERE timeframe = '1 day' GROUP BY symbol
 		) ob ON ob.symbol = w.symbol
 		LEFT JOIN (

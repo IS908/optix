@@ -57,8 +57,15 @@ bundle_to() {
     mkdir -p "$TARGET_DIR/data"
 
     # Copy existing database if present (watchlist etc.)
+    # Checkpoint WAL first so all data is in the main file, then copy
+    # the db and any residual WAL/SHM files to avoid data loss.
     if [[ -f "$PROJECT_ROOT/data/optix.db" ]]; then
+        sqlite3 "$PROJECT_ROOT/data/optix.db" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
         cp "$PROJECT_ROOT/data/optix.db" "$TARGET_DIR/data/optix.db"
+        for ext in -wal -shm; do
+            [[ -f "$PROJECT_ROOT/data/optix.db${ext}" ]] && \
+                cp "$PROJECT_ROOT/data/optix.db${ext}" "$TARGET_DIR/data/optix.db${ext}"
+        done
         echo "  Copied existing database (watchlist preserved)"
     fi
 

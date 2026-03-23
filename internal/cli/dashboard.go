@@ -43,6 +43,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			// 2. Read watchlist

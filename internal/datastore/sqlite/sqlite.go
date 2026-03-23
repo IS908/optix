@@ -54,8 +54,13 @@ func New(dbPath string) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the database connection.
+// Close checkpoints the WAL and closes the database connection.
+// The explicit checkpoint ensures all pending writes are flushed to the
+// main database file before the process exits — without this, data in
+// the WAL can be lost if the process is killed before the driver's
+// implicit checkpoint completes.
 func (s *Store) Close() error {
+	_, _ = s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	return s.db.Close()
 }
 

@@ -55,6 +55,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
+			RegisterCleanup(store)
 			defer store.Close()
 
 			// Connect to broker (IBKR with yfinance fallback)
@@ -126,7 +127,8 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer store.Close()
+	RegisterCleanup(store)
+			defer store.Close()
 
 	// Get watchlist
 	items, err := store.GetWatchlist(ctx)

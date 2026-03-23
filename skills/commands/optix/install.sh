@@ -46,12 +46,45 @@ bundle_to() {
         cp -r "$PROJECT_ROOT/python/src/optix_engine/gen" "$TARGET_DIR/python/src/optix_engine/gen"
     fi
 
-    # Create a fresh venv and install the package
-    echo "  Creating Python venv (this may take a moment)..."
+    # --- Python environment strategy ---
+    # Try host Python first; create a venv only if dependencies are missing.
     local PYTHON_BIN
     PYTHON_BIN="$(command -v python3.14 || command -v python3 || echo python3)"
-    "$PYTHON_BIN" -m venv "$TARGET_DIR/python/.venv"
-    "$TARGET_DIR/python/.venv/bin/pip" install --quiet -e "$TARGET_DIR/python/"
+
+    local HOST_OK=true
+    # Check all runtime imports on the host interpreter
+    "$PYTHON_BIN" -c "
+import numpy, scipy.stats, scipy.optimize, pandas, grpc, google.protobuf, yfinance
+" 2>/dev/null || HOST_OK=false
+
+    if [[ "$HOST_OK" == true ]]; then
+        echo "  Host Python ($PYTHON_BIN) has all dependencies — skipping venv"
+        # Install optix_engine as editable package via host pip (--user)
+        "$PYTHON_BIN" -m pip install --quiet --no-deps --user -e "$TARGET_DIR/python/" 2>/dev/null || \
+            "$PYTHON_BIN" -m pip install --quiet --no-deps -e "$TARGET_DIR/python/" 2>/dev/null || true
+        # Create a thin shim so bin/optix.sh can find the interpreter
+        mkdir -p "$TARGET_DIR/python/.venv/bin"
+        ln -sf "$(command -v "$PYTHON_BIN")" "$TARGET_DIR/python/.venv/bin/python"
+    else
+        echo "  Host Python missing dependencies — creating standalone venv..."
+        "$PYTHON_BIN" -m venv "$TARGET_DIR/python/.venv"
+
+        # Install runtime deps only (skip matplotlib, grpcio-tools for dev)
+        "$TARGET_DIR/python/.venv/bin/pip" install --quiet \
+            "numpy>=1.26" "scipy>=1.12" "pandas>=2.2" "grpcio>=1.60" "protobuf>=4.25" "yfinance>=0.2"
+
+        # Install optix_engine without pulling deps again
+        "$TARGET_DIR/python/.venv/bin/pip" install --quiet --no-deps -e "$TARGET_DIR/python/"
+
+        # Slim: remove pip, setuptools, caches, test dirs
+        echo "  Slimming Python venv..."
+        "$TARGET_DIR/python/.venv/bin/pip" uninstall --quiet -y pip setuptools 2>/dev/null || true
+        find "$TARGET_DIR/python/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        find "$TARGET_DIR/python/.venv" -name "*.pyc" -delete 2>/dev/null || true
+        for pkg in scipy numpy pandas; do
+            rm -rf "$TARGET_DIR/python/.venv/lib"/python*/site-packages/$pkg/tests 2>/dev/null || true
+        done
+    fi
 
     # Create data directory
     mkdir -p "$TARGET_DIR/data"
@@ -140,7 +173,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$SKILL_ROOT/bin/optix" --db "$SKILL_ROOT/data/optix.db" --python "$SKILL_ROOT/python/.venv/bin/python" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+"$SKILL_ROOT/bin/optix" --db "$SKILL_ROOT/data/optix.db" --python "$SKILL_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 WRAPPER_EOF
     chmod +x "$TARGET_DIR/bin/optix.sh"
 }

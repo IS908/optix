@@ -15,12 +15,20 @@ fi
 
 # --- Check IBKR TWS/Gateway for commands that need live data ---
 IB_HOST="${OPTIX_IB_HOST:-127.0.0.1}"
-IB_PORT="${OPTIX_IB_PORT:-7496}"
+IB_PORT="${OPTIX_IB_PORT:-gateway}"
+
+# Resolve port alias to number for nc -z connectivity check
+resolve_port() {
+    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+        gateway) echo 4001 ;; tws) echo 7496 ;; *) echo "$1" ;;
+    esac
+}
+IB_PORT_NUM=$(resolve_port "$IB_PORT")
 
 case "${1:-}" in
     quote|analyze|dashboard|chain)
-        if ! nc -z "$IB_HOST" "$IB_PORT" 2>/dev/null; then
-            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT} — will use Yahoo Finance (delayed data, no options)" >&2
+        if ! nc -z "$IB_HOST" "$IB_PORT_NUM" 2>/dev/null; then
+            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — will use Yahoo Finance (delayed data, no options)" >&2
         fi
         ;;
 esac

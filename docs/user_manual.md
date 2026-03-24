@@ -46,7 +46,7 @@
          ┌────────▼──┐  ┌───▼───────────────────┐
          │ IB TWS /  │  │ Python Analysis Engine │
          │ Gateway   │  │ localhost:50052        │
-         │ port 7497 │  │ BS定价 / 技术分析 /    │
+         │ port 4001 │  │ BS定价 / 技术分析 /    │
          └───────────┘  │ 期权分析 / 策略推荐    │
                         └───────────────────────┘
                                  │
@@ -75,8 +75,9 @@
 ### 2.1 前置条件
 
 1. **IB TWS 或 IB Gateway** 已启动并允许 API 连接
-   - 纸盘：端口 `7497`（TWS）或 `4002`（Gateway）
-   - 实盘：端口 `7496`（TWS）或 `4001`（Gateway）
+   - 默认连接 IB Gateway 实盘端口 `4001`
+   - `--ib-port` 支持别名：`gateway`（4001）、`tws`（7496），或直接数字端口
+   - 纸盘端口：`4002`（Gateway）、`7497`（TWS）
    - 设置路径：`Edit → Global Configuration → API → Settings`
    - 勾选 `Enable ActiveX and Socket Clients`
 
@@ -98,7 +99,7 @@
 ```yaml
 ibkr:
   host: "127.0.0.1"
-  port: 7497          # 纸盘TWS=7497, 实盘TWS=7496
+  port: 4001          # gateway=4001(默认), tws=7496, 纸盘: 4002/7497
   client_id: 1
 
 grpc:
@@ -223,7 +224,7 @@ Dashboard 是系统的核心操作界面，提供：
 | `--config` | `./configs/optix.yaml` | 配置文件路径 |
 | `--db` | `./data/optix.db` | SQLite 数据库路径 |
 | `--ib-host` | `127.0.0.1` | IB TWS/Gateway 地址 |
-| `--ib-port` | `7497` | IB TWS/Gateway 端口 |
+| `--ib-port` | `gateway` | IB 端口：`gateway`(4001)、`tws`(7496) 或数字 |
 
 ---
 

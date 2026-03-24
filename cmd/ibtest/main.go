@@ -13,7 +13,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c := ibkr.New(ibkr.Config{Host: "127.0.0.1", Port: 7496, ClientID: 4})
+	c := ibkr.New(ibkr.Config{Host: "127.0.0.1", Port: 4001, ClientID: 4})
 	if err := c.Connect(ctx); err != nil {
 		log.Fatalf("Connect: %v", err)
 	}

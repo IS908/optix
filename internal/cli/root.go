@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -12,12 +14,27 @@ import (
 )
 
 var (
-	cfgFile   string
-	dbPath    string
-	ibHost    string
-	ibPort    int
-	pythonBin string
+	cfgFile    string
+	dbPath     string
+	ibHost     string
+	ibPortRaw  string
+	ibPort     int
+	pythonBin  string
 )
+
+// resolveIBPort maps port aliases to numeric values.
+//
+//	"gateway" -> 4001, "tws" -> 7496, otherwise parse as integer.
+func resolveIBPort(raw string) (int, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "gateway":
+		return 4001, nil
+	case "tws":
+		return 7496, nil
+	default:
+		return strconv.Atoi(raw)
+	}
+}
 
 // cleanupRegistry collects io.Closer instances (store, broker) so that
 // SIGTERM / SIGINT can flush WAL and release resources even when defer
@@ -60,15 +77,21 @@ func NewRootCmd() *cobra.Command {
 		Use:   "optix",
 		Short: "US stock & options strategy analysis tool",
 		Long:  "Optix analyzes stocks and options to recommend sell-side strategies for the upcoming expiration.",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			cleanupOnce.Do(initSignalHandler)
+			p, err := resolveIBPort(ibPortRaw)
+			if err != nil {
+				return fmt.Errorf("invalid --ib-port %q: use gateway, tws, or a number", ibPortRaw)
+			}
+			ibPort = p
+			return nil
 		},
 	}
 
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./configs/optix.yaml)")
 	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB TWS/Gateway host")
-	root.PersistentFlags().IntVar(&ibPort, "ib-port", 7496, "IB TWS/Gateway port")
+	root.PersistentFlags().StringVar(&ibPortRaw, "ib-port", "gateway", "IB port: gateway (4001), tws (7496), or number")
 	root.PersistentFlags().StringVar(&pythonBin, "python", "python3", "Python interpreter for yfinance fallback")
 
 	root.AddCommand(newQuoteCmd())

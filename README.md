@@ -68,7 +68,7 @@ make py-server
 ┌───────▼───────┐              ┌───────────▼───────────┐
 │  IBKR TWS /   │              │   Python Engine        │
 │  IB Gateway   │              │  technical / options /  │
-│  (:7496)      │              │  strategy / sentiment   │
+│  (:4001)      │              │  strategy / sentiment   │
 └───────────────┘              └───────────────────────┘
 ```
 
@@ -168,9 +168,9 @@ make proto    # Regenerate Go/Python code from .proto files
 | Setting | Default | Flag |
 |---------|---------|------|
 | Host | `127.0.0.1` | `--ib-host` |
-| Port (live TWS) | `7496` | `--ib-port` |
-| Port (paper TWS) | `7497` | `--ib-port` |
-| Port (Gateway live) | `4001` | `--ib-port` |
+| Port | `gateway` (4001) | `--ib-port` |
+
+`--ib-port` accepts aliases: `gateway` (4001), `tws` (7496), or a numeric port (e.g., `7497` for paper TWS, `4002` for paper Gateway).
 
 ## Contributing
 

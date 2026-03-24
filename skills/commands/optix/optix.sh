@@ -27,6 +27,7 @@ esac
 
 # --- Determine if command needs Python gRPC server ---
 PY_SERVER_PID=""
+READY_FILE=""
 NEED_PY_SERVER=false
 EXTRA_ARGS=()
 
@@ -39,24 +40,34 @@ esac
 
 if [[ "$NEED_PY_SERVER" == true ]]; then
     if ! nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
+        READY_FILE=$(mktemp -t optix-ready.XXXXXX)
+        rm -f "$READY_FILE"  # remove so we can detect when Python creates it
+
         echo "Starting Python analysis server on port ${ANALYSIS_PORT}..." >&2
-        "$PROJECT_ROOT/python/.venv/bin/python" -m optix_engine.grpc_server.server --addr="$ANALYSIS_ADDR" &>/dev/null &
+        "$PROJECT_ROOT/python/.venv/bin/python" -m optix_engine.grpc_server.server \
+            --addr="$ANALYSIS_ADDR" --ready-file="$READY_FILE" &>/dev/null &
         PY_SERVER_PID=$!
-        for i in {1..120}; do
-            if nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
+
+        # Wait for the ready-file signal (written by Python after server.start()).
+        # This is faster and more reliable than TCP polling with nc -z:
+        # file-exists check is ~0.1ms vs nc connection attempt ~5-50ms,
+        # and it confirms the server is fully initialized, not just listening.
+        for i in {1..600}; do
+            if [[ -f "$READY_FILE" ]]; then
                 echo "Python analysis server ready." >&2
                 break
             fi
-            # Check if process died early
             if ! kill -0 "$PY_SERVER_PID" 2>/dev/null; then
                 echo "ERROR: Python analysis server process exited unexpectedly" >&2
+                rm -f "$READY_FILE"
                 exit 1
             fi
-            sleep 1
+            sleep 0.2
         done
-        if ! nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
+        if [[ ! -f "$READY_FILE" ]]; then
             echo "ERROR: Python analysis server failed to start within 120s" >&2
             kill "$PY_SERVER_PID" 2>/dev/null
+            rm -f "$READY_FILE"
             exit 1
         fi
     fi
@@ -68,6 +79,7 @@ cleanup() {
         kill "$PY_SERVER_PID" 2>/dev/null
         wait "$PY_SERVER_PID" 2>/dev/null
     fi
+    [[ -n "$READY_FILE" ]] && rm -f "$READY_FILE"
 }
 trap cleanup EXIT
 

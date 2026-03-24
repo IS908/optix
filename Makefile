@@ -24,17 +24,18 @@ test:
 # Integration tests: starts Python gRPC server, runs Go tests, stops server
 test-integration:
 	@echo "Starting Python analysis server..."
-	@$(PYTHON) -m optix_engine.grpc_server.server --addr=localhost:50052 & \
+	@READY_FILE=$$(mktemp -t optix-ready.XXXXXX) && rm -f "$$READY_FILE" ; \
+	$(PYTHON) -m optix_engine.grpc_server.server --addr=localhost:50052 --ready-file="$$READY_FILE" & \
 	PYPID=$$! ; \
-	for i in $$(seq 1 120); do \
-		nc -z localhost 50052 2>/dev/null && break ; \
-		if ! kill -0 $$PYPID 2>/dev/null; then echo "Python server exited unexpectedly"; exit 1; fi ; \
-		sleep 1 ; \
+	for i in $$(seq 1 600); do \
+		[ -f "$$READY_FILE" ] && break ; \
+		if ! kill -0 $$PYPID 2>/dev/null; then echo "Python server exited unexpectedly"; rm -f "$$READY_FILE"; exit 1; fi ; \
+		sleep 0.2 ; \
 	done ; \
-	if ! nc -z localhost 50052 2>/dev/null; then echo "Python server failed to start within 120s"; kill $$PYPID 2>/dev/null; exit 1; fi ; \
+	if [ ! -f "$$READY_FILE" ]; then echo "Python server failed to start within 120s"; kill $$PYPID 2>/dev/null; rm -f "$$READY_FILE"; exit 1; fi ; \
 	echo "Python analysis server ready." ; \
 	go test -tags=integration -v -timeout=60s ./internal/analysis/ ; \
-	STATUS=$$? ; kill $$PYPID 2>/dev/null ; exit $$STATUS
+	STATUS=$$? ; kill $$PYPID 2>/dev/null ; rm -f "$$READY_FILE" ; exit $$STATUS
 
 # Clean
 clean:

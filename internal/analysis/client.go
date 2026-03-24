@@ -10,6 +10,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// defaultCallOpts are applied to every RPC call. WaitForReady makes the client
+// block until the server is ready rather than failing immediately with
+// UNAVAILABLE, which eliminates startup race conditions.
+var defaultCallOpts = []grpc.CallOption{grpc.WaitForReady(true)}
+
 // Client wraps the gRPC connection to the Python analysis engine.
 type Client struct {
 	conn   *grpc.ClientConn
@@ -61,7 +66,7 @@ func (c *Client) PriceOption(ctx context.Context,
 		Volatility:    volatility,
 		DividendYield: dividendYield,
 		OptionType:    ot,
-	})
+	}, defaultCallOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("PriceOption: %w", err)
 	}
@@ -82,7 +87,7 @@ func (c *Client) GetMaxPain(ctx context.Context, underlying string, chain []*mar
 	resp, err := c.svc.GetMaxPain(ctx, &analysisv1.MaxPainRequest{
 		Underlying: underlying,
 		Chain:      chain,
-	})
+	}, defaultCallOpts...)
 	if err != nil {
 		return 0, "", fmt.Errorf("GetMaxPain: %w", err)
 	}
@@ -91,7 +96,7 @@ func (c *Client) GetMaxPain(ctx context.Context, underlying string, chain []*mar
 
 // AnalyzeStock runs the full analysis pipeline on the Python engine.
 func (c *Client) AnalyzeStock(ctx context.Context, req *analysisv1.AnalyzeStockRequest) (*analysisv1.AnalyzeStockResponse, error) {
-	resp, err := c.svc.AnalyzeStock(ctx, req)
+	resp, err := c.svc.AnalyzeStock(ctx, req, defaultCallOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("AnalyzeStock: %w", err)
 	}
@@ -100,7 +105,7 @@ func (c *Client) AnalyzeStock(ctx context.Context, req *analysisv1.AnalyzeStockR
 
 // BatchQuickAnalysis runs quick analysis on multiple stocks for the dashboard.
 func (c *Client) BatchQuickAnalysis(ctx context.Context, req *analysisv1.BatchQuickAnalysisRequest) (*analysisv1.BatchQuickAnalysisResponse, error) {
-	resp, err := c.svc.BatchQuickAnalysis(ctx, req)
+	resp, err := c.svc.BatchQuickAnalysis(ctx, req, defaultCallOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("BatchQuickAnalysis: %w", err)
 	}

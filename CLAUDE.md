@@ -94,10 +94,10 @@ make clean  # Removes bin/ and data/optix.db
 
 ### IBKR Configuration
 
-- Default connection: `127.0.0.1:7496` (live TWS)
-- Override with flags: `--ib-host` and `--ib-port`
-- Paper trading port: `7497`
-- Gateway port: `4001` (live) or `4002` (paper)
+- Default connection: `127.0.0.1:4001` (IB Gateway live)
+- `--ib-port` accepts aliases: `gateway` (4001), `tws` (7496), or a numeric port
+- Override host with `--ib-host`
+- Paper trading ports: `7497` (TWS) or `4002` (Gateway)
 
 ## Code Architecture
 
@@ -205,7 +205,7 @@ Default: `./data/optix.db` (relative to CWD). Override with `--db` flag. The SQL
 - **Integration tests fail**: Ensure Python server is running on `localhost:50052`
 - **IBKR connection errors**: Verify TWS/Gateway is running and API connections are enabled in settings
 - **Protobuf changes not reflected**: Run `make proto` to regenerate Go/Python code
-- **Port 7496 vs 7497**: 7496 = live TWS, 7497 = paper TWS (update `--ib-port` accordingly)
+- **Port aliases**: `--ib-port=gateway` (4001, default), `--ib-port=tws` (7496), or use numeric port directly (e.g., `--ib-port=7497` for paper TWS)
 - **Web UI shows stale data**: Use `?refresh=true` to bypass cache, or check `last_refreshed_at` timestamps in SQLite
 
 ## Dependencies

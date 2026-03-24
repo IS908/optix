@@ -1,8 +1,8 @@
 # Optix Configuration
-# Interactive Brokers TWS connection
+# Interactive Brokers connection (default: IB Gateway live)
 ibkr:
   host: "127.0.0.1"
-  port: 7496          # 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, 4001 for Gateway live
+  port: 4001          # 4001 Gateway live (default), 4002 Gateway paper, 7496 TWS live, 7497 TWS paper
   client_id: 1
 
 # gRPC server settings

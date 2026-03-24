@@ -38,12 +38,14 @@ bundle_to() {
 
     echo "  Bundling Python engine..."
     mkdir -p "$TARGET_DIR/python"
-    # Copy Python source package
+    # Copy Python source package (remove old copy first to avoid cp -r nesting)
+    rm -rf "$TARGET_DIR/python/src"
     cp -r "$PROJECT_ROOT/python/src" "$TARGET_DIR/python/src"
     cp "$PROJECT_ROOT/python/pyproject.toml" "$TARGET_DIR/python/pyproject.toml"
     # Copy generated protobuf code
     if [[ -d "$PROJECT_ROOT/python/src/optix_engine/gen" ]]; then
-        cp -r "$PROJECT_ROOT/python/src/optix_engine/gen" "$TARGET_DIR/python/src/optix_engine/gen"
+        # Target already exists from the cp above; use trailing slash to copy contents
+        cp -r "$PROJECT_ROOT/python/src/optix_engine/gen/" "$TARGET_DIR/python/src/optix_engine/gen/"
     fi
 
     # --- Python environment strategy ---
@@ -133,12 +135,20 @@ ANALYSIS_ADDR="localhost:${ANALYSIS_PORT}"
 
 # --- Check IBKR TWS/Gateway for commands that need live data ---
 IB_HOST="${OPTIX_IB_HOST:-127.0.0.1}"
-IB_PORT="${OPTIX_IB_PORT:-7496}"
+IB_PORT="${OPTIX_IB_PORT:-gateway}"
+
+# Resolve port alias to number for nc -z connectivity check
+resolve_port() {
+    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+        gateway) echo 4001 ;; tws) echo 7496 ;; *) echo "$1" ;;
+    esac
+}
+IB_PORT_NUM=$(resolve_port "$IB_PORT")
 
 case "${1:-}" in
     quote|analyze|dashboard|chain)
-        if ! nc -z "$IB_HOST" "$IB_PORT" 2>/dev/null; then
-            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT} — will use Yahoo Finance (delayed data, no options)" >&2
+        if ! nc -z "$IB_HOST" "$IB_PORT_NUM" 2>/dev/null; then
+            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — will use Yahoo Finance (delayed data, no options)" >&2
         fi
         ;;
 esac

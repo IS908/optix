@@ -42,15 +42,22 @@ if [[ "$NEED_PY_SERVER" == true ]]; then
         echo "Starting Python analysis server on port ${ANALYSIS_PORT}..." >&2
         "$PROJECT_ROOT/python/.venv/bin/python" -m optix_engine.grpc_server.server --addr="$ANALYSIS_ADDR" &>/dev/null &
         PY_SERVER_PID=$!
-        for i in {1..60}; do
+        for i in {1..120}; do
             if nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
                 echo "Python analysis server ready." >&2
                 break
             fi
-            sleep 0.5
+            # Check if process died early
+            if ! kill -0 "$PY_SERVER_PID" 2>/dev/null; then
+                echo "ERROR: Python analysis server process exited unexpectedly" >&2
+                exit 1
+            fi
+            sleep 1
         done
         if ! nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
-            echo "ERROR: Python analysis server failed to start within 30s" >&2
+            echo "ERROR: Python analysis server failed to start within 120s" >&2
+            kill "$PY_SERVER_PID" 2>/dev/null
+            exit 1
         fi
     fi
 fi

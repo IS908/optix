@@ -26,8 +26,14 @@ test-integration:
 	@echo "Starting Python analysis server..."
 	@$(PYTHON) -m optix_engine.grpc_server.server --addr=localhost:50052 & \
 	PYPID=$$! ; \
-	sleep 2 ; \
-	go test -tags=integration -v -timeout=30s ./internal/analysis/ ; \
+	for i in $$(seq 1 120); do \
+		nc -z localhost 50052 2>/dev/null && break ; \
+		if ! kill -0 $$PYPID 2>/dev/null; then echo "Python server exited unexpectedly"; exit 1; fi ; \
+		sleep 1 ; \
+	done ; \
+	if ! nc -z localhost 50052 2>/dev/null; then echo "Python server failed to start within 120s"; kill $$PYPID 2>/dev/null; exit 1; fi ; \
+	echo "Python analysis server ready." ; \
+	go test -tags=integration -v -timeout=60s ./internal/analysis/ ; \
 	STATUS=$$? ; kill $$PYPID 2>/dev/null ; exit $$STATUS
 
 # Clean

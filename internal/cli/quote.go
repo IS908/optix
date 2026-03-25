@@ -44,13 +44,14 @@ func newQuoteCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("%-8s %s\n", "Symbol:", q.Symbol)
-			fmt.Printf("%-8s %.2f\n", "Last:", q.Last)
-			fmt.Printf("%-8s %.2f\n", "Bid:", q.Bid)
-			fmt.Printf("%-8s %.2f\n", "Ask:", q.Ask)
-			fmt.Printf("%-8s %d\n", "Volume:", q.Volume)
-			fmt.Printf("%-8s %.2f (%.2f%%)\n", "Change:", q.Change, q.ChangePct)
-			fmt.Printf("%-8s %s\n", "Time:", q.Timestamp.Format("2006-01-02 15:04:05"))
+			fmt.Printf("%-10s %s\n", "Symbol:", q.Symbol)
+			fmt.Printf("%-10s %.2f\n", "Last:", q.Last)
+			fmt.Printf("%-10s %.2f\n", "Bid:", q.Bid)
+			fmt.Printf("%-10s %.2f\n", "Ask:", q.Ask)
+			fmt.Printf("%-10s %d\n", "Volume:", q.Volume)
+			fmt.Printf("%-10s %.2f (%.2f%%)\n", "Change:", q.Change, q.ChangePct)
+			fmt.Printf("%-10s %s\n", "Time:", q.Timestamp.Format("2006-01-02 15:04:05"))
+			fmt.Printf("%-10s %s\n", "Session:", q.MarketSession.Label())
 			return nil
 		},
 	}

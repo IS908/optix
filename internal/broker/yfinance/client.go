@@ -100,21 +100,22 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	}
 
 	return &model.StockQuote{
-		Symbol:    raw.Symbol,
-		Last:      raw.Last,
-		Bid:       raw.Bid,
-		Ask:       raw.Ask,
-		Volume:    raw.Volume,
-		Change:    raw.Change,
-		ChangePct: raw.ChangePct,
-		High:      raw.High,
-		Low:       raw.Low,
-		Open:      raw.Open,
-		Close:     raw.Close,
-		High52W:   raw.High52W,
-		Low52W:    raw.Low52W,
-		AvgVolume: raw.AvgVolume,
-		Timestamp: ts,
+		Symbol:        raw.Symbol,
+		Last:          raw.Last,
+		Bid:           raw.Bid,
+		Ask:           raw.Ask,
+		Volume:        raw.Volume,
+		Change:        raw.Change,
+		ChangePct:     raw.ChangePct,
+		High:          raw.High,
+		Low:           raw.Low,
+		Open:          raw.Open,
+		Close:         raw.Close,
+		High52W:       raw.High52W,
+		Low52W:        raw.Low52W,
+		AvgVolume:     raw.AvgVolume,
+		Timestamp:     ts,
+		MarketSession: model.USMarketSession(time.Now()),
 	}, nil
 }
 

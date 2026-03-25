@@ -13,6 +13,15 @@ enum OptionType {
   OPTION_TYPE_PUT = 2;
 }
 
+// MarketSession identifies the US stock market trading session.
+enum MarketSession {
+  MARKET_SESSION_UNSPECIFIED = 0;
+  MARKET_SESSION_PRE_MARKET = 1;   // 04:00–09:30 ET
+  MARKET_SESSION_REGULAR = 2;      // 09:30–16:00 ET
+  MARKET_SESSION_POST_MARKET = 3;  // 16:00–20:00 ET
+  MARKET_SESSION_CLOSED = 4;       // outside trading hours / weekends
+}
+
 // StockQuote holds a real-time or delayed stock quote.
 message StockQuote {
   string symbol = 1;
@@ -30,6 +39,7 @@ message StockQuote {
   double low_52w = 13;
   double avg_volume = 14;
   google.protobuf.Timestamp timestamp = 15;
+  MarketSession market_session = 16;  // trading session when quote was fetched
 }
 
 // OHLCV is a single candlestick bar.

@@ -28,15 +28,32 @@
 {{end}}
 
 {{/* ── Data source indicator ── */}}
-{{if .DataSource}}
 <div class="flex items-center gap-2 mb-4 text-xs">
+  {{/* Market session badge — always shown */}}
+  {{if .SessionLabel}}
+  <span id="session-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+    {{if eq .MarketSession "regular"}}bg-emerald-950/60 border border-emerald-800/50 text-emerald-400
+    {{else if eq .MarketSession "pre_market"}}bg-blue-950/60 border border-blue-800/50 text-blue-400
+    {{else if eq .MarketSession "post_market"}}bg-purple-950/60 border border-purple-800/50 text-purple-400
+    {{else}}bg-gray-800/60 border border-gray-700/50 text-gray-400{{end}}">
+    <span class="w-1.5 h-1.5 rounded-full
+      {{if eq .MarketSession "regular"}}bg-emerald-400 animate-pulse
+      {{else if eq .MarketSession "pre_market"}}bg-blue-400 animate-pulse
+      {{else if eq .MarketSession "post_market"}}bg-purple-400 animate-pulse
+      {{else}}bg-gray-500{{end}}"></span>
+    {{.SessionLabel}}
+  </span>
+  {{end}}
+
+  {{/* Data source badge */}}
+  {{if .DataSource}}
   <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
     {{if eq .DataSource "IBKR"}}bg-emerald-950/60 border border-emerald-800/50 text-emerald-400{{else}}bg-amber-950/60 border border-amber-800/50 text-amber-400{{end}}">
     <span class="w-1.5 h-1.5 rounded-full {{if eq .DataSource "IBKR"}}bg-emerald-400{{else}}bg-amber-400{{end}}"></span>
-    {{if eq .DataSource "IBKR"}}📡 IBKR (real-time){{else}}📡 Yahoo Finance (delayed ~15 min, no options){{end}}
+    {{if eq .DataSource "IBKR"}}📡 IBKR{{else}}📡 Yahoo Finance (delayed){{end}}
   </span>
+  {{end}}
 </div>
-{{end}}
 
 {{/* ── Watchlist summary table ── */}}
 {{if .Symbols}}
@@ -252,6 +269,10 @@ const FreshnessPoller = {
             if (!resp.ok) throw new Error('Freshness fetch failed');
 
             const data = await resp.json();
+
+            // Update session badge from API response
+            this.updateSessionBadge(data);
+
             const changed = this.detectChanges(data.watchlist);
 
             if (changed.length > 0) {
@@ -280,6 +301,51 @@ const FreshnessPoller = {
         }
 
         return changed;
+    },
+
+    /** Update the market session badge from freshness API data */
+    updateSessionBadge(data) {
+        const badge = document.getElementById('session-badge');
+        if (!badge || !data.session_label) return;
+
+        const session = data.market_session;
+        const label = data.session_label;
+        const dot = badge.querySelector('span');
+
+        // Update text (last text node)
+        const textNodes = Array.from(badge.childNodes).filter(n => n.nodeType === 3);
+        if (textNodes.length > 0) {
+            textNodes[textNodes.length - 1].textContent = '\n    ' + label + '\n  ';
+        }
+
+        // Update colors based on session
+        const colorMap = {
+            'regular':     { bg: 'bg-emerald-950/60', border: 'border-emerald-800/50', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+            'pre_market':  { bg: 'bg-blue-950/60',    border: 'border-blue-800/50',    text: 'text-blue-400',    dot: 'bg-blue-400' },
+            'post_market': { bg: 'bg-purple-950/60',  border: 'border-purple-800/50',  text: 'text-purple-400',  dot: 'bg-purple-400' },
+            'closed':      { bg: 'bg-gray-800/60',    border: 'border-gray-700/50',    text: 'text-gray-400',    dot: 'bg-gray-500' },
+        };
+        const colors = colorMap[session] || colorMap['closed'];
+
+        // Strip old color classes and re-apply
+        badge.className = badge.className
+            .replace(/\b(bg|border|text)-(emerald|blue|purple|gray)-(400|500|700|800|950)(\/\d+)?\b/g, '')
+            .replace(/\s+/g, ' ').trim();
+        badge.classList.add('inline-flex', 'items-center', 'gap-1.5', 'px-3', 'py-1', 'rounded-full', 'border');
+        colors.bg.split('/').forEach(c => badge.classList.add(c.includes('/') ? colors.bg : c));
+        badge.classList.add(colors.border, colors.text);
+
+        if (dot) {
+            dot.className = dot.className
+                .replace(/\bbg-(emerald|blue|purple|gray)-(400|500)\b/g, '').trim();
+            dot.classList.add(colors.dot);
+            // Add/remove pulse for active sessions
+            if (session === 'closed') {
+                dot.classList.remove('animate-pulse');
+            } else {
+                dot.classList.add('animate-pulse');
+            }
+        }
     },
 
     /** Update the freshness panel row for a symbol with new timestamps from API */

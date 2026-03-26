@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/watchlist"
+	"github.com/IS908/optix/pkg/model"
 )
 
 // ─── Watchlist ────────────────────────────────────────────────────────────────
@@ -181,12 +182,15 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		freshness, _ := s.store.GetSymbolFreshness(r.Context(), symbol)
 		// Still trigger a background refresh so the next page load may have data.
 		s.maybeBackgroundRefresh(symbol)
+		session := model.USMarketSession(time.Now())
 		renderPage(w, "analyze.html", &AnalyzeResponse{
-			GeneratedAt: time.Now().UTC(),
-			Symbol:      symbol,
-			NoData:      true,
-			Error:       finalErr.Error(),
-			Freshness:   freshness,
+			GeneratedAt:   time.Now().UTC(),
+			Symbol:        symbol,
+			NoData:        true,
+			Error:         finalErr.Error(),
+			Freshness:     freshness,
+			MarketSession: string(session),
+			SessionLabel:  session.Label(),
 		})
 		return
 	}
@@ -221,8 +225,10 @@ func (s *Server) getAnalyzeData(r *http.Request, symbol string) (*AnalyzeRespons
 
 // FreshnessResponse contains timestamp information for all watchlist symbols.
 type FreshnessResponse struct {
-	Watchlist  []FreshnessItem `json:"watchlist"`
-	ServerTime time.Time       `json:"server_time"`
+	Watchlist     []FreshnessItem `json:"watchlist"`
+	ServerTime    time.Time       `json:"server_time"`
+	MarketSession string          `json:"market_session"` // "pre_market" | "regular" | "post_market" | "closed"
+	SessionLabel  string          `json:"session_label"`  // 盘前 | 盘中 | 盘后 | 休市
 }
 
 // FreshnessItem contains freshness timestamps for a single symbol.
@@ -271,9 +277,12 @@ func (s *Server) handleFreshness(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	session := model.USMarketSession(time.Now())
 	resp := FreshnessResponse{
-		Watchlist:  freshness,
-		ServerTime: time.Now().UTC(),
+		Watchlist:     freshness,
+		ServerTime:    time.Now().UTC(),
+		MarketSession: string(session),
+		SessionLabel:  session.Label(),
 	}
 
 	writeJSON(w, resp)

@@ -71,6 +71,9 @@ func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*Analy
 
 	resp := ProtoToAnalyzeResponse(protoResp, symbol, true)
 	resp.DataSource = conn.sourceName()
+	session := model.USMarketSession(time.Now())
+	resp.MarketSession = string(session)
+	resp.SessionLabel = session.Label()
 
 	// Persist to cache for future cache-mode hits
 	if payload, jerr := json.Marshal(resp); jerr == nil {
@@ -243,11 +246,14 @@ func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, 
 	// with subsequent /api/freshness polls, avoiding visual "jumps".
 	freshness, _ := s.store.GetAllSymbolFreshness(ctx) // best-effort
 
+	session := model.USMarketSession(time.Now())
 	return &DashboardResponse{
-		GeneratedAt: time.Now().UTC(),
-		FromCache:   false,
-		DataSource:  conn.sourceName(),
-		Symbols:     syms,
-		Freshness:   freshness,
+		GeneratedAt:   time.Now().UTC(),
+		FromCache:     false,
+		DataSource:    conn.sourceName(),
+		Symbols:       syms,
+		Freshness:     freshness,
+		MarketSession: string(session),
+		SessionLabel:  session.Label(),
 	}, nil
 }

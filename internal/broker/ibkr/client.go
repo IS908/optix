@@ -180,20 +180,32 @@ func stockContract(symbol string) *ibapi.Contract {
 //
 // Uses streaming market data with a short collection window so it works with
 // both snapshot-capable (live) and non-snapshot (delayed) data types.
+// During pre-market and post-market sessions, requests outside-RTH ticks so
+// the quote reflects the latest extended-hours price, not just the prior close.
 func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("not connected to IB TWS")
 	}
+
+	session := model.USMarketSession(time.Now())
 
 	reqID := c.nextReqID()
 	pq := c.wrapper.registerQuote(reqID)
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
+	// Request generic tick 221 (MARK_PRICE) during extended hours — this
+	// provides the mark price that IB calculates from the best bid/ask even
+	// when no LAST trade has occurred in the extended session.
+	genericTicks := ""
+	if session.IsExtendedHours() {
+		genericTicks = "221"
+	}
+
 	// snapshot=false → streaming; we cancel after TickSnapshotEnd fires OR
 	// after a short timeout, whichever comes first.  This works for both live
 	// and delayed (type 3) data where snapshot permissions may be 0.
-	c.ibClient.ReqMktData(reqID, stockContract(symbol), "", false, false, nil)
+	c.ibClient.ReqMktData(reqID, stockContract(symbol), genericTicks, false, false, nil)
 
 	// Give IB up to 5 s to deliver the initial ticks.
 	tickCtx, tickCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -208,7 +220,12 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 		// Fall back to the last historical daily close so the tool works
 		// without a paid market data subscription.
 		if isNoSubscriptionErr(err) {
-			return c.quoteFromHistory(ctx, symbol)
+			q, hErr := c.quoteFromHistory(ctx, symbol)
+			if hErr != nil {
+				return nil, hErr
+			}
+			q.MarketSession = session
+			return q, nil
 		}
 		return nil, fmt.Errorf("GetQuote %s: %w", symbol, err)
 	}
@@ -217,6 +234,12 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	c.ibClient.CancelMktData(reqID)
 
 	last := pq.last
+	// During extended hours, prefer bid/ask midpoint when no LAST trade has
+	// occurred yet in the current session — this gives a more meaningful price
+	// than falling back to previous close.
+	if session.IsExtendedHours() && last == 0 && pq.bid > 0 && pq.ask > 0 {
+		last = (pq.bid + pq.ask) / 2
+	}
 	if last == 0 {
 		last = (pq.bid + pq.ask) / 2 // midpoint fallback when market is closed
 	}
@@ -226,17 +249,23 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 
 	// If streaming yielded no price data at all, fall back to historical close.
 	if last == 0 {
-		return c.quoteFromHistory(ctx, symbol)
+		q, err := c.quoteFromHistory(ctx, symbol)
+		if err != nil {
+			return nil, err
+		}
+		q.MarketSession = session
+		return q, nil
 	}
 
 	return &model.StockQuote{
-		Symbol:    symbol,
-		Last:      last,
-		Bid:       pq.bid,
-		Ask:       pq.ask,
-		Close:     pq.close,
-		Volume:    int64(pq.volume),
-		Timestamp: time.Now(),
+		Symbol:        symbol,
+		Last:          last,
+		Bid:           pq.bid,
+		Ask:           pq.ask,
+		Close:         pq.close,
+		Volume:        int64(pq.volume),
+		Timestamp:     time.Now(),
+		MarketSession: session,
 	}, nil
 }
 
@@ -244,6 +273,10 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 //
 // timeframe examples: "1 day", "1 hour", "5 mins"
 // startDate / endDate: "20240101 00:00:00 US/Eastern" or ""
+//
+// For daily bars, useRTH is always true (standard OHLCV).
+// For intraday bars (< 1 day), useRTH is false during extended-hours sessions
+// so that pre-market and after-hours bars are included.
 func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, startDate, endDate string) ([]model.OHLCV, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("not connected to IB TWS")
@@ -260,13 +293,24 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 		duration = "6 M"
 	}
 
+	// For daily bars, always use RTH to get standard OHLCV.
+	// For intraday bars during extended hours, include outside-RTH data
+	// so pre-market (04:00-09:30) and post-market (16:00-20:00) bars appear.
+	useRTH := true
+	if timeframe != "1 day" {
+		session := model.USMarketSession(time.Now())
+		if session.IsExtendedHours() {
+			useRTH = false
+		}
+	}
+
 	c.ibClient.ReqHistoricalData(
 		reqID, stockContract(symbol),
 		endDate,   // endDateTime ("" = now)
 		duration,  // durationStr
 		timeframe, // barSizeSetting e.g. "1 day"
 		"TRADES",  // whatToShow
-		true,      // useRTH
+		useRTH,    // useRTH: false during extended hours for intraday bars
 		1,         // formatDate (1 = yyyymmdd hh:mm:ss)
 		false,     // keepUpToDate
 		nil,       // chartOptions

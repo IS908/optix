@@ -35,16 +35,33 @@
 </div>
 {{end}}
 
-{{/* ── Data source indicator ── */}}
-{{if .DataSource}}
+{{/* ── Data source & session indicator ── */}}
 <div class="flex items-center gap-2 mb-4 text-xs">
+  {{/* Market session badge */}}
+  {{if .SessionLabel}}
+  <span id="session-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+    {{if eq .MarketSession "regular"}}bg-emerald-950/60 border border-emerald-800/50 text-emerald-400
+    {{else if eq .MarketSession "pre_market"}}bg-blue-950/60 border border-blue-800/50 text-blue-400
+    {{else if eq .MarketSession "post_market"}}bg-purple-950/60 border border-purple-800/50 text-purple-400
+    {{else}}bg-gray-800/60 border border-gray-700/50 text-gray-400{{end}}">
+    <span class="w-1.5 h-1.5 rounded-full
+      {{if eq .MarketSession "regular"}}bg-emerald-400 animate-pulse
+      {{else if eq .MarketSession "pre_market"}}bg-blue-400 animate-pulse
+      {{else if eq .MarketSession "post_market"}}bg-purple-400 animate-pulse
+      {{else}}bg-gray-500{{end}}"></span>
+    {{.SessionLabel}}
+  </span>
+  {{end}}
+
+  {{/* Data source badge */}}
+  {{if .DataSource}}
   <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
     {{if eq .DataSource "IBKR"}}bg-emerald-950/60 border border-emerald-800/50 text-emerald-400{{else}}bg-amber-950/60 border border-amber-800/50 text-amber-400{{end}}">
     <span class="w-1.5 h-1.5 rounded-full {{if eq .DataSource "IBKR"}}bg-emerald-400{{else}}bg-amber-400{{end}}"></span>
-    {{if eq .DataSource "IBKR"}}📡 IBKR (real-time){{else}}📡 Yahoo Finance (delayed ~15 min, no options){{end}}
+    {{if eq .DataSource "IBKR"}}📡 IBKR{{else}}📡 Yahoo Finance (delayed){{end}}
   </span>
+  {{end}}
 </div>
-{{end}}
 
 {{/* ── No-data empty state ── */}}
 {{if .NoData}}

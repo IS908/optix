@@ -15,12 +15,25 @@ class OptionType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     OPTION_TYPE_UNSPECIFIED: _ClassVar[OptionType]
     OPTION_TYPE_CALL: _ClassVar[OptionType]
     OPTION_TYPE_PUT: _ClassVar[OptionType]
+
+class MarketSession(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MARKET_SESSION_UNSPECIFIED: _ClassVar[MarketSession]
+    MARKET_SESSION_PRE_MARKET: _ClassVar[MarketSession]
+    MARKET_SESSION_REGULAR: _ClassVar[MarketSession]
+    MARKET_SESSION_POST_MARKET: _ClassVar[MarketSession]
+    MARKET_SESSION_CLOSED: _ClassVar[MarketSession]
 OPTION_TYPE_UNSPECIFIED: OptionType
 OPTION_TYPE_CALL: OptionType
 OPTION_TYPE_PUT: OptionType
+MARKET_SESSION_UNSPECIFIED: MarketSession
+MARKET_SESSION_PRE_MARKET: MarketSession
+MARKET_SESSION_REGULAR: MarketSession
+MARKET_SESSION_POST_MARKET: MarketSession
+MARKET_SESSION_CLOSED: MarketSession
 
 class StockQuote(_message.Message):
-    __slots__ = ("symbol", "last", "bid", "ask", "volume", "change", "change_pct", "high", "low", "open", "close", "high_52w", "low_52w", "avg_volume", "timestamp")
+    __slots__ = ("symbol", "last", "bid", "ask", "volume", "change", "change_pct", "high", "low", "open", "close", "high_52w", "low_52w", "avg_volume", "timestamp", "market_session")
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     LAST_FIELD_NUMBER: _ClassVar[int]
     BID_FIELD_NUMBER: _ClassVar[int]
@@ -36,6 +49,7 @@ class StockQuote(_message.Message):
     LOW_52W_FIELD_NUMBER: _ClassVar[int]
     AVG_VOLUME_FIELD_NUMBER: _ClassVar[int]
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    MARKET_SESSION_FIELD_NUMBER: _ClassVar[int]
     symbol: str
     last: float
     bid: float
@@ -51,7 +65,8 @@ class StockQuote(_message.Message):
     low_52w: float
     avg_volume: float
     timestamp: _timestamp_pb2.Timestamp
-    def __init__(self, symbol: _Optional[str] = ..., last: _Optional[float] = ..., bid: _Optional[float] = ..., ask: _Optional[float] = ..., volume: _Optional[int] = ..., change: _Optional[float] = ..., change_pct: _Optional[float] = ..., high: _Optional[float] = ..., low: _Optional[float] = ..., open: _Optional[float] = ..., close: _Optional[float] = ..., high_52w: _Optional[float] = ..., low_52w: _Optional[float] = ..., avg_volume: _Optional[float] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    market_session: MarketSession
+    def __init__(self, symbol: _Optional[str] = ..., last: _Optional[float] = ..., bid: _Optional[float] = ..., ask: _Optional[float] = ..., volume: _Optional[int] = ..., change: _Optional[float] = ..., change_pct: _Optional[float] = ..., high: _Optional[float] = ..., low: _Optional[float] = ..., open: _Optional[float] = ..., close: _Optional[float] = ..., high_52w: _Optional[float] = ..., low_52w: _Optional[float] = ..., avg_volume: _Optional[float] = ..., timestamp: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., market_session: _Optional[_Union[MarketSession, str]] = ...) -> None: ...
 
 class OHLCV(_message.Message):
     __slots__ = ("timestamp", "open", "high", "low", "close", "volume")

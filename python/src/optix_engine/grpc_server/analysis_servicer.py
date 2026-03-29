@@ -119,12 +119,32 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
         df = _bars_to_dataframe(request.historical_bars)
         compute_all_indicators(df)
 
-        # 2. Current price
+        # 2. Current price and session-aware strategy price
         current_price = (
             request.current_quote.last
             if request.current_quote and request.current_quote.last > 0
             else float(df.iloc[-1]["close"])
         )
+
+        # Adaptive strategy mode: during extended hours (pre/post market),
+        # use previous close for strategy calculations (more reliable for
+        # strike selection and premium estimation), but show real-time
+        # extended hours price in the summary for reference.
+        is_extended = request.market_session in (
+            md_types.MARKET_SESSION_PRE_MARKET,
+            md_types.MARKET_SESSION_POST_MARKET,
+        )
+        previous_close = (
+            request.current_quote.close
+            if request.current_quote and request.current_quote.close > 0
+            else float(df.iloc[-1]["close"])
+        )
+        # strategy_price: used for strike selection, range forecasts, strategy P&L
+        # display_price: shown in the summary (real-time, even in extended hours)
+        if is_extended and previous_close > 0:
+            strategy_price = previous_close
+        else:
+            strategy_price = current_price
 
         # 3. Historical volatility (used as IV proxy since IB chain has no live prices)
         hv20 = _compute_hv(df, 20)
@@ -235,17 +255,20 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
         )
 
         # 7. Price range forecast (IV-based statistical range)
+        # Use strategy_price for range calculations (previous close during extended hours)
         T = forecast_days / 365.0
-        price_move_1s = iv_for_pricing * current_price * np.sqrt(T)
-        range_low_1s = max(current_price - price_move_1s, 0.01)
-        range_high_1s = current_price + price_move_1s
-        range_low_2s = max(current_price - 2 * price_move_1s, 0.01)
-        range_high_2s = current_price + 2 * price_move_1s
+        price_move_1s = iv_for_pricing * strategy_price * np.sqrt(T)
+        range_low_1s = max(strategy_price - price_move_1s, 0.01)
+        range_high_1s = strategy_price + price_move_1s
+        range_low_2s = max(strategy_price - 2 * price_move_1s, 0.01)
+        range_high_2s = strategy_price + 2 * price_move_1s
 
         # 8. Build AnalysisContext and get strategy recommendations
+        # During extended hours, strategy_price = previous close → more reliable
+        # strike selection and premium estimation (extended hours liquidity is thin).
         ctx = AnalysisContext(
             symbol=symbol,
-            current_price=current_price,
+            current_price=strategy_price,
             available_capital=capital,
             risk_tolerance=risk_tolerance,
             forecast_days=forecast_days,
@@ -264,6 +287,8 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
             oi_call_walls=oi_walls.get("call_walls", []),
             earnings_before_expiry=False,
             next_earnings_date=None,
+            is_extended_hours=is_extended,
+            previous_close=previous_close,
         )
         strategies = recommend_strategies(ctx)
 
@@ -300,6 +325,8 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
                 low_52w=lo52w,
                 avg_volume_20d=avg_vol_20,
                 today_volume=today_vol,
+                previous_close=previous_close,
+                is_extended_hours=is_extended,
             ),
             technical=types_pb2.TechnicalAnalysis(
                 trend=trend,
@@ -359,12 +386,14 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
 
     def BatchQuickAnalysis(self, request, context):
         summaries = []
+        market_session = request.market_session
         for stock_data in request.stocks:
             try:
                 summary = self._quick_analyze_one(
                     stock_data,
                     request.forecast_days or 14,
                     request.available_capital or 50000.0,
+                    market_session,
                 )
                 summaries.append(summary)
             except Exception as e:
@@ -376,7 +405,7 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
                 ))
         return analysis_pb2.BatchQuickAnalysisResponse(summaries=summaries)
 
-    def _quick_analyze_one(self, stock_data, forecast_days, capital):
+    def _quick_analyze_one(self, stock_data, forecast_days, capital, market_session=0):
         symbol = stock_data.symbol
         if not stock_data.historical_bars:
             return types_pb2.StockQuickSummary(symbol=symbol, recommendation="No historical data")
@@ -389,6 +418,18 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
             if stock_data.quote and stock_data.quote.last > 0
             else float(df.iloc[-1]["close"])
         )
+
+        # Adaptive: during extended hours, use previous close for strategy decisions
+        is_extended = market_session in (
+            md_types.MARKET_SESSION_PRE_MARKET,
+            md_types.MARKET_SESSION_POST_MARKET,
+        )
+        previous_close = (
+            stock_data.quote.close
+            if stock_data.quote and stock_data.quote.close > 0
+            else float(df.iloc[-1]["close"])
+        )
+        strategy_price = previous_close if (is_extended and previous_close > 0) else current_price
 
         hv20 = _compute_hv(df, 20)
         hv_series = _compute_rolling_hv(df, 20)
@@ -421,9 +462,9 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
                         pcr_oi = put_call_ratio(pcr_df, by="oi")
 
         T = forecast_days / 365.0
-        price_move = iv_for_pricing * current_price * np.sqrt(T)
-        range_low = max(current_price - price_move, 0.01)
-        range_high = current_price + price_move
+        price_move = iv_for_pricing * strategy_price * np.sqrt(T)
+        range_low = max(strategy_price - price_move, 0.01)
+        range_high = strategy_price + price_move
 
         # Quick recommendation based on IV + direction
         if iv_rank < 30:

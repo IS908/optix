@@ -42,6 +42,10 @@ class AnalysisContext:
     earnings_before_expiry: bool
     next_earnings_date: str | None
 
+    # Session awareness (adaptive strategy mode)
+    is_extended_hours: bool = False   # True during pre-market / post-market
+    previous_close: float = 0.0      # previous close for reference in rationale
+
 
 @dataclass
 class StrategyRecommendation:
@@ -85,7 +89,15 @@ def recommend_strategies(ctx: AnalysisContext) -> list[StrategyRecommendation]:
 
     # Step 5: Sort by score, return top 3
     recommendations.sort(key=lambda r: r.score, reverse=True)
-    return recommendations[:3]
+    top = recommendations[:3]
+
+    # Step 6: Annotate rationale during extended hours
+    if ctx.is_extended_hours and ctx.previous_close > 0:
+        note = f" [基于前收盘价 ${ctx.previous_close:.2f} 计算，盘前/盘后数据仅供参考]"
+        for rec in top:
+            rec.rationale += note
+
+    return top
 
 
 def _assess_iv_environment(ctx: AnalysisContext) -> str:

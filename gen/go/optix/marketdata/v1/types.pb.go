@@ -72,6 +72,62 @@ func (OptionType) EnumDescriptor() ([]byte, []int) {
 	return file_optix_marketdata_v1_types_proto_rawDescGZIP(), []int{0}
 }
 
+// MarketSession identifies the US stock market trading session.
+type MarketSession int32
+
+const (
+	MarketSession_MARKET_SESSION_UNSPECIFIED MarketSession = 0
+	MarketSession_MARKET_SESSION_PRE_MARKET  MarketSession = 1 // 04:00–09:30 ET
+	MarketSession_MARKET_SESSION_REGULAR     MarketSession = 2 // 09:30–16:00 ET
+	MarketSession_MARKET_SESSION_POST_MARKET MarketSession = 3 // 16:00–20:00 ET
+	MarketSession_MARKET_SESSION_CLOSED      MarketSession = 4 // outside trading hours / weekends
+)
+
+// Enum value maps for MarketSession.
+var (
+	MarketSession_name = map[int32]string{
+		0: "MARKET_SESSION_UNSPECIFIED",
+		1: "MARKET_SESSION_PRE_MARKET",
+		2: "MARKET_SESSION_REGULAR",
+		3: "MARKET_SESSION_POST_MARKET",
+		4: "MARKET_SESSION_CLOSED",
+	}
+	MarketSession_value = map[string]int32{
+		"MARKET_SESSION_UNSPECIFIED": 0,
+		"MARKET_SESSION_PRE_MARKET":  1,
+		"MARKET_SESSION_REGULAR":     2,
+		"MARKET_SESSION_POST_MARKET": 3,
+		"MARKET_SESSION_CLOSED":      4,
+	}
+)
+
+func (x MarketSession) Enum() *MarketSession {
+	p := new(MarketSession)
+	*p = x
+	return p
+}
+
+func (x MarketSession) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MarketSession) Descriptor() protoreflect.EnumDescriptor {
+	return file_optix_marketdata_v1_types_proto_enumTypes[1].Descriptor()
+}
+
+func (MarketSession) Type() protoreflect.EnumType {
+	return &file_optix_marketdata_v1_types_proto_enumTypes[1]
+}
+
+func (x MarketSession) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MarketSession.Descriptor instead.
+func (MarketSession) EnumDescriptor() ([]byte, []int) {
+	return file_optix_marketdata_v1_types_proto_rawDescGZIP(), []int{1}
+}
+
 // StockQuote holds a real-time or delayed stock quote.
 type StockQuote struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -90,6 +146,7 @@ type StockQuote struct {
 	Low_52W       float64                `protobuf:"fixed64,13,opt,name=low_52w,json=low52w,proto3" json:"low_52w,omitempty"`
 	AvgVolume     float64                `protobuf:"fixed64,14,opt,name=avg_volume,json=avgVolume,proto3" json:"avg_volume,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	MarketSession MarketSession          `protobuf:"varint,16,opt,name=market_session,json=marketSession,proto3,enum=optix.marketdata.v1.MarketSession" json:"market_session,omitempty"` // trading session when quote was fetched
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -227,6 +284,13 @@ func (x *StockQuote) GetTimestamp() *timestamppb.Timestamp {
 		return x.Timestamp
 	}
 	return nil
+}
+
+func (x *StockQuote) GetMarketSession() MarketSession {
+	if x != nil {
+		return x.MarketSession
+	}
+	return MarketSession_MARKET_SESSION_UNSPECIFIED
 }
 
 // OHLCV is a single candlestick bar.
@@ -549,7 +613,7 @@ var File_optix_marketdata_v1_types_proto protoreflect.FileDescriptor
 
 const file_optix_marketdata_v1_types_proto_rawDesc = "" +
 	"\n" +
-	"\x1foptix/marketdata/v1/types.proto\x12\x13optix.marketdata.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x03\n" +
+	"\x1foptix/marketdata/v1/types.proto\x12\x13optix.marketdata.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd3\x03\n" +
 	"\n" +
 	"StockQuote\x12\x16\n" +
 	"\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x12\n" +
@@ -569,7 +633,8 @@ const file_optix_marketdata_v1_types_proto_rawDesc = "" +
 	"\alow_52w\x18\r \x01(\x01R\x06low52w\x12\x1d\n" +
 	"\n" +
 	"avg_volume\x18\x0e \x01(\x01R\tavgVolume\x128\n" +
-	"\ttimestamp\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xa9\x01\n" +
+	"\ttimestamp\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12I\n" +
+	"\x0emarket_session\x18\x10 \x01(\x0e2\".optix.marketdata.v1.MarketSessionR\rmarketSession\"\xa9\x01\n" +
 	"\x05OHLCV\x128\n" +
 	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x12\n" +
 	"\x04open\x18\x02 \x01(\x01R\x04open\x12\x12\n" +
@@ -606,7 +671,13 @@ const file_optix_marketdata_v1_types_proto_rawDesc = "" +
 	"OptionType\x12\x1b\n" +
 	"\x17OPTION_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10OPTION_TYPE_CALL\x10\x01\x12\x13\n" +
-	"\x0fOPTION_TYPE_PUT\x10\x02B@Z>github.com/IS908/optix/gen/go/optix/marketdata/v1;marketdatav1b\x06proto3"
+	"\x0fOPTION_TYPE_PUT\x10\x02*\xa5\x01\n" +
+	"\rMarketSession\x12\x1e\n" +
+	"\x1aMARKET_SESSION_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19MARKET_SESSION_PRE_MARKET\x10\x01\x12\x1a\n" +
+	"\x16MARKET_SESSION_REGULAR\x10\x02\x12\x1e\n" +
+	"\x1aMARKET_SESSION_POST_MARKET\x10\x03\x12\x19\n" +
+	"\x15MARKET_SESSION_CLOSED\x10\x04B@Z>github.com/IS908/optix/gen/go/optix/marketdata/v1;marketdatav1b\x06proto3"
 
 var (
 	file_optix_marketdata_v1_types_proto_rawDescOnce sync.Once
@@ -620,28 +691,30 @@ func file_optix_marketdata_v1_types_proto_rawDescGZIP() []byte {
 	return file_optix_marketdata_v1_types_proto_rawDescData
 }
 
-var file_optix_marketdata_v1_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_optix_marketdata_v1_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_optix_marketdata_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_optix_marketdata_v1_types_proto_goTypes = []any{
 	(OptionType)(0),               // 0: optix.marketdata.v1.OptionType
-	(*StockQuote)(nil),            // 1: optix.marketdata.v1.StockQuote
-	(*OHLCV)(nil),                 // 2: optix.marketdata.v1.OHLCV
-	(*OptionQuote)(nil),           // 3: optix.marketdata.v1.OptionQuote
-	(*OptionChainExpiry)(nil),     // 4: optix.marketdata.v1.OptionChainExpiry
-	(*Greeks)(nil),                // 5: optix.marketdata.v1.Greeks
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(MarketSession)(0),            // 1: optix.marketdata.v1.MarketSession
+	(*StockQuote)(nil),            // 2: optix.marketdata.v1.StockQuote
+	(*OHLCV)(nil),                 // 3: optix.marketdata.v1.OHLCV
+	(*OptionQuote)(nil),           // 4: optix.marketdata.v1.OptionQuote
+	(*OptionChainExpiry)(nil),     // 5: optix.marketdata.v1.OptionChainExpiry
+	(*Greeks)(nil),                // 6: optix.marketdata.v1.Greeks
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_optix_marketdata_v1_types_proto_depIdxs = []int32{
-	6, // 0: optix.marketdata.v1.StockQuote.timestamp:type_name -> google.protobuf.Timestamp
-	6, // 1: optix.marketdata.v1.OHLCV.timestamp:type_name -> google.protobuf.Timestamp
-	0, // 2: optix.marketdata.v1.OptionQuote.option_type:type_name -> optix.marketdata.v1.OptionType
-	3, // 3: optix.marketdata.v1.OptionChainExpiry.calls:type_name -> optix.marketdata.v1.OptionQuote
-	3, // 4: optix.marketdata.v1.OptionChainExpiry.puts:type_name -> optix.marketdata.v1.OptionQuote
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	7, // 0: optix.marketdata.v1.StockQuote.timestamp:type_name -> google.protobuf.Timestamp
+	1, // 1: optix.marketdata.v1.StockQuote.market_session:type_name -> optix.marketdata.v1.MarketSession
+	7, // 2: optix.marketdata.v1.OHLCV.timestamp:type_name -> google.protobuf.Timestamp
+	0, // 3: optix.marketdata.v1.OptionQuote.option_type:type_name -> optix.marketdata.v1.OptionType
+	4, // 4: optix.marketdata.v1.OptionChainExpiry.calls:type_name -> optix.marketdata.v1.OptionQuote
+	4, // 5: optix.marketdata.v1.OptionChainExpiry.puts:type_name -> optix.marketdata.v1.OptionQuote
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_optix_marketdata_v1_types_proto_init() }
@@ -654,7 +727,7 @@ func file_optix_marketdata_v1_types_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_optix_marketdata_v1_types_proto_rawDesc), len(file_optix_marketdata_v1_types_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,

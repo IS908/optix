@@ -24,17 +24,19 @@ const (
 
 // StockSummary holds the high-level price and volume summary for a stock.
 type StockSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Symbol        string                 `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
-	Price         float64                `protobuf:"fixed64,2,opt,name=price,proto3" json:"price,omitempty"`
-	Change        float64                `protobuf:"fixed64,3,opt,name=change,proto3" json:"change,omitempty"`
-	ChangePct     float64                `protobuf:"fixed64,4,opt,name=change_pct,json=changePct,proto3" json:"change_pct,omitempty"`
-	High_52W      float64                `protobuf:"fixed64,5,opt,name=high_52w,json=high52w,proto3" json:"high_52w,omitempty"`
-	Low_52W       float64                `protobuf:"fixed64,6,opt,name=low_52w,json=low52w,proto3" json:"low_52w,omitempty"`
-	AvgVolume_20D float64                `protobuf:"fixed64,7,opt,name=avg_volume_20d,json=avgVolume20d,proto3" json:"avg_volume_20d,omitempty"`
-	TodayVolume   int64                  `protobuf:"varint,8,opt,name=today_volume,json=todayVolume,proto3" json:"today_volume,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Symbol          string                 `protobuf:"bytes,1,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Price           float64                `protobuf:"fixed64,2,opt,name=price,proto3" json:"price,omitempty"`
+	Change          float64                `protobuf:"fixed64,3,opt,name=change,proto3" json:"change,omitempty"`
+	ChangePct       float64                `protobuf:"fixed64,4,opt,name=change_pct,json=changePct,proto3" json:"change_pct,omitempty"`
+	High_52W        float64                `protobuf:"fixed64,5,opt,name=high_52w,json=high52w,proto3" json:"high_52w,omitempty"`
+	Low_52W         float64                `protobuf:"fixed64,6,opt,name=low_52w,json=low52w,proto3" json:"low_52w,omitempty"`
+	AvgVolume_20D   float64                `protobuf:"fixed64,7,opt,name=avg_volume_20d,json=avgVolume20d,proto3" json:"avg_volume_20d,omitempty"`
+	TodayVolume     int64                  `protobuf:"varint,8,opt,name=today_volume,json=todayVolume,proto3" json:"today_volume,omitempty"`
+	PreviousClose   float64                `protobuf:"fixed64,9,opt,name=previous_close,json=previousClose,proto3" json:"previous_close,omitempty"`         // previous regular-session close
+	IsExtendedHours bool                   `protobuf:"varint,10,opt,name=is_extended_hours,json=isExtendedHours,proto3" json:"is_extended_hours,omitempty"` // true if analysis ran during pre/post market
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *StockSummary) Reset() {
@@ -121,6 +123,20 @@ func (x *StockSummary) GetTodayVolume() int64 {
 		return x.TodayVolume
 	}
 	return 0
+}
+
+func (x *StockSummary) GetPreviousClose() float64 {
+	if x != nil {
+		return x.PreviousClose
+	}
+	return 0
+}
+
+func (x *StockSummary) GetIsExtendedHours() bool {
+	if x != nil {
+		return x.IsExtendedHours
+	}
+	return false
 }
 
 // PriceLevel represents a significant support or resistance price.
@@ -1068,7 +1084,7 @@ var File_optix_analysis_v1_types_proto protoreflect.FileDescriptor
 
 const file_optix_analysis_v1_types_proto_rawDesc = "" +
 	"\n" +
-	"\x1doptix/analysis/v1/types.proto\x12\x11optix.analysis.v1\x1a\x1foptix/marketdata/v1/types.proto\"\xf0\x01\n" +
+	"\x1doptix/analysis/v1/types.proto\x12\x11optix.analysis.v1\x1a\x1foptix/marketdata/v1/types.proto\"\xc3\x02\n" +
 	"\fStockSummary\x12\x16\n" +
 	"\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x14\n" +
 	"\x05price\x18\x02 \x01(\x01R\x05price\x12\x16\n" +
@@ -1078,7 +1094,10 @@ const file_optix_analysis_v1_types_proto_rawDesc = "" +
 	"\bhigh_52w\x18\x05 \x01(\x01R\ahigh52w\x12\x17\n" +
 	"\alow_52w\x18\x06 \x01(\x01R\x06low52w\x12$\n" +
 	"\x0eavg_volume_20d\x18\a \x01(\x01R\favgVolume20d\x12!\n" +
-	"\ftoday_volume\x18\b \x01(\x03R\vtodayVolume\"V\n" +
+	"\ftoday_volume\x18\b \x01(\x03R\vtodayVolume\x12%\n" +
+	"\x0eprevious_close\x18\t \x01(\x01R\rpreviousClose\x12*\n" +
+	"\x11is_extended_hours\x18\n" +
+	" \x01(\bR\x0fisExtendedHours\"V\n" +
 	"\n" +
 	"PriceLevel\x12\x14\n" +
 	"\x05price\x18\x01 \x01(\x01R\x05price\x12\x16\n" +

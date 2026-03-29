@@ -16,6 +16,8 @@ message StockSummary {
   double low_52w = 6;
   double avg_volume_20d = 7;
   int64 today_volume = 8;
+  double previous_close = 9;      // previous regular-session close
+  bool is_extended_hours = 10;    // true if analysis ran during pre/post market
 }
 
 // PriceLevel represents a significant support or resistance price.

@@ -56,6 +56,7 @@ func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*Analy
 	analyzeCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
+	session := model.USMarketSession(time.Now())
 	protoResp, err := analysisClient.AnalyzeStock(analyzeCtx, &analysisv1.AnalyzeStockRequest{
 		Symbol:           symbol,
 		ForecastDays:     s.cfg.ForecastDays,
@@ -64,6 +65,7 @@ func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*Analy
 		HistoricalBars:   stockData.HistoricalBars,
 		OptionChain:      stockData.OptionChain,
 		CurrentQuote:     stockData.Quote,
+		MarketSession:    server.ModelSessionToProto(session),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("analysis engine: %w", err)
@@ -71,7 +73,6 @@ func (s *Server) doFetchLiveAnalysis(ctx context.Context, symbol string) (*Analy
 
 	resp := ProtoToAnalyzeResponse(protoResp, symbol, true)
 	resp.DataSource = conn.sourceName()
-	session := model.USMarketSession(time.Now())
 	resp.MarketSession = string(session)
 	resp.SessionLabel = session.Label()
 
@@ -199,10 +200,12 @@ func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, 
 	batchCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
+	session := model.USMarketSession(time.Now())
 	batchResp, err := analysisClient.BatchQuickAnalysis(batchCtx, &analysisv1.BatchQuickAnalysisRequest{
 		Stocks:           stocks,
 		ForecastDays:     s.cfg.ForecastDays,
 		AvailableCapital: s.cfg.Capital,
+		MarketSession:    server.ModelSessionToProto(session),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("batch analysis (fetched %d/%d symbols): %w", len(stocks), len(items), err)
@@ -246,7 +249,6 @@ func (s *Server) doFetchLiveDashboard(ctx context.Context) (*DashboardResponse, 
 	// with subsequent /api/freshness polls, avoiding visual "jumps".
 	freshness, _ := s.store.GetAllSymbolFreshness(ctx) // best-effort
 
-	session := model.USMarketSession(time.Now())
 	return &DashboardResponse{
 		GeneratedAt:   time.Now().UTC(),
 		FromCache:     false,

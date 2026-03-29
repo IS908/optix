@@ -8,7 +8,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class StockSummary(_message.Message):
-    __slots__ = ("symbol", "price", "change", "change_pct", "high_52w", "low_52w", "avg_volume_20d", "today_volume")
+    __slots__ = ("symbol", "price", "change", "change_pct", "high_52w", "low_52w", "avg_volume_20d", "today_volume", "previous_close", "is_extended_hours")
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     PRICE_FIELD_NUMBER: _ClassVar[int]
     CHANGE_FIELD_NUMBER: _ClassVar[int]
@@ -17,6 +17,8 @@ class StockSummary(_message.Message):
     LOW_52W_FIELD_NUMBER: _ClassVar[int]
     AVG_VOLUME_20D_FIELD_NUMBER: _ClassVar[int]
     TODAY_VOLUME_FIELD_NUMBER: _ClassVar[int]
+    PREVIOUS_CLOSE_FIELD_NUMBER: _ClassVar[int]
+    IS_EXTENDED_HOURS_FIELD_NUMBER: _ClassVar[int]
     symbol: str
     price: float
     change: float
@@ -25,7 +27,9 @@ class StockSummary(_message.Message):
     low_52w: float
     avg_volume_20d: float
     today_volume: int
-    def __init__(self, symbol: _Optional[str] = ..., price: _Optional[float] = ..., change: _Optional[float] = ..., change_pct: _Optional[float] = ..., high_52w: _Optional[float] = ..., low_52w: _Optional[float] = ..., avg_volume_20d: _Optional[float] = ..., today_volume: _Optional[int] = ...) -> None: ...
+    previous_close: float
+    is_extended_hours: bool
+    def __init__(self, symbol: _Optional[str] = ..., price: _Optional[float] = ..., change: _Optional[float] = ..., change_pct: _Optional[float] = ..., high_52w: _Optional[float] = ..., low_52w: _Optional[float] = ..., avg_volume_20d: _Optional[float] = ..., today_volume: _Optional[int] = ..., previous_close: _Optional[float] = ..., is_extended_hours: bool = ...) -> None: ...
 
 class PriceLevel(_message.Message):
     __slots__ = ("price", "source", "strength")

@@ -19,13 +19,15 @@ func ProtoToAnalyzeResponse(resp *analysisv1.AnalyzeStockResponse, symbol string
 
 	if s := resp.Summary; s != nil {
 		ar.Summary = SummaryData{
-			Price:        s.Price,
-			Change:       s.Change,
-			ChangePct:    s.ChangePct,
-			High52W:      s.High_52W,
-			Low52W:       s.Low_52W,
-			TodayVolume:  s.TodayVolume,
-			AvgVolume20D: s.AvgVolume_20D,
+			Price:           s.Price,
+			Change:          s.Change,
+			ChangePct:       s.ChangePct,
+			High52W:         s.High_52W,
+			Low52W:          s.Low_52W,
+			TodayVolume:     s.TodayVolume,
+			AvgVolume20D:    s.AvgVolume_20D,
+			PreviousClose:   s.PreviousClose,
+			IsExtendedHours: s.IsExtendedHours,
 		}
 	}
 

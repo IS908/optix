@@ -68,13 +68,15 @@ type AnalyzeResponse struct {
 }
 
 type SummaryData struct {
-	Price         float64 `json:"price"`
-	Change        float64 `json:"change"`
-	ChangePct     float64 `json:"change_pct"`
-	High52W       float64 `json:"high_52w"`
-	Low52W        float64 `json:"low_52w"`
-	TodayVolume   int64   `json:"today_volume"`
-	AvgVolume20D  float64 `json:"avg_volume_20d"`
+	Price           float64 `json:"price"`
+	Change          float64 `json:"change"`
+	ChangePct       float64 `json:"change_pct"`
+	High52W         float64 `json:"high_52w"`
+	Low52W          float64 `json:"low_52w"`
+	TodayVolume     int64   `json:"today_volume"`
+	AvgVolume20D    float64 `json:"avg_volume_20d"`
+	PreviousClose   float64 `json:"previous_close,omitempty"`    // for extended hours reference
+	IsExtendedHours bool    `json:"is_extended_hours,omitempty"` // true during pre/post market
 }
 
 type PriceLevelData struct {

@@ -63,6 +63,44 @@
   {{end}}
 </div>
 
+{{/* ═══════════════════════════════════════════════════════════════════════════
+     UPPER ZONE: Real-Time Ticker Card
+     Shows live price, bid/ask, volume — refreshed via /api/quotes every 30s.
+     ═══════════════════════════════════════════════════════════════════════════ */}}
+<div id="ticker-zone" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3">
+        <span class="text-3xl font-bold font-mono" id="ticker-price">
+          {{if not .NoData}}${{printf "%.2f" .Summary.Price}}{{else}}--{{end}}
+        </span>
+        <span id="ticker-session-tag" class="hidden text-[10px] px-1.5 py-0.5 rounded border font-medium"></span>
+      </div>
+      <div id="ticker-change" class="text-sm mt-0.5
+        {{if not .NoData}}{{if gt .Summary.Change 0.0}}text-emerald-400{{else}}text-red-400{{end}}{{else}}text-gray-500{{end}}">
+        {{if not .NoData}}
+          {{if gt .Summary.Change 0.0}}+{{end}}{{printf "%.2f" .Summary.Change}}
+          ({{if gt .Summary.ChangePct 0.0}}+{{end}}{{printf "%.2f" .Summary.ChangePct}}%)
+        {{else}}--{{end}}
+      </div>
+    </div>
+    <div class="text-right text-sm">
+      <div class="text-gray-500">Bid: <span id="ticker-bid" class="font-mono">--</span></div>
+      <div class="text-gray-500">Ask: <span id="ticker-ask" class="font-mono">--</span></div>
+      <div class="text-gray-500 text-xs mt-1">Vol: <span id="ticker-vol" class="font-mono">--</span></div>
+    </div>
+  </div>
+  {{/* Extended hours note — shown/hidden by JS */}}
+  <div id="extended-hours-note" class="hidden mt-2 text-xs text-amber-400/80 border-t border-gray-800 pt-2">
+    盘前/盘后价格仅供参考，策略计算基于前收盘价 $<span id="prev-close">--</span>
+  </div>
+</div>
+
+{{/* ═══════════════════════════════════════════════════════════════════════════
+     LOWER ZONE: Analysis Content
+     ═══════════════════════════════════════════════════════════════════════════ */}}
+<div id="analysis-zone">
+
 {{/* ── No-data empty state ── */}}
 {{if .NoData}}
 <div class="rounded-xl border border-gray-800 bg-gray-900/50 p-10 mb-6 flex flex-col items-center text-center gap-4">
@@ -474,9 +512,99 @@
 </section>
 
 {{end}}{{/* end {{else}} (NoData = false) */}}
+</div>{{/* end #analysis-zone */}}
 
 <script>
-// Simplified polling for single-symbol analyze page
+// ═══════════════════════════════════════════════════════════════════════════
+// Ticker Poller for Analyze Page — updates the upper ticker card
+// ═══════════════════════════════════════════════════════════════════════════
+const AnalyzeTickerPoller = {
+    interval: 30000,
+    timerId: null,
+    symbol: '{{.Symbol}}',
+
+    start() {
+        if (!this.symbol) return;
+        this.poll();
+        this.timerId = setInterval(() => this.poll(), this.interval);
+    },
+
+    stop() {
+        if (this.timerId) {
+            clearInterval(this.timerId);
+            this.timerId = null;
+        }
+    },
+
+    async poll() {
+        try {
+            // Use single-symbol endpoint — avoids fetching all watchlist quotes
+            const resp = await fetch('/api/quote/' + encodeURIComponent(this.symbol));
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            const quote = data.quotes && data.quotes[0];
+            if (!quote) return;
+
+            const isExtended = data.market_session === 'pre_market' || data.market_session === 'post_market';
+
+            // Update price
+            const priceEl = document.getElementById('ticker-price');
+            if (priceEl) priceEl.textContent = '$' + quote.last.toFixed(2);
+
+            // Update change
+            const changeEl = document.getElementById('ticker-change');
+            if (changeEl) {
+                const sign = quote.change >= 0 ? '+' : '';
+                changeEl.textContent = sign + quote.change.toFixed(2) + ' (' + sign + quote.change_pct.toFixed(2) + '%)';
+                changeEl.className = 'text-sm mt-0.5 ' + (quote.change >= 0 ? 'text-emerald-400' : 'text-red-400');
+            }
+
+            // Update bid/ask/vol
+            const bidEl = document.getElementById('ticker-bid');
+            if (bidEl) bidEl.textContent = quote.bid > 0 ? quote.bid.toFixed(2) : '--';
+            const askEl = document.getElementById('ticker-ask');
+            if (askEl) askEl.textContent = quote.ask > 0 ? quote.ask.toFixed(2) : '--';
+            const volEl = document.getElementById('ticker-vol');
+            if (volEl) {
+                if (quote.volume >= 1e6) volEl.textContent = (quote.volume / 1e6).toFixed(1) + 'M';
+                else if (quote.volume >= 1e3) volEl.textContent = (quote.volume / 1e3).toFixed(0) + 'K';
+                else volEl.textContent = String(quote.volume);
+            }
+
+            // Session tag
+            const tagEl = document.getElementById('ticker-session-tag');
+            if (tagEl) {
+                if (isExtended) {
+                    tagEl.classList.remove('hidden');
+                    tagEl.textContent = data.market_session === 'pre_market' ? 'PRE' : 'POST';
+                    tagEl.className = 'text-[10px] px-1.5 py-0.5 rounded border font-medium ' +
+                        (data.market_session === 'pre_market'
+                            ? 'bg-blue-950 text-blue-300 border-blue-800'
+                            : 'bg-purple-950 text-purple-300 border-purple-800');
+                } else {
+                    tagEl.classList.add('hidden');
+                }
+            }
+
+            // Extended hours note
+            const noteEl = document.getElementById('extended-hours-note');
+            const closeEl = document.getElementById('prev-close');
+            if (noteEl) {
+                if (isExtended && quote.close > 0) {
+                    noteEl.classList.remove('hidden');
+                    if (closeEl) closeEl.textContent = quote.close.toFixed(2);
+                } else {
+                    noteEl.classList.add('hidden');
+                }
+            }
+        } catch (err) {
+            console.error('Analyze ticker poll error:', err);
+        }
+    }
+};
+
+// Simplified polling for single-symbol analyze page (analysis zone)
 const AnalyzePoller = {
     interval: 30000,  // 30 seconds
     symbol: '{{.Symbol}}',
@@ -532,9 +660,23 @@ const AnalyzePoller = {
     }
 };
 
-// Start polling when page loads
+// Start both pollers when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    AnalyzeTickerPoller.start();
     AnalyzePoller.start();
+});
+
+// Stop/resume on visibility change
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        AnalyzeTickerPoller.stop();
+    } else {
+        AnalyzeTickerPoller.start();
+    }
+});
+
+window.addEventListener('beforeunload', () => {
+    AnalyzeTickerPoller.stop();
 });
 </script>
 

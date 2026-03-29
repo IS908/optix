@@ -118,9 +118,10 @@ make clean  # Removes bin/ and data/optix.db
 
 **`webui/`**: Lightweight HTML/Go template server
 - `server.go`: HTTP handlers for dashboard, watchlist, analyze pages
-- `static/templates/`: HTML templates with Tailwind CSS
+- `static/templates/`: HTML templates with Tailwind CSS (dual-zone layout: ticker + analysis)
 - `cache.go`: In-memory result caching with freshness tracking
 - `live.go`: Live refresh logic (`?refresh=true` bypasses cache, hits IBKR+Python)
+- `quotes.go`: Lightweight `/api/quotes` and `/api/quote/{symbol}` endpoints with TTL cache (10s)
 
 **`server/`**: gRPC server exposing market data to external clients
 - `grpc.go`: Server setup
@@ -160,14 +161,17 @@ Generated Python code: `python/src/optix_engine/gen/optix/{marketdata,analysis}/
 
 ## Important Patterns
 
-### Two-Phase Refresh Model (Web UI)
+### Three-Tier Refresh Model (Web UI)
 
-The web UI serves data from SQLite cache by default. Use `?refresh=true` query param to trigger live IBKR + Python analysis:
+The web UI uses a dual-zone layout (upper ticker zone + lower analysis zone) with three data tiers:
 
-1. **Cached mode** (default): Fast, stale-ok dashboard views
-2. **Live refresh** (`?refresh=true`): Slow, fetches fresh data from IBKR, runs Python analysis, updates cache
+1. **Ticker zone** (`/api/quotes`, `/api/quote/{symbol}`): Lightweight broker-only quotes with 10s TTL cache. Polled every 30s by frontend JS. Response time: <1ms (cached) / ~4ms (cold).
+2. **Cached analysis** (default): Serves dashboard and analyze pages from SQLite cache.
+3. **Live refresh** (`?refresh=true`): Full broker + Python pipeline, updates cache.
 
-Check `internal/webui/live.go` for refresh orchestration.
+During **extended hours** (pre-market/post-market), the ticker zone shows real-time prices, but strategy calculations use the previous close for reliability (adaptive strategy mode).
+
+Check `internal/webui/quotes.go` for ticker data, `live.go` for full analysis orchestration.
 
 ### Integration Testing
 

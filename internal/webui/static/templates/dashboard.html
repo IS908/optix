@@ -55,14 +55,54 @@
   {{end}}
 </div>
 
-{{/* ── Watchlist summary table ── */}}
+{{/* ═══════════════════════════════════════════════════════════════════════════
+     UPPER ZONE: Real-time Ticker
+     Lightweight quote data, refreshed independently via /api/quotes every 30s.
+     ═══════════════════════════════════════════════════════════════════════════ */}}
+<div id="ticker-zone" class="mb-6">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500">
+      Real-Time Quotes
+    </h2>
+    <span id="ticker-updated" class="text-xs text-gray-600">loading...</span>
+  </div>
+  <div class="overflow-x-auto rounded-xl border border-gray-800/60 bg-gray-900/40">
+    <table class="min-w-full text-sm" id="ticker-table">
+      <thead>
+        <tr class="bg-gray-900/80 text-gray-500 text-xs uppercase tracking-wider">
+          <th class="px-3 py-2 text-left">Symbol</th>
+          <th class="px-3 py-2 text-right">Last</th>
+          <th class="px-3 py-2 text-right">Chg</th>
+          <th class="px-3 py-2 text-right">Chg%</th>
+          <th class="px-3 py-2 text-right">Bid</th>
+          <th class="px-3 py-2 text-right">Ask</th>
+          <th class="px-3 py-2 text-right">Vol</th>
+        </tr>
+      </thead>
+      <tbody id="ticker-body" class="divide-y divide-gray-800/30">
+        <tr><td colspan="7" class="px-3 py-4 text-center text-gray-600 text-xs">Loading quotes...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{/* ═══════════════════════════════════════════════════════════════════════════
+     LOWER ZONE: Analysis Summary
+     Strategy analysis results, refreshed via Refresh Live or background cache.
+     ═══════════════════════════════════════════════════════════════════════════ */}}
+<div id="analysis-zone">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500">
+      Strategy Analysis
+    </h2>
+  </div>
+
 {{if .Symbols}}
 <div class="overflow-x-auto rounded-xl border border-gray-800 shadow-lg">
   <table class="min-w-full text-sm">
     <thead>
       <tr class="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
         <th class="px-4 py-3 text-left">Symbol</th>
-        <th class="px-4 py-3 text-right">Price</th>
         <th class="px-4 py-3 text-center">Trend</th>
         <th class="px-4 py-3 text-right">RSI</th>
         <th class="px-4 py-3 text-right">IV Rank</th>
@@ -76,7 +116,7 @@
     </thead>
     <tbody class="divide-y divide-gray-800/60">
       {{range .Symbols}}
-      <tr class="hover:bg-gray-800/40 transition-colors">
+      <tr class="hover:bg-gray-800/40 transition-colors" data-symbol="{{.Symbol}}">
 
         {{/* Symbol */}}
         <td class="px-4 py-3">
@@ -91,10 +131,6 @@
           等待后台刷新数据中...
         </td>
         {{else}}
-        {{/* Normal data display */}}
-        {{/* Price */}}
-        <td class="px-4 py-3 text-right font-mono">${{printf "%.2f" .Price}}</td>
-
         {{/* Trend badge */}}
         <td class="px-4 py-3 text-center">
           {{if eq .Trend "bullish"}}
@@ -163,6 +199,7 @@
   </a>
 </div>
 {{end}}
+</div>
 
 {{/* ── Data Sources Freshness panel ─────────────────────────────────────── */}}
 {{if .Freshness}}
@@ -245,7 +282,162 @@
 {{end}}
 
 <script>
-// Frontend polling for automatic data updates
+// ═══════════════════════════════════════════════════════════════════════════
+// Ticker Zone Poller — lightweight quote-only updates for the upper zone
+// ═══════════════════════════════════════════════════════════════════════════
+const TickerPoller = {
+    interval: 30000,  // 30 seconds
+    timerId: null,
+    lastPrices: {},
+
+    start() {
+        this.poll();
+        this.timerId = setInterval(() => this.poll(), this.interval);
+    },
+
+    stop() {
+        if (this.timerId) {
+            clearInterval(this.timerId);
+            this.timerId = null;
+        }
+    },
+
+    async poll() {
+        try {
+            const resp = await fetch('/api/quotes');
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            // Update session badge
+            FreshnessPoller.updateSessionBadge(data);
+
+            // Rebuild ticker table
+            this.renderTickerRows(data.quotes, data.market_session);
+
+            // Update timestamp
+            const el = document.getElementById('ticker-updated');
+            if (el) el.textContent = new Date().toLocaleTimeString();
+        } catch (err) {
+            console.error('Ticker poll error:', err);
+        }
+    },
+
+    _createCell(text, classes) {
+        const td = document.createElement('td');
+        td.className = classes;
+        td.textContent = text;
+        return td;
+    },
+
+    _formatVol(vol) {
+        if (vol >= 1e6) return (vol / 1e6).toFixed(1) + 'M';
+        if (vol >= 1e3) return (vol / 1e3).toFixed(0) + 'K';
+        return String(vol);
+    },
+
+    /** Reuse existing DOM rows; only create new rows when the symbol count changes. */
+    renderTickerRows(quotes, session) {
+        const tbody = document.getElementById('ticker-body');
+        if (!tbody || !quotes || quotes.length === 0) return;
+
+        const isExtended = session === 'pre_market' || session === 'post_market';
+        const sessionTag = session === 'pre_market' ? 'PRE' : session === 'post_market' ? 'POST' : '';
+        const tagColor = session === 'pre_market'
+            ? 'bg-blue-950 text-blue-300 border border-blue-800'
+            : 'bg-purple-950 text-purple-300 border border-purple-800';
+
+        // Remove the "Loading quotes..." placeholder if present
+        if (tbody.children.length === 1 && tbody.children[0].children.length === 1
+            && tbody.children[0].children[0].colSpan > 1) {
+            tbody.removeChild(tbody.children[0]);
+        }
+
+        for (let i = 0; i < quotes.length; i++) {
+            const q = quotes[i];
+            const prevPrice = this.lastPrices[q.symbol] || 0;
+            const priceChanged = prevPrice > 0 && prevPrice !== q.last;
+            this.lastPrices[q.symbol] = q.last;
+
+            const chgColor = q.change >= 0 ? 'text-emerald-400' : 'text-red-400';
+            const chgSign = q.change >= 0 ? '+' : '';
+
+            let tr = tbody.children[i];
+            if (!tr) {
+                // First render: create row with 7 cells
+                tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-800/30 transition-colors';
+                for (let c = 0; c < 7; c++) {
+                    const td = document.createElement('td');
+                    if (c === 0) {
+                        td.className = 'px-3 py-1.5';
+                        const a = document.createElement('a');
+                        a.className = 'font-mono font-bold text-emerald-400 hover:text-emerald-300 hover:underline text-xs';
+                        td.appendChild(a);
+                    } else {
+                        td.className = 'px-3 py-1.5 text-right font-mono text-xs';
+                    }
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+
+            // Update cells in-place (no destroy/recreate)
+            const cells = tr.children;
+
+            // Col 0: Symbol + optional session tag
+            const symTd = cells[0];
+            const symLink = symTd.querySelector('a');
+            if (symLink) {
+                symLink.href = '/analyze/' + q.symbol;
+                symLink.textContent = q.symbol;
+            }
+            // Manage session tag badge
+            let tagSpan = symTd.querySelector('span');
+            if (isExtended && sessionTag) {
+                if (!tagSpan) {
+                    tagSpan = document.createElement('span');
+                    tagSpan.className = 'text-[10px] ' + tagColor + ' px-1 py-px rounded ml-1';
+                    symTd.appendChild(tagSpan);
+                }
+                tagSpan.textContent = sessionTag;
+                tagSpan.style.display = '';
+            } else if (tagSpan) {
+                tagSpan.style.display = 'none';
+            }
+
+            // Col 1: Price + flash
+            cells[1].textContent = '$' + q.last.toFixed(2);
+            cells[1].className = 'px-3 py-1.5 text-right font-mono text-xs';
+            if (priceChanged) {
+                cells[1].classList.add('flash-green');
+                setTimeout(() => cells[1].classList.remove('flash-green'), 1500);
+            }
+
+            // Col 2-3: Change / Change%
+            cells[2].textContent = chgSign + q.change.toFixed(2);
+            cells[2].className = 'px-3 py-1.5 text-right font-mono text-xs ' + chgColor;
+            cells[3].textContent = chgSign + q.change_pct.toFixed(2) + '%';
+            cells[3].className = 'px-3 py-1.5 text-right font-mono text-xs ' + chgColor;
+
+            // Col 4-6: Bid / Ask / Vol
+            cells[4].textContent = q.bid > 0 ? q.bid.toFixed(2) : '--';
+            cells[4].className = 'px-3 py-1.5 text-right font-mono text-xs text-gray-400';
+            cells[5].textContent = q.ask > 0 ? q.ask.toFixed(2) : '--';
+            cells[5].className = 'px-3 py-1.5 text-right font-mono text-xs text-gray-400';
+            cells[6].textContent = this._formatVol(q.volume);
+            cells[6].className = 'px-3 py-1.5 text-right font-mono text-xs text-gray-400';
+        }
+
+        // Remove excess rows if watchlist shrunk
+        while (tbody.children.length > quotes.length) {
+            tbody.removeChild(tbody.lastChild);
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Freshness Poller — detects analysis cache changes for the lower zone
+// ═══════════════════════════════════════════════════════════════════════════
 const FreshnessPoller = {
     interval: 30000,  // 30 seconds
     lastFreshness: {},
@@ -303,12 +495,17 @@ const FreshnessPoller = {
         return changed;
     },
 
-    /** Update the market session badge from freshness API data */
+    /** Update the market session badge from freshness API data.
+     *  Skips DOM updates when session hasn't changed (avoids regex + class churn every 30s). */
+    _lastSession: null,
     updateSessionBadge(data) {
         const badge = document.getElementById('session-badge');
         if (!badge || !data.session_label) return;
 
         const session = data.market_session;
+        if (session === this._lastSession) return; // No change — skip
+        this._lastSession = session;
+
         const label = data.session_label;
         const dot = badge.querySelector('span');
 
@@ -339,7 +536,6 @@ const FreshnessPoller = {
             dot.className = dot.className
                 .replace(/\bbg-(emerald|blue|purple|gray)-(400|500)\b/g, '').trim();
             dot.classList.add(colors.dot);
-            // Add/remove pulse for active sessions
             if (session === 'closed') {
                 dot.classList.remove('animate-pulse');
             } else {
@@ -402,7 +598,8 @@ const FreshnessPoller = {
     },
 
     updateRow(symbol, data) {
-        const row = document.querySelector(`a[href="/analyze/${symbol}"]`)?.closest('tr');
+        // Find row by data-symbol attribute in the analysis zone
+        const row = document.querySelector(`#analysis-zone tr[data-symbol="${symbol}"]`);
         if (!row) return;
 
         // Update symbol star prefix (col 1)
@@ -411,16 +608,8 @@ const FreshnessPoller = {
             symLink.textContent = (data.opportunity_score >= 50 ? '★ ' : '') + symbol;
         }
 
-        // Flash animation on price cell (col 2)
-        const priceCell = row.querySelector('td:nth-child(2)');
-        if (priceCell) {
-            priceCell.classList.add('flash-green');
-            priceCell.textContent = `$${data.price.toFixed(2)}`;
-            setTimeout(() => priceCell.classList.remove('flash-green'), 1500);
-        }
-
-        // Update trend badge (col 3)
-        const trendCell = row.querySelector('td:nth-child(3)');
+        // Update trend badge (col 2)
+        const trendCell = row.querySelector('td:nth-child(2)');
         if (trendCell && data.trend) {
             const span = document.createElement('span');
             span.className = 'inline-block px-2 py-0.5 rounded text-xs';
@@ -440,8 +629,8 @@ const FreshnessPoller = {
             trendCell.appendChild(span);
         }
 
-        // Update RSI (col 4)
-        const rsiCell = row.querySelector('td:nth-child(4)');
+        // Update RSI (col 3)
+        const rsiCell = row.querySelector('td:nth-child(3)');
         if (rsiCell && data.rsi !== undefined) {
             rsiCell.textContent = data.rsi.toFixed(0);
             rsiCell.className = 'px-4 py-3 text-right font-mono';
@@ -449,36 +638,36 @@ const FreshnessPoller = {
             else if (data.rsi < 30) rsiCell.className += ' text-emerald-400 font-bold';
         }
 
-        // Update IV Rank (col 5)
-        const ivCell = row.querySelector('td:nth-child(5)');
+        // Update IV Rank (col 4)
+        const ivCell = row.querySelector('td:nth-child(4)');
         if (ivCell && data.iv_rank !== undefined) {
             ivCell.textContent = `${data.iv_rank.toFixed(0)}%`;
             ivCell.className = 'px-4 py-3 text-right font-mono';
             if (data.iv_rank > 50) ivCell.className += ' text-amber-400 font-bold';
         }
 
-        // Update Max Pain (col 6)
-        const mpCell = row.querySelector('td:nth-child(6)');
+        // Update Max Pain (col 5)
+        const mpCell = row.querySelector('td:nth-child(5)');
         if (mpCell && data.max_pain !== undefined) {
             if (data.max_pain > 0) {
                 mpCell.textContent = `$${data.max_pain.toFixed(0)}`;
             } else {
+                mpCell.textContent = '';
                 const span = document.createElement('span');
                 span.className = 'text-gray-600';
                 span.textContent = 'N/A';
-                mpCell.textContent = '';
                 mpCell.appendChild(span);
             }
         }
 
-        // Update PCR (col 7)
-        const pcrCell = row.querySelector('td:nth-child(7)');
+        // Update PCR (col 6)
+        const pcrCell = row.querySelector('td:nth-child(6)');
         if (pcrCell && data.pcr !== undefined) {
             pcrCell.textContent = data.pcr.toFixed(2);
         }
 
-        // Update Range (col 8)
-        const rangeCell = row.querySelector('td:nth-child(8)');
+        // Update Range (col 7)
+        const rangeCell = row.querySelector('td:nth-child(7)');
         if (rangeCell) {
             if (data.range_low_1s > 0 && data.range_high_1s > 0) {
                 rangeCell.textContent = `$${data.range_low_1s.toFixed(0)}\u2013$${data.range_high_1s.toFixed(0)}`;
@@ -491,14 +680,14 @@ const FreshnessPoller = {
             }
         }
 
-        // Update recommendation (col 9)
-        const recCell = row.querySelector('td:nth-child(9)');
+        // Update recommendation (col 8)
+        const recCell = row.querySelector('td:nth-child(8)');
         if (recCell && data.recommendation) {
             recCell.textContent = data.recommendation;
         }
 
-        // Update score (col 10)
-        const scoreCell = row.querySelector('td:nth-child(10)');
+        // Update score (col 9)
+        const scoreCell = row.querySelector('td:nth-child(9)');
         if (scoreCell && data.opportunity_score !== undefined) {
             scoreCell.textContent = data.opportunity_score.toFixed(0);
             scoreCell.className = 'px-4 py-3 text-right font-mono font-bold';
@@ -506,8 +695,8 @@ const FreshnessPoller = {
             else scoreCell.className += ' text-gray-400';
         }
 
-        // Update date (col 11)
-        const dateCell = row.querySelector('td:nth-child(11)');
+        // Update date (col 10)
+        const dateCell = row.querySelector('td:nth-child(10)');
         if (dateCell && data.snapshot_date) {
             dateCell.textContent = data.snapshot_date;
         }
@@ -518,22 +707,26 @@ const FreshnessPoller = {
     }
 };
 
-// Start polling when page loads
+// Start both pollers when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    TickerPoller.start();
     FreshnessPoller.start();
 });
 
-// Stop polling when page is hidden (save bandwidth)
+// Stop/resume both pollers on visibility change (save bandwidth)
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+        TickerPoller.stop();
         FreshnessPoller.stop();
     } else {
+        TickerPoller.start();
         FreshnessPoller.start();
     }
 });
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+    TickerPoller.stop();
     FreshnessPoller.stop();
 });
 </script>

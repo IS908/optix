@@ -70,6 +70,7 @@ message AnalyzeStockRequest {
   repeated optix.marketdata.v1.OHLCV historical_bars = 5;
   repeated optix.marketdata.v1.OptionChainExpiry option_chain = 6;
   optix.marketdata.v1.StockQuote current_quote = 7;
+  optix.marketdata.v1.MarketSession market_session = 8;  // current trading session hint
 }
 
 message AnalyzeStockResponse {
@@ -86,6 +87,7 @@ message BatchQuickAnalysisRequest {
   repeated SingleStockData stocks = 1;
   int32 forecast_days = 2;
   double available_capital = 3;
+  optix.marketdata.v1.MarketSession market_session = 4;  // current trading session hint
 }
 
 message BatchQuickAnalysisResponse {

@@ -44,6 +44,7 @@ type Server struct {
 	lastRefresh map[string]time.Time // symbol → last background refresh time
 	sfGroup     singleflight.Group  // deduplicates concurrent live fetches per symbol
 	brokerPool  *brokerPool         // bounded IBKR connection pool
+	qCache      quoteCache          // TTL cache for /api/quotes (avoids 10s broker round-trips)
 }
 
 // New creates a Server and registers all routes.
@@ -155,6 +156,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/dashboard", s.handleAPIDashboard)
 	s.mux.HandleFunc("GET /api/analyze/{symbol}", s.handleAPIAnalyze)
 	s.mux.HandleFunc("GET /api/freshness", s.handleFreshness)
+	s.mux.HandleFunc("GET /api/quotes", s.handleAPIQuotes)
+	s.mux.HandleFunc("GET /api/quote/{symbol}", s.handleAPIQuoteSingle)
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

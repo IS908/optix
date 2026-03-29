@@ -279,6 +279,7 @@ type AnalyzeStockRequest struct {
 	HistoricalBars   []*v1.OHLCV             `protobuf:"bytes,5,rep,name=historical_bars,json=historicalBars,proto3" json:"historical_bars,omitempty"`
 	OptionChain      []*v1.OptionChainExpiry `protobuf:"bytes,6,rep,name=option_chain,json=optionChain,proto3" json:"option_chain,omitempty"`
 	CurrentQuote     *v1.StockQuote          `protobuf:"bytes,7,opt,name=current_quote,json=currentQuote,proto3" json:"current_quote,omitempty"`
+	MarketSession    v1.MarketSession        `protobuf:"varint,8,opt,name=market_session,json=marketSession,proto3,enum=optix.marketdata.v1.MarketSession" json:"market_session,omitempty"` // current trading session hint
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -362,6 +363,13 @@ func (x *AnalyzeStockRequest) GetCurrentQuote() *v1.StockQuote {
 	return nil
 }
 
+func (x *AnalyzeStockRequest) GetMarketSession() v1.MarketSession {
+	if x != nil {
+		return x.MarketSession
+	}
+	return v1.MarketSession(0)
+}
+
 type AnalyzeStockResponse struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Summary       *StockSummary             `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
@@ -443,6 +451,7 @@ type BatchQuickAnalysisRequest struct {
 	Stocks           []*SingleStockData     `protobuf:"bytes,1,rep,name=stocks,proto3" json:"stocks,omitempty"`
 	ForecastDays     int32                  `protobuf:"varint,2,opt,name=forecast_days,json=forecastDays,proto3" json:"forecast_days,omitempty"`
 	AvailableCapital float64                `protobuf:"fixed64,3,opt,name=available_capital,json=availableCapital,proto3" json:"available_capital,omitempty"`
+	MarketSession    v1.MarketSession       `protobuf:"varint,4,opt,name=market_session,json=marketSession,proto3,enum=optix.marketdata.v1.MarketSession" json:"market_session,omitempty"` // current trading session hint
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -496,6 +505,13 @@ func (x *BatchQuickAnalysisRequest) GetAvailableCapital() float64 {
 		return x.AvailableCapital
 	}
 	return 0
+}
+
+func (x *BatchQuickAnalysisRequest) GetMarketSession() v1.MarketSession {
+	if x != nil {
+		return x.MarketSession
+	}
+	return v1.MarketSession(0)
 }
 
 type BatchQuickAnalysisResponse struct {
@@ -819,7 +835,7 @@ const file_optix_analysis_v1_analysis_proto_rawDesc = "" +
 	"\x0emax_pain_price\x18\x01 \x01(\x01R\fmaxPainPrice\x12\x1e\n" +
 	"\n" +
 	"expiration\x18\x02 \x01(\tR\n" +
-	"expiration\"\xfc\x02\n" +
+	"expiration\"\xc7\x03\n" +
 	"\x13AnalyzeStockRequest\x12\x16\n" +
 	"\x06symbol\x18\x01 \x01(\tR\x06symbol\x12#\n" +
 	"\rforecast_days\x18\x02 \x01(\x05R\fforecastDays\x12+\n" +
@@ -827,7 +843,8 @@ const file_optix_analysis_v1_analysis_proto_rawDesc = "" +
 	"\x0erisk_tolerance\x18\x04 \x01(\tR\rriskTolerance\x12C\n" +
 	"\x0fhistorical_bars\x18\x05 \x03(\v2\x1a.optix.marketdata.v1.OHLCVR\x0ehistoricalBars\x12I\n" +
 	"\foption_chain\x18\x06 \x03(\v2&.optix.marketdata.v1.OptionChainExpiryR\voptionChain\x12D\n" +
-	"\rcurrent_quote\x18\a \x01(\v2\x1f.optix.marketdata.v1.StockQuoteR\fcurrentQuote\"\xda\x02\n" +
+	"\rcurrent_quote\x18\a \x01(\v2\x1f.optix.marketdata.v1.StockQuoteR\fcurrentQuote\x12I\n" +
+	"\x0emarket_session\x18\b \x01(\x0e2\".optix.marketdata.v1.MarketSessionR\rmarketSession\"\xda\x02\n" +
 	"\x14AnalyzeStockResponse\x129\n" +
 	"\asummary\x18\x01 \x01(\v2\x1f.optix.analysis.v1.StockSummaryR\asummary\x12B\n" +
 	"\ttechnical\x18\x02 \x01(\v2$.optix.analysis.v1.TechnicalAnalysisR\ttechnical\x12<\n" +
@@ -835,11 +852,12 @@ const file_optix_analysis_v1_analysis_proto_rawDesc = "" +
 	"\aoutlook\x18\x04 \x01(\v2 .optix.analysis.v1.MarketOutlookR\aoutlook\x12I\n" +
 	"\n" +
 	"strategies\x18\x05 \x03(\v2).optix.analysis.v1.StrategyRecommendationR\n" +
-	"strategies\"\xa9\x01\n" +
+	"strategies\"\xf4\x01\n" +
 	"\x19BatchQuickAnalysisRequest\x12:\n" +
 	"\x06stocks\x18\x01 \x03(\v2\".optix.analysis.v1.SingleStockDataR\x06stocks\x12#\n" +
 	"\rforecast_days\x18\x02 \x01(\x05R\fforecastDays\x12+\n" +
-	"\x11available_capital\x18\x03 \x01(\x01R\x10availableCapital\"`\n" +
+	"\x11available_capital\x18\x03 \x01(\x01R\x10availableCapital\x12I\n" +
+	"\x0emarket_session\x18\x04 \x01(\x0e2\".optix.marketdata.v1.MarketSessionR\rmarketSession\"`\n" +
 	"\x1aBatchQuickAnalysisResponse\x12B\n" +
 	"\tsummaries\x18\x01 \x03(\v2$.optix.analysis.v1.StockQuickSummaryR\tsummaries\"\xb6\x03\n" +
 	"\x1aRecommendStrategiesRequest\x12\x16\n" +
@@ -901,14 +919,15 @@ var file_optix_analysis_v1_analysis_proto_goTypes = []any{
 	(*v1.OptionChainExpiry)(nil),        // 14: optix.marketdata.v1.OptionChainExpiry
 	(*v1.OHLCV)(nil),                    // 15: optix.marketdata.v1.OHLCV
 	(*v1.StockQuote)(nil),               // 16: optix.marketdata.v1.StockQuote
-	(*StockSummary)(nil),                // 17: optix.analysis.v1.StockSummary
-	(*TechnicalAnalysis)(nil),           // 18: optix.analysis.v1.TechnicalAnalysis
-	(*OptionsAnalysis)(nil),             // 19: optix.analysis.v1.OptionsAnalysis
-	(*MarketOutlook)(nil),               // 20: optix.analysis.v1.MarketOutlook
-	(*StrategyRecommendation)(nil),      // 21: optix.analysis.v1.StrategyRecommendation
-	(*SingleStockData)(nil),             // 22: optix.analysis.v1.SingleStockData
-	(*StockQuickSummary)(nil),           // 23: optix.analysis.v1.StockQuickSummary
-	(*PriceLevel)(nil),                  // 24: optix.analysis.v1.PriceLevel
+	(v1.MarketSession)(0),               // 17: optix.marketdata.v1.MarketSession
+	(*StockSummary)(nil),                // 18: optix.analysis.v1.StockSummary
+	(*TechnicalAnalysis)(nil),           // 19: optix.analysis.v1.TechnicalAnalysis
+	(*OptionsAnalysis)(nil),             // 20: optix.analysis.v1.OptionsAnalysis
+	(*MarketOutlook)(nil),               // 21: optix.analysis.v1.MarketOutlook
+	(*StrategyRecommendation)(nil),      // 22: optix.analysis.v1.StrategyRecommendation
+	(*SingleStockData)(nil),             // 23: optix.analysis.v1.SingleStockData
+	(*StockQuickSummary)(nil),           // 24: optix.analysis.v1.StockQuickSummary
+	(*PriceLevel)(nil),                  // 25: optix.analysis.v1.PriceLevel
 }
 var file_optix_analysis_v1_analysis_proto_depIdxs = []int32{
 	12, // 0: optix.analysis.v1.PriceOptionRequest.option_type:type_name -> optix.marketdata.v1.OptionType
@@ -917,37 +936,39 @@ var file_optix_analysis_v1_analysis_proto_depIdxs = []int32{
 	15, // 3: optix.analysis.v1.AnalyzeStockRequest.historical_bars:type_name -> optix.marketdata.v1.OHLCV
 	14, // 4: optix.analysis.v1.AnalyzeStockRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
 	16, // 5: optix.analysis.v1.AnalyzeStockRequest.current_quote:type_name -> optix.marketdata.v1.StockQuote
-	17, // 6: optix.analysis.v1.AnalyzeStockResponse.summary:type_name -> optix.analysis.v1.StockSummary
-	18, // 7: optix.analysis.v1.AnalyzeStockResponse.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
-	19, // 8: optix.analysis.v1.AnalyzeStockResponse.options:type_name -> optix.analysis.v1.OptionsAnalysis
-	20, // 9: optix.analysis.v1.AnalyzeStockResponse.outlook:type_name -> optix.analysis.v1.MarketOutlook
-	21, // 10: optix.analysis.v1.AnalyzeStockResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
-	22, // 11: optix.analysis.v1.BatchQuickAnalysisRequest.stocks:type_name -> optix.analysis.v1.SingleStockData
-	23, // 12: optix.analysis.v1.BatchQuickAnalysisResponse.summaries:type_name -> optix.analysis.v1.StockQuickSummary
-	18, // 13: optix.analysis.v1.RecommendStrategiesRequest.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
-	19, // 14: optix.analysis.v1.RecommendStrategiesRequest.options_analysis:type_name -> optix.analysis.v1.OptionsAnalysis
-	14, // 15: optix.analysis.v1.RecommendStrategiesRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
-	21, // 16: optix.analysis.v1.RecommendStrategiesResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
-	15, // 17: optix.analysis.v1.SupportResistanceRequest.bars:type_name -> optix.marketdata.v1.OHLCV
-	24, // 18: optix.analysis.v1.SupportResistanceResponse.support_levels:type_name -> optix.analysis.v1.PriceLevel
-	24, // 19: optix.analysis.v1.SupportResistanceResponse.resistance_levels:type_name -> optix.analysis.v1.PriceLevel
-	0,  // 20: optix.analysis.v1.AnalysisService.PriceOption:input_type -> optix.analysis.v1.PriceOptionRequest
-	2,  // 21: optix.analysis.v1.AnalysisService.GetMaxPain:input_type -> optix.analysis.v1.MaxPainRequest
-	4,  // 22: optix.analysis.v1.AnalysisService.AnalyzeStock:input_type -> optix.analysis.v1.AnalyzeStockRequest
-	6,  // 23: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:input_type -> optix.analysis.v1.BatchQuickAnalysisRequest
-	8,  // 24: optix.analysis.v1.AnalysisService.RecommendStrategies:input_type -> optix.analysis.v1.RecommendStrategiesRequest
-	10, // 25: optix.analysis.v1.AnalysisService.GetSupportResistance:input_type -> optix.analysis.v1.SupportResistanceRequest
-	1,  // 26: optix.analysis.v1.AnalysisService.PriceOption:output_type -> optix.analysis.v1.PriceOptionResponse
-	3,  // 27: optix.analysis.v1.AnalysisService.GetMaxPain:output_type -> optix.analysis.v1.MaxPainResponse
-	5,  // 28: optix.analysis.v1.AnalysisService.AnalyzeStock:output_type -> optix.analysis.v1.AnalyzeStockResponse
-	7,  // 29: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:output_type -> optix.analysis.v1.BatchQuickAnalysisResponse
-	9,  // 30: optix.analysis.v1.AnalysisService.RecommendStrategies:output_type -> optix.analysis.v1.RecommendStrategiesResponse
-	11, // 31: optix.analysis.v1.AnalysisService.GetSupportResistance:output_type -> optix.analysis.v1.SupportResistanceResponse
-	26, // [26:32] is the sub-list for method output_type
-	20, // [20:26] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	17, // 6: optix.analysis.v1.AnalyzeStockRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
+	18, // 7: optix.analysis.v1.AnalyzeStockResponse.summary:type_name -> optix.analysis.v1.StockSummary
+	19, // 8: optix.analysis.v1.AnalyzeStockResponse.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
+	20, // 9: optix.analysis.v1.AnalyzeStockResponse.options:type_name -> optix.analysis.v1.OptionsAnalysis
+	21, // 10: optix.analysis.v1.AnalyzeStockResponse.outlook:type_name -> optix.analysis.v1.MarketOutlook
+	22, // 11: optix.analysis.v1.AnalyzeStockResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
+	23, // 12: optix.analysis.v1.BatchQuickAnalysisRequest.stocks:type_name -> optix.analysis.v1.SingleStockData
+	17, // 13: optix.analysis.v1.BatchQuickAnalysisRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
+	24, // 14: optix.analysis.v1.BatchQuickAnalysisResponse.summaries:type_name -> optix.analysis.v1.StockQuickSummary
+	19, // 15: optix.analysis.v1.RecommendStrategiesRequest.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
+	20, // 16: optix.analysis.v1.RecommendStrategiesRequest.options_analysis:type_name -> optix.analysis.v1.OptionsAnalysis
+	14, // 17: optix.analysis.v1.RecommendStrategiesRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
+	22, // 18: optix.analysis.v1.RecommendStrategiesResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
+	15, // 19: optix.analysis.v1.SupportResistanceRequest.bars:type_name -> optix.marketdata.v1.OHLCV
+	25, // 20: optix.analysis.v1.SupportResistanceResponse.support_levels:type_name -> optix.analysis.v1.PriceLevel
+	25, // 21: optix.analysis.v1.SupportResistanceResponse.resistance_levels:type_name -> optix.analysis.v1.PriceLevel
+	0,  // 22: optix.analysis.v1.AnalysisService.PriceOption:input_type -> optix.analysis.v1.PriceOptionRequest
+	2,  // 23: optix.analysis.v1.AnalysisService.GetMaxPain:input_type -> optix.analysis.v1.MaxPainRequest
+	4,  // 24: optix.analysis.v1.AnalysisService.AnalyzeStock:input_type -> optix.analysis.v1.AnalyzeStockRequest
+	6,  // 25: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:input_type -> optix.analysis.v1.BatchQuickAnalysisRequest
+	8,  // 26: optix.analysis.v1.AnalysisService.RecommendStrategies:input_type -> optix.analysis.v1.RecommendStrategiesRequest
+	10, // 27: optix.analysis.v1.AnalysisService.GetSupportResistance:input_type -> optix.analysis.v1.SupportResistanceRequest
+	1,  // 28: optix.analysis.v1.AnalysisService.PriceOption:output_type -> optix.analysis.v1.PriceOptionResponse
+	3,  // 29: optix.analysis.v1.AnalysisService.GetMaxPain:output_type -> optix.analysis.v1.MaxPainResponse
+	5,  // 30: optix.analysis.v1.AnalysisService.AnalyzeStock:output_type -> optix.analysis.v1.AnalyzeStockResponse
+	7,  // 31: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:output_type -> optix.analysis.v1.BatchQuickAnalysisResponse
+	9,  // 32: optix.analysis.v1.AnalysisService.RecommendStrategies:output_type -> optix.analysis.v1.RecommendStrategiesResponse
+	11, // 33: optix.analysis.v1.AnalysisService.GetSupportResistance:output_type -> optix.analysis.v1.SupportResistanceResponse
+	28, // [28:34] is the sub-list for method output_type
+	22, // [22:28] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_optix_analysis_v1_analysis_proto_init() }

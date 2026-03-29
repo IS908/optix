@@ -51,7 +51,7 @@ class MaxPainResponse(_message.Message):
     def __init__(self, max_pain_price: _Optional[float] = ..., expiration: _Optional[str] = ...) -> None: ...
 
 class AnalyzeStockRequest(_message.Message):
-    __slots__ = ("symbol", "forecast_days", "available_capital", "risk_tolerance", "historical_bars", "option_chain", "current_quote")
+    __slots__ = ("symbol", "forecast_days", "available_capital", "risk_tolerance", "historical_bars", "option_chain", "current_quote", "market_session")
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     FORECAST_DAYS_FIELD_NUMBER: _ClassVar[int]
     AVAILABLE_CAPITAL_FIELD_NUMBER: _ClassVar[int]
@@ -59,6 +59,7 @@ class AnalyzeStockRequest(_message.Message):
     HISTORICAL_BARS_FIELD_NUMBER: _ClassVar[int]
     OPTION_CHAIN_FIELD_NUMBER: _ClassVar[int]
     CURRENT_QUOTE_FIELD_NUMBER: _ClassVar[int]
+    MARKET_SESSION_FIELD_NUMBER: _ClassVar[int]
     symbol: str
     forecast_days: int
     available_capital: float
@@ -66,7 +67,8 @@ class AnalyzeStockRequest(_message.Message):
     historical_bars: _containers.RepeatedCompositeFieldContainer[_types_pb2.OHLCV]
     option_chain: _containers.RepeatedCompositeFieldContainer[_types_pb2.OptionChainExpiry]
     current_quote: _types_pb2.StockQuote
-    def __init__(self, symbol: _Optional[str] = ..., forecast_days: _Optional[int] = ..., available_capital: _Optional[float] = ..., risk_tolerance: _Optional[str] = ..., historical_bars: _Optional[_Iterable[_Union[_types_pb2.OHLCV, _Mapping]]] = ..., option_chain: _Optional[_Iterable[_Union[_types_pb2.OptionChainExpiry, _Mapping]]] = ..., current_quote: _Optional[_Union[_types_pb2.StockQuote, _Mapping]] = ...) -> None: ...
+    market_session: _types_pb2.MarketSession
+    def __init__(self, symbol: _Optional[str] = ..., forecast_days: _Optional[int] = ..., available_capital: _Optional[float] = ..., risk_tolerance: _Optional[str] = ..., historical_bars: _Optional[_Iterable[_Union[_types_pb2.OHLCV, _Mapping]]] = ..., option_chain: _Optional[_Iterable[_Union[_types_pb2.OptionChainExpiry, _Mapping]]] = ..., current_quote: _Optional[_Union[_types_pb2.StockQuote, _Mapping]] = ..., market_session: _Optional[_Union[_types_pb2.MarketSession, str]] = ...) -> None: ...
 
 class AnalyzeStockResponse(_message.Message):
     __slots__ = ("summary", "technical", "options", "outlook", "strategies")
@@ -83,14 +85,16 @@ class AnalyzeStockResponse(_message.Message):
     def __init__(self, summary: _Optional[_Union[_types_pb2_1.StockSummary, _Mapping]] = ..., technical: _Optional[_Union[_types_pb2_1.TechnicalAnalysis, _Mapping]] = ..., options: _Optional[_Union[_types_pb2_1.OptionsAnalysis, _Mapping]] = ..., outlook: _Optional[_Union[_types_pb2_1.MarketOutlook, _Mapping]] = ..., strategies: _Optional[_Iterable[_Union[_types_pb2_1.StrategyRecommendation, _Mapping]]] = ...) -> None: ...
 
 class BatchQuickAnalysisRequest(_message.Message):
-    __slots__ = ("stocks", "forecast_days", "available_capital")
+    __slots__ = ("stocks", "forecast_days", "available_capital", "market_session")
     STOCKS_FIELD_NUMBER: _ClassVar[int]
     FORECAST_DAYS_FIELD_NUMBER: _ClassVar[int]
     AVAILABLE_CAPITAL_FIELD_NUMBER: _ClassVar[int]
+    MARKET_SESSION_FIELD_NUMBER: _ClassVar[int]
     stocks: _containers.RepeatedCompositeFieldContainer[_types_pb2_1.SingleStockData]
     forecast_days: int
     available_capital: float
-    def __init__(self, stocks: _Optional[_Iterable[_Union[_types_pb2_1.SingleStockData, _Mapping]]] = ..., forecast_days: _Optional[int] = ..., available_capital: _Optional[float] = ...) -> None: ...
+    market_session: _types_pb2.MarketSession
+    def __init__(self, stocks: _Optional[_Iterable[_Union[_types_pb2_1.SingleStockData, _Mapping]]] = ..., forecast_days: _Optional[int] = ..., available_capital: _Optional[float] = ..., market_session: _Optional[_Union[_types_pb2.MarketSession, str]] = ...) -> None: ...
 
 class BatchQuickAnalysisResponse(_message.Message):
     __slots__ = ("summaries",)

@@ -119,21 +119,38 @@ func modelQuoteToProto(q *model.StockQuote) *marketdatav1.StockQuote {
 		return nil
 	}
 	return &marketdatav1.StockQuote{
-		Symbol:    q.Symbol,
-		Last:      q.Last,
-		Bid:       q.Bid,
-		Ask:       q.Ask,
-		Volume:    q.Volume,
-		Change:    q.Change,
-		ChangePct: q.ChangePct,
-		High:      q.High,
-		Low:       q.Low,
-		Open:      q.Open,
-		Close:     q.Close,
-		High_52W:  q.High52W,
-		Low_52W:   q.Low52W,
-		AvgVolume: q.AvgVolume,
-		Timestamp: timestamppb.New(q.Timestamp),
+		Symbol:        q.Symbol,
+		Last:          q.Last,
+		Bid:           q.Bid,
+		Ask:           q.Ask,
+		Volume:        q.Volume,
+		Change:        q.Change,
+		ChangePct:     q.ChangePct,
+		High:          q.High,
+		Low:           q.Low,
+		Open:          q.Open,
+		Close:         q.Close,
+		High_52W:      q.High52W,
+		Low_52W:       q.Low52W,
+		AvgVolume:     q.AvgVolume,
+		Timestamp:     timestamppb.New(q.Timestamp),
+		MarketSession: ModelSessionToProto(q.MarketSession),
+	}
+}
+
+// ModelSessionToProto converts a model.MarketSession to its protobuf enum.
+func ModelSessionToProto(s model.MarketSession) marketdatav1.MarketSession {
+	switch s {
+	case model.SessionPreMarket:
+		return marketdatav1.MarketSession_MARKET_SESSION_PRE_MARKET
+	case model.SessionRegular:
+		return marketdatav1.MarketSession_MARKET_SESSION_REGULAR
+	case model.SessionPostMarket:
+		return marketdatav1.MarketSession_MARKET_SESSION_POST_MARKET
+	case model.SessionClosed:
+		return marketdatav1.MarketSession_MARKET_SESSION_CLOSED
+	default:
+		return marketdatav1.MarketSession_MARKET_SESSION_UNSPECIFIED
 	}
 }
 

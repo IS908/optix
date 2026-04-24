@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" && pwd)"
+PROJECT_ROOT="$(cd "$(git -C "$(dirname "$0")" rev-parse --git-common-dir)/.." && pwd)"
 
 # Skill uses a dedicated port to avoid conflict with local dev servers (50052)
 ANALYSIS_PORT="${OPTIX_ANALYSIS_PORT:-50053}"

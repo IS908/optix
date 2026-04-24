@@ -222,40 +222,49 @@ install_agent() {
     case "$agent" in
         claude)
             mkdir -p "$PROJECT_ROOT/.claude/commands"
-            cat > "$PROJECT_ROOT/.claude/commands/optix.md" << 'CLAUDE_EOF'
+            # Use PROJECT_ROOT (absolute) so the slash command works from any CWD,
+            # including worktrees, subdirectories, and non-root invocations.
+            SCRIPT_ABS="$PROJECT_ROOT/skills/commands/optix/optix.sh"
+            cat > "$PROJECT_ROOT/.claude/commands/optix.md" << CLAUDE_EOF
 # Optix — Stock & Options Analysis
 
 Run optix CLI commands via the wrapper script. Pass user arguments after the script path.
 
 ## Usage
 
-```bash
-bash skills/commands/optix/optix.sh <command> [args]
-```
+\`\`\`bash
+bash "${SCRIPT_ABS}" <command> [args]
+\`\`\`
 
 ## Available Commands
 
-Replace `<SYMBOL>` with the actual stock ticker (e.g., AAPL, TSLA, NVDA).
+Replace \`<SYMBOL>\` with the actual stock ticker (e.g., AAPL, TSLA, NVDA).
 
-- `dashboard` — Watchlist overview with quotes and technical signals
-- `analyze <SYMBOL>` — Deep stock analysis (Python server auto-started)
-- `quote <SYMBOL>` — Real-time stock quote from IBKR
-- `watch list` — List watchlist symbols
-- `watch add <SYMBOL>` — Add symbol to watchlist
-- `watch remove <SYMBOL>` — Remove symbol from watchlist
+- \`dashboard\` — Watchlist overview with quotes and technical signals
+- \`analyze <SYMBOL>\` — Deep stock analysis: technicals + options Greeks + strategy recommendations (Python server auto-started)
+- \`quote <SYMBOL>\` — Real-time stock quote (IBKR if available, Yahoo Finance fallback)
+- \`watch list\` — List watchlist symbols
+- \`watch add <SYMBOL>\` — Add symbol to watchlist
+- \`watch remove <SYMBOL>\` — Remove symbol from watchlist
 
 ## Examples
 
-```bash
-bash skills/commands/optix/optix.sh dashboard
-bash skills/commands/optix/optix.sh analyze <SYMBOL>
-bash skills/commands/optix/optix.sh quote <SYMBOL>
-bash skills/commands/optix/optix.sh watch list
-bash skills/commands/optix/optix.sh watch add <SYMBOL>
-bash skills/commands/optix/optix.sh watch remove <SYMBOL>
-```
+\`\`\`bash
+bash "${SCRIPT_ABS}" dashboard
+bash "${SCRIPT_ABS}" analyze AAPL
+bash "${SCRIPT_ABS}" quote TSLA
+bash "${SCRIPT_ABS}" watch list
+bash "${SCRIPT_ABS}" watch add NVDA
+bash "${SCRIPT_ABS}" watch remove COIN
+\`\`\`
+
+## Notes
+- IBKR TWS/Gateway is **optional** — falls back to Yahoo Finance (delayed data) if unreachable
+- Python gRPC server is auto-started and auto-stopped; no manual setup needed
+- Connection pool (ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
 CLAUDE_EOF
             echo "  ✓ Installed: .claude/commands/optix.md"
+            echo "  Script path: ${SCRIPT_ABS}"
             echo "  Use with: /optix <args>"
             ;;
         openclaw)

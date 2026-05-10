@@ -1,13 +1,55 @@
 #!/usr/bin/env bash
+#
+# install.sh — install the optix skill for one or more agents.
+#
+# Layout (lark-* pattern):
+#   ~/.agents/skills/optix/                          # canonical install (one copy)
+#   ├── SKILL.md                                     # exact copy from repo
+#   ├── bin/optix.sh                                 # thin wrapper (skill-wrapper.sh)
+#   └── optix-repo  -> /path/to/IS908/optix          # symlink to project checkout
+#
+#   ~/.claude/skills/optix    -> ../../.agents/skills/optix    # per-agent symlink
+#   ~/.openclaw/skills/optix  -> ../../.agents/skills/optix
+#   ~/.hermes/skills/optix    -> ../../.agents/skills/optix
+#
+# This means SKILL.md is written ONCE, and is identical for all agents.
+# Bumping the skill content is `git pull && install.sh --agent <name>` away.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)" && pwd)"
 
+# Canonical location shared by all agents (matches the lark-* convention).
+CANONICAL_DIR="$HOME/.agents/skills/optix"
+
 AGENT=""
 UNINSTALL=false
+PURGE=false
 
-# Parse arguments
+usage() {
+    cat <<EOF
+Usage: install.sh [--agent <list>] [--uninstall] [--purge]
+
+Options:
+  --agent <list>   Comma-separated list of agents to install for.
+                   Supported: claude, openclaw, hermes, generic
+                   If omitted, auto-detects which agents are configured.
+  --uninstall      Remove the per-agent symlinks (keeps canonical install).
+  --purge          With --uninstall: also remove the canonical install at
+                   ~/.agents/skills/optix and the slash command in this repo.
+
+Examples:
+  install.sh --agent claude
+  install.sh --agent claude,hermes
+  install.sh --uninstall --agent claude
+  install.sh --uninstall --purge
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --agent)
@@ -18,507 +60,283 @@ while [[ $# -gt 0 ]]; do
             UNINSTALL=true
             shift
             ;;
+        --purge)
+            PURGE=true
+            shift
+            ;;
+        -h|--help)
+            usage; exit 0
+            ;;
         *)
-            echo "Usage: install.sh [--agent claude|openclaw] [--uninstall]" >&2
-            exit 1
+            usage; exit 1
             ;;
     esac
 done
 
 # ---------------------------------------------------------------------------
-# Bundle: compile Go binary + create standalone Python venv in target dir
+# Per-agent skill directory
 # ---------------------------------------------------------------------------
-bundle_to() {
-    local TARGET_DIR="$1"
-
-    echo "  Bundling Go binary..."
-    mkdir -p "$TARGET_DIR/bin"
-    make -C "$PROJECT_ROOT" build
-    cp "$PROJECT_ROOT/bin/optix" "$TARGET_DIR/bin/optix"
-
-    echo "  Bundling Python engine..."
-    mkdir -p "$TARGET_DIR/python"
-    # Copy Python source package (remove old copy first to avoid cp -r nesting)
-    rm -rf "$TARGET_DIR/python/src"
-    cp -r "$PROJECT_ROOT/python/src" "$TARGET_DIR/python/src"
-    cp "$PROJECT_ROOT/python/pyproject.toml" "$TARGET_DIR/python/pyproject.toml"
-    # Copy generated protobuf code
-    if [[ -d "$PROJECT_ROOT/python/src/optix_engine/gen" ]]; then
-        # Target already exists from the cp above; use trailing slash to copy contents
-        cp -r "$PROJECT_ROOT/python/src/optix_engine/gen/" "$TARGET_DIR/python/src/optix_engine/gen/"
-    fi
-
-    # --- Python environment strategy ---
-    # Try host Python first; create a venv only if dependencies are missing.
-    # Minimum Python version: 3.11 (matches pyproject.toml requires-python).
-    local PYTHON_BIN
-    PYTHON_BIN="$(command -v python3.14 || command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3 || echo python3)"
-
-    # Verify minimum version
-    if ! "$PYTHON_BIN" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>/dev/null; then
-        echo "ERROR: Python >= 3.11 is required (found: $("$PYTHON_BIN" --version 2>&1 || echo 'none'))" >&2
-        echo "  Install Python 3.11+ and try again." >&2
-        return 1
-    fi
-    echo "  Using Python: $("$PYTHON_BIN" --version 2>&1)"
-
-    local HOST_OK=true
-    # Check all runtime imports on the host interpreter
-    "$PYTHON_BIN" -c "
-import numpy, scipy.stats, scipy.optimize, pandas, grpc, google.protobuf, yfinance
-" 2>/dev/null || HOST_OK=false
-
-    if [[ "$HOST_OK" == true ]]; then
-        echo "  Host Python ($PYTHON_BIN) has all dependencies — skipping venv"
-        # Install optix_engine as editable package via host pip (--user)
-        "$PYTHON_BIN" -m pip install --quiet --no-deps --user -e "$TARGET_DIR/python/" 2>/dev/null || \
-            "$PYTHON_BIN" -m pip install --quiet --no-deps -e "$TARGET_DIR/python/" 2>/dev/null || true
-        # Create a thin shim so bin/optix.sh can find the interpreter
-        mkdir -p "$TARGET_DIR/python/.venv/bin"
-        ln -sf "$(command -v "$PYTHON_BIN")" "$TARGET_DIR/python/.venv/bin/python"
-    else
-        echo "  Host Python missing dependencies — creating standalone venv..."
-        "$PYTHON_BIN" -m venv "$TARGET_DIR/python/.venv"
-
-        # Install runtime deps only (skip matplotlib, grpcio-tools for dev)
-        "$TARGET_DIR/python/.venv/bin/pip" install --quiet \
-            "numpy>=1.26" "scipy>=1.12" "pandas>=2.2" "grpcio>=1.60" "protobuf>=4.25" "yfinance>=0.2"
-
-        # Install optix_engine without pulling deps again
-        "$TARGET_DIR/python/.venv/bin/pip" install --quiet --no-deps -e "$TARGET_DIR/python/"
-
-        # Slim: remove pip, setuptools, caches, test dirs
-        echo "  Slimming Python venv..."
-        "$TARGET_DIR/python/.venv/bin/pip" uninstall --quiet -y pip setuptools 2>/dev/null || true
-        find "$TARGET_DIR/python/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-        find "$TARGET_DIR/python/.venv" -name "*.pyc" -delete 2>/dev/null || true
-        for pkg in scipy numpy pandas; do
-            rm -rf "$TARGET_DIR/python/.venv/lib"/python*/site-packages/$pkg/tests 2>/dev/null || true
-        done
-    fi
-
-    # Create data directory
-    mkdir -p "$TARGET_DIR/data"
-
-    # Copy existing database if present (watchlist etc.)
-    # Checkpoint WAL first so all data is in the main file, then copy
-    # the db and any residual WAL/SHM files to avoid data loss.
-    if [[ -f "$PROJECT_ROOT/data/optix.db" ]]; then
-        sqlite3 "$PROJECT_ROOT/data/optix.db" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
-        cp "$PROJECT_ROOT/data/optix.db" "$TARGET_DIR/data/optix.db"
-        for ext in -wal -shm; do
-            [[ -f "$PROJECT_ROOT/data/optix.db${ext}" ]] && \
-                cp "$PROJECT_ROOT/data/optix.db${ext}" "$TARGET_DIR/data/optix.db${ext}"
-        done
-        echo "  Copied existing database (watchlist preserved)"
-    fi
-
-    echo "  ✓ Bundle complete: $TARGET_DIR"
-}
-
-# ---------------------------------------------------------------------------
-# Generate standalone optix.sh that references SKILL_DIR, not PROJECT_ROOT
-# ---------------------------------------------------------------------------
-write_standalone_optix_sh() {
-    local TARGET_DIR="$1"
-    # optix.sh lives in bin/, so SKILL_ROOT is one level up
-    cat > "$TARGET_DIR/bin/optix.sh" << 'WRAPPER_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-# This script lives in <skill>/bin/; skill root is one level up
-SKILL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# Skill uses a dedicated port to avoid conflict with local dev servers (50052)
-ANALYSIS_PORT="${OPTIX_ANALYSIS_PORT:-50053}"
-ANALYSIS_ADDR="localhost:${ANALYSIS_PORT}"
-
-# --- Check IBKR TWS/Gateway for commands that need live data ---
-IB_HOST="${OPTIX_IB_HOST:-127.0.0.1}"
-IB_PORT="${OPTIX_IB_PORT:-gateway}"
-
-# Resolve port alias to number for nc -z connectivity check
-resolve_port() {
-    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
-        gateway) echo 4001 ;; tws) echo 7496 ;; *) echo "$1" ;;
+agent_skill_dir() {
+    case "$1" in
+        claude)   echo "$HOME/.claude/skills/optix" ;;
+        openclaw) echo "$HOME/.openclaw/skills/optix" ;;
+        hermes)   echo "$HOME/.hermes/skills/optix" ;;
+        generic)  echo "" ;;  # generic = no install, just print instructions
+        *)        echo "" ;;
     esac
 }
-IB_PORT_NUM=$(resolve_port "$IB_PORT")
 
-case "${1:-}" in
-    quote|analyze|dashboard|chain)
-        if ! nc -z "$IB_HOST" "$IB_PORT_NUM" 2>/dev/null; then
-            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — will use Yahoo Finance (delayed data, no options)" >&2
-        fi
-        ;;
-esac
-
-# --- Determine if command needs Python gRPC server ---
-PY_SERVER_PID=""
-READY_FILE=""
-NEED_PY_SERVER=false
-EXTRA_ARGS=()
-
-case "${1:-}" in
-    analyze|dashboard)
-        NEED_PY_SERVER=true
-        EXTRA_ARGS+=(--analysis-addr "$ANALYSIS_ADDR")
-        ;;
-esac
-
-if [[ "$NEED_PY_SERVER" == true ]]; then
-    if ! nc -z localhost "$ANALYSIS_PORT" 2>/dev/null; then
-        READY_FILE=$(mktemp -t optix-ready.XXXXXX)
-        rm -f "$READY_FILE"
-
-        echo "Starting Python analysis server on port ${ANALYSIS_PORT}..." >&2
-        "$SKILL_ROOT/python/.venv/bin/python" -m optix_engine.grpc_server.server \
-            --addr="$ANALYSIS_ADDR" --ready-file="$READY_FILE" &>/dev/null &
-        PY_SERVER_PID=$!
-
-        for i in {1..600}; do
-            if [[ -f "$READY_FILE" ]]; then
-                echo "Python analysis server ready." >&2
-                break
-            fi
-            if ! kill -0 "$PY_SERVER_PID" 2>/dev/null; then
-                echo "ERROR: Python analysis server process exited unexpectedly" >&2
-                rm -f "$READY_FILE"
-                exit 1
-            fi
-            sleep 0.2
-        done
-        if [[ ! -f "$READY_FILE" ]]; then
-            echo "ERROR: Python analysis server failed to start within 120s" >&2
-            kill "$PY_SERVER_PID" 2>/dev/null
-            rm -f "$READY_FILE"
-            exit 1
-        fi
+# ---------------------------------------------------------------------------
+# Detect which agents are configured on this host.
+# Returns a space-separated list via stdout.
+# ---------------------------------------------------------------------------
+detect_agents() {
+    local found=()
+    [[ -d "$HOME/.claude" ]]      && found+=("claude")
+    [[ -d "$HOME/.openclaw" ]]    && found+=("openclaw")
+    [[ -d "$HOME/.hermes" ]]      && found+=("hermes")
+    if [[ ${#found[@]} -eq 0 ]]; then
+        echo "generic"
+    else
+        echo "${found[@]}"
     fi
-fi
-
-# --- Cleanup on exit: stop Python server if we started it ---
-cleanup() {
-    if [[ -n "$PY_SERVER_PID" ]]; then
-        kill "$PY_SERVER_PID" 2>/dev/null
-        wait "$PY_SERVER_PID" 2>/dev/null
-    fi
-    [[ -n "$READY_FILE" ]] && rm -f "$READY_FILE"
-}
-trap cleanup EXIT
-
-"$SKILL_ROOT/bin/optix" --db "$SKILL_ROOT/data/optix.db" --python "$SKILL_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
-WRAPPER_EOF
-    chmod +x "$TARGET_DIR/bin/optix.sh"
 }
 
 # ---------------------------------------------------------------------------
-# Per-agent install
+# Install the canonical skill at ~/.agents/skills/optix/. Idempotent.
 # ---------------------------------------------------------------------------
-install_agent() {
+install_canonical() {
+    echo "Installing canonical skill at $CANONICAL_DIR"
+    mkdir -p "$CANONICAL_DIR/bin"
+
+    # 1) SKILL.md — copied verbatim from the repo, no path substitution.
+    cp "$SCRIPT_DIR/SKILL.md" "$CANONICAL_DIR/SKILL.md"
+    echo "  ✓ SKILL.md"
+
+    # 2) bin/optix.sh — thin wrapper that discovers the optix project.
+    cp "$SCRIPT_DIR/skill-wrapper.sh" "$CANONICAL_DIR/bin/optix.sh"
+    chmod +x "$CANONICAL_DIR/bin/optix.sh"
+    echo "  ✓ bin/optix.sh"
+
+    # 3) optix-repo symlink — points to this checkout. The wrapper resolves
+    #    this at runtime, so moving/reinstalling updates all agents at once.
+    ln -snf "$PROJECT_ROOT" "$CANONICAL_DIR/optix-repo"
+    echo "  ✓ optix-repo -> $PROJECT_ROOT"
+}
+
+# ---------------------------------------------------------------------------
+# Create the per-agent symlink: ~/.<agent>/skills/optix -> canonical.
+# Uses a relative target (../../.agents/skills/optix) when both live under
+# $HOME, so it survives $HOME being a different mount on another machine.
+# ---------------------------------------------------------------------------
+link_agent() {
     local agent="$1"
-    echo ""
-    echo "--- Installing for: $agent ---"
+    local agent_dir
+    agent_dir="$(agent_skill_dir "$agent")"
+
+    if [[ -z "$agent_dir" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$agent_dir")"
+
+    # If a non-symlink directory already exists (legacy install), back it up.
+    if [[ -d "$agent_dir" && ! -L "$agent_dir" ]]; then
+        local backup="${agent_dir}.bak.$(date +%Y%m%d-%H%M%S)"
+        echo "  ⚠️  $agent_dir is not a symlink; moving to $backup"
+        mv "$agent_dir" "$backup"
+    fi
+
+    # Compute the relative path: same depth as ~/.<agent>/skills, target is ~/.agents/skills.
+    # Both live under $HOME, so a 2-up relative is portable across machines.
+    ln -snf "../../.agents/skills/optix" "$agent_dir"
+    echo "  ✓ Linked $agent: $agent_dir -> ../../.agents/skills/optix"
+}
+
+# ---------------------------------------------------------------------------
+# Per-agent post-install hooks (e.g. /optix slash command, openclaw safeBins).
+# ---------------------------------------------------------------------------
+post_install_agent() {
+    local agent="$1"
     case "$agent" in
         claude)
-            # Use PROJECT_ROOT (absolute) so paths work from any CWD —
-            # global skill location (~/.claude/skills/) cannot use git rev-parse.
-            SCRIPT_ABS="$PROJECT_ROOT/skills/commands/optix/optix.sh"
-
-            # ----------------------------------------------------------------
-            # 1) Install the SKILL globally so Claude auto-triggers from any
-            #    directory (not just inside this project). Skills live in
-            #    ~/.claude/skills/<name>/SKILL.md.
-            # ----------------------------------------------------------------
-            local CLAUDE_SKILL_DIR="$HOME/.claude/skills/optix"
-            mkdir -p "$CLAUDE_SKILL_DIR"
-            cat > "$CLAUDE_SKILL_DIR/SKILL.md" << SKILL_EOF
----
-name: optix
-description: "美股期权分析工具 / US stock & options analysis: 查看股价行情、期权分析、策略推荐、自选股管理、看板总览。Use when user asks about stock prices, quotes, options strategies, market analysis, watchlist, or dashboard."
----
-
-# Optix — 美股期权分析 / US Stock & Options Analysis
-
-Use this skill when the user asks about (当用户提到以下内容时触发):
-- 股价、行情、报价 / Stock prices, quotes (e.g., "AAPL 现在多少钱?", "查一下特斯拉股价", "get me a quote for TSLA")
-- 期权分析、策略推荐 / Options analysis, strategy recommendations (e.g., "分析一下 NVDA", "有什么期权机会?", "analyze AAPL")
-- 自选股、关注列表 / Watchlist management (e.g., "把 META 加入自选", "看看自选股", "删掉 COIN")
-- 看板、总览、持仓概览 / Dashboard, overview (e.g., "看看大盘", "打开看板", "show dashboard")
-
-## Commands
-
-Replace \`<SYMBOL>\` with the stock ticker the user mentions.
-
-### Get stock quote
-\`\`\`bash
-bash "${SCRIPT_ABS}" quote <SYMBOL>
-\`\`\`
-
-### Analyze a stock (technicals + options + strategy recommendations)
-\`\`\`bash
-bash "${SCRIPT_ABS}" analyze <SYMBOL>
-\`\`\`
-
-### Show dashboard (all watchlist stocks with analysis)
-\`\`\`bash
-bash "${SCRIPT_ABS}" dashboard
-\`\`\`
-
-### List watchlist
-\`\`\`bash
-bash "${SCRIPT_ABS}" watch list
-\`\`\`
-
-### Add to watchlist
-\`\`\`bash
-bash "${SCRIPT_ABS}" watch add <SYMBOL>
-\`\`\`
-
-### Remove from watchlist
-\`\`\`bash
-bash "${SCRIPT_ABS}" watch remove <SYMBOL>
-\`\`\`
-
-## Notes
-- Python gRPC server auto-starts/stops on port 50053
-- IBKR TWS/Gateway is **optional**: defaults to Gateway port 4001 — falls back to Yahoo Finance (delayed quotes, no options) if unreachable
-- Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
-SKILL_EOF
-            echo "  ✓ Skill installed: $CLAUDE_SKILL_DIR/SKILL.md"
-
-            # ----------------------------------------------------------------
-            # 2) Also install a /optix slash command in the project for
-            #    explicit invocation. This is project-local.
-            # ----------------------------------------------------------------
+            # Project-local /optix slash command for explicit invocation.
             mkdir -p "$PROJECT_ROOT/.claude/commands"
-            cat > "$PROJECT_ROOT/.claude/commands/optix.md" << CLAUDE_EOF
+            cat > "$PROJECT_ROOT/.claude/commands/optix.md" <<'CMD_EOF'
 # Optix — Stock & Options Analysis
 
-Run optix CLI commands via the wrapper script. Pass user arguments after the script path.
+Run optix CLI commands via the bundled wrapper. The skill is installed at
+`~/.agents/skills/optix/` and symlinked into Claude's skill directory.
 
 ## Usage
 
-\`\`\`bash
-bash "${SCRIPT_ABS}" <command> [args]
-\`\`\`
+```bash
+bash ~/.agents/skills/optix/bin/optix.sh <command> [args]
+```
 
-## Available Commands
-
-Replace \`<SYMBOL>\` with the actual stock ticker (e.g., AAPL, TSLA, NVDA).
-
-- \`dashboard\` — Watchlist overview with quotes and technical signals
-- \`analyze <SYMBOL>\` — Deep stock analysis: technicals + options Greeks + strategy recommendations (Python server auto-started)
-- \`quote <SYMBOL>\` — Real-time stock quote (IBKR if available, Yahoo Finance fallback)
-- \`watch list\` — List watchlist symbols
-- \`watch add <SYMBOL>\` — Add symbol to watchlist
-- \`watch remove <SYMBOL>\` — Remove symbol from watchlist
-
-## Examples
-
-\`\`\`bash
-bash "${SCRIPT_ABS}" dashboard
-bash "${SCRIPT_ABS}" analyze AAPL
-bash "${SCRIPT_ABS}" quote TSLA
-bash "${SCRIPT_ABS}" watch list
-bash "${SCRIPT_ABS}" watch add NVDA
-bash "${SCRIPT_ABS}" watch remove COIN
-\`\`\`
+## Commands
+- `dashboard` — Watchlist overview
+- `analyze <SYMBOL>` — Deep analysis (Python server auto-started)
+- `quote <SYMBOL>` — Real-time quote (IBKR or yfinance fallback)
+- `watch list|add <SYMBOL>|remove <SYMBOL>` — Manage watchlist
 
 ## Notes
-- IBKR TWS/Gateway is **optional** — falls back to Yahoo Finance (delayed data) if unreachable
-- Python gRPC server is auto-started and auto-stopped; no manual setup needed
-- Connection pool (ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
-CLAUDE_EOF
-            echo "  ✓ Slash command installed: .claude/commands/optix.md"
-            echo "  Script path: ${SCRIPT_ABS}"
-            echo "  Use with: just ask Claude (auto-trigger), or /optix <args> for explicit"
+- IBKR TWS/Gateway is **optional** — falls back to Yahoo Finance
+- Python gRPC server auto-managed (port 50053)
+- Override the optix project location via `OPTIX_HOME` environment variable
+CMD_EOF
+            echo "  ✓ Project-local slash command: .claude/commands/optix.md"
             ;;
         openclaw)
-            local INSTALL_DIR="$HOME/.openclaw/skills/optix"
+            # Register the wrapper in openclaw's safeBins allowlist so it can
+            # be executed without per-call confirmation.
             local OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
-
-            # 1. Bundle binary + Python + data into skill dir
-            mkdir -p "$INSTALL_DIR"
-            # Patch SKILL.md: replace source paths with installed bin/optix.sh
-            sed 's|skills/commands/optix/optix\.sh|bin/optix.sh|g' \
-                "$SCRIPT_DIR/SKILL.md" > "$INSTALL_DIR/SKILL.md"
-            bundle_to "$INSTALL_DIR"
-            write_standalone_optix_sh "$INSTALL_DIR"
-
-            # 2. Register bin/optix.sh in tools.exec.safeBins
             if [[ -f "$OPENCLAW_CONFIG" ]]; then
-                local ABS_SCRIPT="$INSTALL_DIR/bin/optix.sh"
-                if python3 -c "
+                local ABS_SCRIPT="$CANONICAL_DIR/bin/optix.sh"
+                python3 - "$OPENCLAW_CONFIG" "$ABS_SCRIPT" <<'PY_EOF' || \
+                    echo "  ⚠️  Failed to update openclaw.json safeBins; add manually." >&2
 import json, sys
-with open('$OPENCLAW_CONFIG', 'r') as f:
+cfg_path, script = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
     cfg = json.load(f)
 safe_bins = cfg.setdefault('tools', {}).setdefault('exec', {}).setdefault('safeBins', [])
 profiles = cfg['tools']['exec'].setdefault('safeBinProfiles', {})
-script = '$ABS_SCRIPT'
 if script not in safe_bins:
     safe_bins.append(script)
     profiles[script.lower()] = {}
-    with open('$OPENCLAW_CONFIG', 'w') as f:
+    with open(cfg_path, 'w') as f:
         json.dump(cfg, f, indent=2)
-    print(f'  Registered {script} in openclaw.json safeBins')
+    print(f"  ✓ Registered {script} in openclaw.json safeBins")
 else:
-    print(f'  {script} already registered in safeBins')
-" 2>&1; then
-                    :
-                else
-                    echo "  WARNING: Failed to register in openclaw.json. Add manually:" >&2
-                    echo "    safeBins: [\"$ABS_SCRIPT\"]" >&2
-                fi
+    print(f"  ✓ {script} already in safeBins")
+PY_EOF
             else
-                echo "  WARNING: openclaw.json not found at $OPENCLAW_CONFIG" >&2
+                echo "  ⚠️  $OPENCLAW_CONFIG not found — skipping safeBins registration"
             fi
-
-            echo "  ✓ Installed: $INSTALL_DIR"
-            echo "  CLI wrapper:   $INSTALL_DIR/bin/optix.sh"
-            echo "  Python server: $INSTALL_DIR/python/.venv/bin/python -m optix_engine.grpc_server.server"
-            ;;
-        generic)
-            echo ""
-            echo "  === Manual Installation ==="
-            echo "  Skill files are at: $SCRIPT_DIR/"
-            echo "    - SKILL.md:  Skill definition for your agent"
-            echo "    - optix.sh:  Wrapper script (call this to run commands)"
-            echo ""
-            echo "  Copy these files to your agent's skill directory and"
-            echo "  configure it to call optix.sh with the desired arguments."
             ;;
     esac
 }
 
 # ---------------------------------------------------------------------------
-# Per-agent uninstall
+# Uninstall: remove the per-agent symlink. With --purge, also remove canonical.
 # ---------------------------------------------------------------------------
 uninstall_agent() {
     local agent="$1"
-    echo ""
-    echo "--- Uninstalling for: $agent ---"
+    local agent_dir
+    agent_dir="$(agent_skill_dir "$agent")"
+
     case "$agent" in
         claude)
-            rm -rf "$HOME/.claude/skills/optix"
-            echo "  ✓ Removed ~/.claude/skills/optix/"
             rm -f "$PROJECT_ROOT/.claude/commands/optix.md"
             echo "  ✓ Removed .claude/commands/optix.md"
             ;;
         openclaw)
             local OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
             if [[ -f "$OPENCLAW_CONFIG" ]]; then
-                local ABS_SCRIPT="$HOME/.openclaw/skills/optix/bin/optix.sh"
-                python3 -c "
-import json
-with open('$OPENCLAW_CONFIG', 'r') as f:
+                python3 - "$OPENCLAW_CONFIG" "$CANONICAL_DIR/bin/optix.sh" <<'PY_EOF' || true
+import json, sys
+cfg_path, script = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
     cfg = json.load(f)
 safe_bins = cfg.get('tools', {}).get('exec', {}).get('safeBins', [])
 profiles = cfg.get('tools', {}).get('exec', {}).get('safeBinProfiles', {})
-script = '$ABS_SCRIPT'
 if script in safe_bins:
     safe_bins.remove(script)
     profiles.pop(script.lower(), None)
-    with open('$OPENCLAW_CONFIG', 'w') as f:
+    with open(cfg_path, 'w') as f:
         json.dump(cfg, f, indent=2)
-    print(f'  Removed {script} from openclaw.json safeBins')
-" 2>/dev/null || true
+    print(f"  ✓ Removed {script} from openclaw.json safeBins")
+PY_EOF
             fi
-            rm -rf "$HOME/.openclaw/skills/optix"
-            echo "  ✓ Removed ~/.openclaw/skills/optix/"
-            ;;
-        generic)
-            echo "  Nothing to uninstall for generic agent."
             ;;
     esac
+
+    if [[ -n "$agent_dir" && (-L "$agent_dir" || -e "$agent_dir") ]]; then
+        rm -rf "$agent_dir"
+        echo "  ✓ Removed $agent_dir"
+    fi
 }
 
 # ---------------------------------------------------------------------------
-# Interactive agent selection if not specified
+# Resolve target list
 # ---------------------------------------------------------------------------
 INSTALL_TARGETS=()
-
 if [[ -n "$AGENT" ]]; then
-    INSTALL_TARGETS=("$AGENT")
+    IFS=',' read -ra INSTALL_TARGETS <<< "$AGENT"
 else
-    AVAILABLE=()
-    if command -v claude &>/dev/null || [[ -d "$PROJECT_ROOT/.claude" ]]; then
-        AVAILABLE+=("claude")
-    fi
-    if [[ -d "$HOME/.openclaw" ]]; then
-        AVAILABLE+=("openclaw")
-    fi
-
-    if [[ ${#AVAILABLE[@]} -eq 0 ]]; then
-        INSTALL_TARGETS=("generic")
-        echo "No known agent detected, using generic mode."
-    elif [[ ${#AVAILABLE[@]} -eq 1 ]]; then
-        INSTALL_TARGETS=("${AVAILABLE[0]}")
-        echo "Detected agent: ${AVAILABLE[0]}"
-    else
-        echo "Multiple agents detected. Select target:"
-        echo ""
-        for i in "${!AVAILABLE[@]}"; do
-            echo "  $((i+1))) ${AVAILABLE[$i]}"
-        done
-        echo "  A) All of the above"
-        echo ""
-        read -rp "Choose [1-${#AVAILABLE[@]}/A]: " CHOICE
-        if [[ "$CHOICE" =~ ^[Aa]$ ]]; then
-            INSTALL_TARGETS=("${AVAILABLE[@]}")
-        elif [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#AVAILABLE[@]} )); then
-            INSTALL_TARGETS=("${AVAILABLE[$((CHOICE-1))]}")
-        else
-            echo "Invalid choice." >&2
-            exit 1
-        fi
-    fi
+    # shellcheck disable=SC2207
+    INSTALL_TARGETS=( $(detect_agents) )
+    echo "Auto-detected agents: ${INSTALL_TARGETS[*]}"
 fi
 
 # ---------------------------------------------------------------------------
-# Uninstall
+# UNINSTALL
 # ---------------------------------------------------------------------------
 if [[ "$UNINSTALL" == true ]]; then
     for target in "${INSTALL_TARGETS[@]}"; do
+        echo ""
+        echo "--- Uninstalling for: $target ---"
         uninstall_agent "$target"
     done
+
+    if [[ "$PURGE" == true ]]; then
+        echo ""
+        echo "--- Purging canonical install ---"
+        rm -rf "$CANONICAL_DIR"
+        echo "  ✓ Removed $CANONICAL_DIR"
+    fi
+    echo ""
+    echo "Done."
     exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# Prerequisites
+# INSTALL
 # ---------------------------------------------------------------------------
 echo "Checking prerequisites..."
-
 if ! command -v go &>/dev/null; then
     echo "ERROR: Go compiler not found. Install Go first." >&2
     exit 1
 fi
-
 if ! command -v python3 &>/dev/null; then
     echo "ERROR: Python 3 not found. Install Python 3.11+ first." >&2
     exit 1
 fi
-
-PY_VER="$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")"
 if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>/dev/null; then
+    PY_VER="$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")"
     echo "ERROR: Python >= 3.11 is required (found: $PY_VER)" >&2
     exit 1
 fi
-
 if [[ ! -d "$PROJECT_ROOT/python/.venv" ]]; then
-    echo "WARNING: Python venv not found at python/.venv" >&2
+    echo "WARNING: Python venv not found at $PROJECT_ROOT/python/.venv" >&2
     echo "  Run: python3 -m venv python/.venv && python/.venv/bin/pip install -e python/" >&2
 fi
 
-# ---------------------------------------------------------------------------
-# Build & Install
-# ---------------------------------------------------------------------------
+echo ""
 echo "Building optix CLI..."
 make -C "$PROJECT_ROOT" build
 
+echo ""
+install_canonical
+
 for target in "${INSTALL_TARGETS[@]}"; do
-    install_agent "$target"
+    echo ""
+    echo "--- Installing for: $target ---"
+    case "$target" in
+        generic)
+            cat <<EOF
+  Manual installation: copy or symlink $CANONICAL_DIR into your agent's
+  skill directory. The skill expects:
+    - cwd = skill directory when commands are invoked
+    - bin/optix.sh resolvable from cwd
+    - $CANONICAL_DIR/optix-repo symlink valid OR \$OPTIX_HOME set
+EOF
+            ;;
+        *)
+            link_agent "$target"
+            post_install_agent "$target"
+            ;;
+    esac
 done
 
 # ---------------------------------------------------------------------------
@@ -526,23 +344,13 @@ done
 # ---------------------------------------------------------------------------
 echo ""
 echo "Verifying installation..."
-
-# For openclaw, verify using the bundled binary; for claude, use project binary
-VERIFY_BIN="$PROJECT_ROOT/bin/optix"
-VERIFY_DB="$PROJECT_ROOT/data/optix.db"
-for target in "${INSTALL_TARGETS[@]}"; do
-    if [[ "$target" == "openclaw" ]]; then
-        VERIFY_BIN="$HOME/.openclaw/skills/optix/bin/optix"
-        VERIFY_DB="$HOME/.openclaw/skills/optix/data/optix.db"
-        break
-    fi
-done
-
-if "$VERIFY_BIN" watch list --db "$VERIFY_DB" 2>/dev/null; then
-    echo "Verification passed."
+if "$CANONICAL_DIR/bin/optix.sh" watch list 2>/dev/null; then
+    echo "✓ Wrapper works."
 else
-    echo "Verification: CLI runs (watchlist may be empty)."
+    echo "  Wrapper invoked successfully (watchlist may be empty)."
 fi
 
 echo ""
-echo "Done! Optix skill installed for: ${INSTALL_TARGETS[*]}"
+echo "Done. Skill installed for: ${INSTALL_TARGETS[*]}"
+echo "  Canonical: $CANONICAL_DIR"
+echo "  Project:   $PROJECT_ROOT"

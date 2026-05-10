@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(git -C "$(dirname "$0")" rev-parse --git-common-dir)/.." && pwd)"
+# PROJECT_ROOT is derived from this script's physical location:
+#   <project>/skills/commands/optix/optix.sh  →  $PROJECT_ROOT = <project>
+# This avoids `git rev-parse` which behaves unpredictably across worktrees,
+# submodules, and out-of-tree callers (e.g., the skill wrapper at
+# ~/.agents/skills/optix/bin/optix.sh that exec's into us with $0 = absolute path).
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+# Resolve symlinks if the script itself is symlinked
+while [[ -L "$SCRIPT_PATH" ]]; do
+    DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$DIR/$SCRIPT_PATH"
+done
+PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/../../.." && pwd)"
 
 # Skill uses a dedicated port to avoid conflict with local dev servers (50052)
 ANALYSIS_PORT="${OPTIX_ANALYSIS_PORT:-50053}"

@@ -203,6 +203,17 @@ All Python commands **must** use `python/.venv/bin/python` or activate the venv.
 
 Default: `./data/optix.db` (relative to CWD). Override with `--db` flag. The SQLite store auto-creates the directory if missing.
 
+### Agent Skill Install Pattern
+
+`skills/commands/optix/install.sh` installs the skill to a single canonical location (`~/.agents/skills/optix/`) and creates per-agent symlinks at `~/.<agent>/skills/optix`. Auto-detects two modes:
+
+- **dev mode** (source checkout, `.git` + `Makefile` present): `.runtime/` becomes a symlink to the source tree. `make build` edits take effect immediately.
+- **release mode** (extracted tarball, future): `.runtime/` is a real directory with bundled binary + on-machine Python venv.
+
+Source tree and `.runtime/` share the same internal layout (`bin/`, `python/`, `data/`, `skills/commands/optix/`), so the wrapper (`skill-wrapper.sh`) has no branching logic — runtime resolution is a single chain: `$OPTIX_HOME` → `<skill>/.runtime` → `command -v optix`.
+
+When changing skill behavior, edit `skills/commands/optix/SKILL.md` (descriptor) and `optix.sh` (orchestration: Python server lifecycle, IBKR probe, port resolution). The skill wrapper itself (`skill-wrapper.sh`) should rarely change — it's just a thin redirector.
+
 ## Common Gotchas
 
 - **Python module not found**: Run `python/.venv/bin/pip install -e python/` to install `optix-engine` package

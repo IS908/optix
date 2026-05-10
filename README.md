@@ -128,16 +128,44 @@ Append `?refresh=true` to any page to fetch fresh data from IBKR instead of cach
 
 ### Agent Skill
 
-Install the optix skill for your AI coding agent:
+Install the optix skill so AI agents (Claude Code, OpenClaw, Hermes) can run quote / analyze / watchlist commands on your behalf:
 
 ```bash
-# Claude Code
+# Auto-detect which agents are configured on this machine
+./skills/commands/optix/install.sh
+
+# Or target specific agents
 ./skills/commands/optix/install.sh --agent claude
+./skills/commands/optix/install.sh --agent claude,openclaw,hermes
+```
 
-# OpenClaw
-./skills/commands/optix/install.sh --agent openclaw
+The skill auto-triggers when you ask the agent things like "查一下 AAPL 股价" or "分析 TSLA"; explicit `/optix <command>` is also available in Claude Code.
 
-# Then use: /optix dashboard, /optix analyze AAPL, etc.
+#### Layout
+
+```
+~/.agents/skills/optix/         ← canonical bundle (one copy, all agents share)
+├── SKILL.md                     ← descriptor
+├── bin/optix.sh                 ← entry wrapper
+└── .runtime                     ← symlink (dev) OR real dir (release)
+    ├── bin/optix
+    ├── python/.venv/
+    └── data/optix.db
+
+~/.<agent>/skills/optix → ../../.agents/skills/optix
+```
+
+Two install modes are auto-detected:
+- **dev** — running from a source checkout: `.runtime` is a symlink to your repo, so `make build` edits take effect immediately
+- **release** — running from an extracted tarball (coming soon to GitHub Releases): `.runtime` is a real directory with bundled binary + on-machine Python venv
+
+Override the runtime location with `export OPTIX_HOME=/path/to/optix` (useful when you have multiple checkouts or share dotfiles across machines).
+
+#### Uninstall
+
+```bash
+./skills/commands/optix/install.sh --uninstall --agent claude   # remove per-agent symlink
+./skills/commands/optix/install.sh --uninstall --purge          # also remove canonical bundle
 ```
 
 ## Development

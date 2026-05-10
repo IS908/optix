@@ -11,6 +11,25 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// FetchOptions configure optional behavior of FetchSymbolData.
+type FetchOptions struct {
+	// WithOI fetches per-contract Open Interest for the nearest expiration.
+	// Requires an IBKR connection; non-fatal if the active broker is yfinance.
+	WithOI bool
+}
+
+// FetchSymbolDataOpt fetches quote + historical bars + option chain (optionally
+// enriched with OI) and packs everything into a SingleStockData proto.
+// FetchSymbolData is the OI-disabled convenience wrapper for backward compat.
+func FetchSymbolDataOpt(
+	ctx context.Context,
+	symbol string,
+	svc *MarketDataService,
+	opts FetchOptions,
+) (*analysisv1.SingleStockData, error) {
+	return fetchSymbolDataInternal(ctx, symbol, svc, opts)
+}
+
 // FetchSymbolData fetches quote + historical bars + option chain for a single symbol
 // and packs everything into a SingleStockData proto (ready for the analysis engine).
 // It is shared by the CLI commands (analyze, dashboard) and the web UI.
@@ -18,6 +37,15 @@ func FetchSymbolData(
 	ctx context.Context,
 	symbol string,
 	svc *MarketDataService,
+) (*analysisv1.SingleStockData, error) {
+	return fetchSymbolDataInternal(ctx, symbol, svc, FetchOptions{})
+}
+
+func fetchSymbolDataInternal(
+	ctx context.Context,
+	symbol string,
+	svc *MarketDataService,
+	opts FetchOptions,
 ) (*analysisv1.SingleStockData, error) {
 	// 1. Current quote
 	quote, err := svc.GetQuote(ctx, symbol)
@@ -36,7 +64,18 @@ func FetchSymbolData(
 
 	// 3. Option chain — non-fatal (structure-only from IB without live subscription).
 	// Fetched via service for consistency; saves snapshot_time to option_quotes.
-	chain, chainErr := svc.GetOptionChain(ctx, symbol, "")
+	var chain *model.OptionChain
+	var chainErr error
+	if opts.WithOI {
+		chain, chainErr = svc.GetOptionChainWithOI(ctx, symbol, "")
+		if chainErr != nil {
+			// Falls back to plain chain so analysis still runs (just without OI).
+			fmt.Printf("warning: OI fetch failed (%v) — using structure-only chain\n", chainErr)
+			chain, chainErr = svc.GetOptionChain(ctx, symbol, "")
+		}
+	} else {
+		chain, chainErr = svc.GetOptionChain(ctx, symbol, "")
+	}
 	if chainErr != nil {
 		chain = &model.OptionChain{Underlying: symbol}
 	}

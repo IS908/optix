@@ -176,6 +176,21 @@ func stockContract(symbol string) *ibapi.Contract {
 	}
 }
 
+// optionContract builds an OPT contract for ReqMktData. `right` is "C" or "P",
+// expiration is "YYYYMMDD", strike is the option strike price.
+func optionContract(symbol, expiration, right string, strike float64) *ibapi.Contract {
+	return &ibapi.Contract{
+		Symbol:        symbol,
+		SecType:       "OPT",
+		Exchange:      "SMART",
+		Currency:      "USD",
+		LastTradeDateOrContractMonth: expiration,
+		Strike:        strike,
+		Right:         right,
+		Multiplier:    "100",
+	}
+}
+
 // GetQuote retrieves the latest stock quote from IB.
 //
 // Uses streaming market data with a short collection window so it works with
@@ -439,6 +454,164 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 
 	return chain, nil
 }
+
+// GetOptionChainWithOI returns the option chain enriched with per-contract
+// Open Interest values. To bound network round-trips and respect IB pacing
+// limits (50 msg/sec), it limits the request scope:
+//
+//   1. Only the nearest expiration is fetched (or `expiration` if specified)
+//   2. Only strikes within ±oiStrikeWindowPct of the current spot price
+//   3. Concurrent reqMktData calls are bounded by oiMaxConcurrent
+//   4. Each per-contract request times out after oiPerContractTimeout
+//
+// Implementation note: IB delivers Open Interest only via streaming market data
+// with generic-tick-list "101" (snapshots don't include generic ticks). We start
+// the stream, wait for the first OPEN_INTEREST tick, then immediately
+// cancelMktData to avoid leaking subscriptions.
+func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
+	// Reuse the structure-only chain to get strikes/expirations.
+	chain, err := c.GetOptionChain(ctx, underlying, expiration)
+	if err != nil {
+		return nil, err
+	}
+	if chain == nil || len(chain.Expirations) == 0 {
+		return chain, nil
+	}
+
+	// Get spot price to filter ATM strikes (±15% window).
+	quote, qErr := c.GetQuote(ctx, underlying)
+	if qErr != nil || quote == nil || quote.Last <= 0 {
+		// Fall back to using the median strike as a proxy.
+		log.Printf("ibkr: GetOptionChainWithOI %s: spot quote unavailable (%v) — using median strike", underlying, qErr)
+		if len(chain.Expirations) > 0 && len(chain.Expirations[0].Calls) > 0 {
+			strikes := chain.Expirations[0].Calls
+			median := strikes[len(strikes)/2].Strike
+			quote = &model.StockQuote{Last: median}
+		} else {
+			return chain, nil
+		}
+	}
+
+	spot := quote.Last
+	low := spot * (1 - oiStrikeWindowPct)
+	high := spot * (1 + oiStrikeWindowPct)
+
+	// Only the nearest expiry — Max Pain analysis typically uses one expiry.
+	exp := &chain.Expirations[0]
+
+	// Build the worklist: every (strike, right) pair within the window.
+	type job struct {
+		strike float64
+		right  string // "C" or "P"
+		idx    int    // index in exp.Calls or exp.Puts
+	}
+	var jobs []job
+	for i, c := range exp.Calls {
+		if c.Strike >= low && c.Strike <= high {
+			jobs = append(jobs, job{c.Strike, "C", i})
+		}
+	}
+	for i, p := range exp.Puts {
+		if p.Strike >= low && p.Strike <= high {
+			jobs = append(jobs, job{p.Strike, "P", i})
+		}
+	}
+	if len(jobs) == 0 {
+		log.Printf("ibkr: GetOptionChainWithOI %s: no strikes in ±%.0f%% window of $%.2f", underlying, oiStrikeWindowPct*100, spot)
+		return chain, nil
+	}
+
+	log.Printf("ibkr: fetching OI for %d contracts (%s exp=%s spot=$%.2f)", len(jobs), underlying, exp.Expiration, spot)
+
+	// Concurrent OI fetch with bounded worker pool.
+	sem := make(chan struct{}, oiMaxConcurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex // guards exp.Calls / exp.Puts mutation
+
+	for _, j := range jobs {
+		wg.Add(1)
+		go func(j job) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			oi, iv := c.fetchOIForContract(ctx, underlying, exp.Expiration, j.right, j.strike)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if j.right == "C" {
+				if oi > 0 {
+					exp.Calls[j.idx].OpenInterest = oi
+				}
+				if iv > 0 {
+					exp.Calls[j.idx].ImpliedVolatility = iv
+				}
+			} else {
+				if oi > 0 {
+					exp.Puts[j.idx].OpenInterest = oi
+				}
+				if iv > 0 {
+					exp.Puts[j.idx].ImpliedVolatility = iv
+				}
+			}
+		}(j)
+	}
+	wg.Wait()
+
+	return chain, nil
+}
+
+// fetchOIForContract issues a streaming reqMktData with generic tick 101 (Open
+// Interest), waits for the first OI tick (or timeout), then cancels the stream.
+// Returns (oi, iv). Either may be zero if no data arrived in time.
+func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, right string, strike float64) (int32, float64) {
+	reqID := c.nextReqID()
+	po := c.wrapper.registerOI(reqID)
+	errCh := c.wrapper.registerError(reqID)
+	defer c.wrapper.unregister(reqID)
+
+	contract := optionContract(symbol, expiration, right, strike)
+
+	// Generic tick "101" = "Option Open Interest" — required for OI on options.
+	// snapshot=false because snapshots don't include generic ticks.
+	c.ibClient.ReqMktData(reqID, contract, "101", false, false, nil)
+	defer c.ibClient.CancelMktData(reqID)
+
+	timer := time.NewTimer(oiPerContractTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-po.done:
+		// OI tick arrived (or error closed it). Read fields after small delay
+		// to allow IV tick to also be captured.
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-ctx.Done():
+		}
+		return po.openInterest, po.iv
+	case err := <-errCh:
+		// Per-contract error (e.g., contract not found) — non-fatal.
+		log.Printf("ibkr: OI fetch %s %s%.0f exp=%s: %v", symbol, right, strike, expiration, err)
+		return 0, 0
+	case <-timer.C:
+		// Timeout — likely no live market data subscription for this contract,
+		// or low-volume contract with no OI updates. Move on.
+		return po.openInterest, po.iv
+	case <-ctx.Done():
+		return 0, 0
+	}
+}
+
+// OI fetch tuning constants.
+const (
+	oiStrikeWindowPct    = 0.15            // ±15% around spot
+	oiMaxConcurrent      = 5               // bounded for IB pacing (50 msg/sec limit)
+	oiPerContractTimeout = 5 * time.Second // give up if no OI tick in 5s
+)
 
 // isNoSubscriptionErr returns true for IB errors that indicate missing market
 // data API subscription (10089, 10090).  These are recoverable via historical data.

@@ -18,6 +18,21 @@ type pendingQuote struct {
 	once   sync.Once
 }
 
+// pendingOI accumulates Open Interest data for an option contract market data
+// request (streaming, not snapshot, since OI requires generic tick 101).
+//
+// On reqMktData with genericTickList="101", IB delivers tick type
+// OPTION_OPEN_INTEREST (which the scmhub/ibapi library exposes via TickSize
+// callback as a generic-tick value, distinct from the 86 used for non-options).
+// We close `done` as soon as ANY OI tick arrives so the caller can cancel the
+// streaming subscription quickly.
+type pendingOI struct {
+	openInterest int32
+	iv           float64
+	done         chan struct{}
+	once         sync.Once
+}
+
 // pendingBars accumulates historical bars for a single request.
 type pendingBars struct {
 	bars []ibapi.Bar
@@ -54,6 +69,7 @@ type IbWrapper struct {
 	bars            map[int64]*pendingBars
 	optParams       map[int64]*pendingOptParams
 	contractDetails map[int64]*pendingContractDetails
+	oi              map[int64]*pendingOI
 	errors          map[int64]chan error
 	nextValidID     chan int64
 
@@ -72,6 +88,7 @@ func newIbWrapper() *IbWrapper {
 		bars:            make(map[int64]*pendingBars),
 		optParams:       make(map[int64]*pendingOptParams),
 		contractDetails: make(map[int64]*pendingContractDetails),
+		oi:              make(map[int64]*pendingOI),
 		errors:          make(map[int64]chan error),
 		nextValidID:     make(chan int64, 1),
 		disconnectCh:    make(chan struct{}, 1),
@@ -117,6 +134,14 @@ func (w *IbWrapper) registerContractDetails(reqID int64) *pendingContractDetails
 	return pcd
 }
 
+func (w *IbWrapper) registerOI(reqID int64) *pendingOI {
+	po := &pendingOI{done: make(chan struct{})}
+	w.mu.Lock()
+	w.oi[reqID] = po
+	w.mu.Unlock()
+	return po
+}
+
 func (w *IbWrapper) registerError(reqID int64) chan error {
 	ch := make(chan error, 1)
 	w.mu.Lock()
@@ -131,6 +156,7 @@ func (w *IbWrapper) unregister(reqID int64) {
 	delete(w.bars, reqID)
 	delete(w.optParams, reqID)
 	delete(w.contractDetails, reqID)
+	delete(w.oi, reqID)
 	delete(w.errors, reqID)
 	w.mu.Unlock()
 }
@@ -165,16 +191,55 @@ func (w *IbWrapper) TickPrice(reqID ibapi.TickerID, tickType ibapi.TickType, pri
 	}
 }
 
-// TickSize is called for VOLUME tick.
+// TickSize is called for VOLUME, OPEN_INTEREST and other size-based ticks.
+//
+// For stock-quote requests (registered via registerQuote), only VOLUME is captured.
+// For option-OI requests (registered via registerOI), tick types 27 (call OI), 28
+// (put OI), and 86 (generic OPEN_INTEREST for the specific contract) are all
+// treated as the contract's open interest. Whichever arrives first closes the
+// done channel so the caller can cancel the streaming subscription quickly.
 func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size ibapi.Decimal) {
 	w.mu.Lock()
-	pq, ok := w.quotes[reqID]
+	pq, qOK := w.quotes[reqID]
+	po, oiOK := w.oi[reqID]
 	w.mu.Unlock()
-	if !ok {
+
+	if qOK && tickType == ibapi.VOLUME {
+		pq.volume = size.Float()
 		return
 	}
-	if tickType == ibapi.VOLUME {
-		pq.volume = size.Float()
+
+	if oiOK {
+		// Option contract OI ticks. IB sends tick type 86 (OPEN_INTEREST) for
+		// individual option contracts when generic-tick 101 is requested. Some
+		// servers also send 27/28 on the option contract itself. Accept any.
+		if tickType == 86 || tickType == 27 || tickType == 28 {
+			oi := int32(size.Float())
+			if oi > 0 {
+				po.openInterest = oi
+				po.once.Do(func() { close(po.done) })
+			}
+		}
+	}
+}
+
+// TickOptionComputation receives implied volatility and Greeks for an option
+// contract (delivered automatically when reqMktData is called on an OPT contract).
+// We capture IV; Greeks are computed in the Python engine via Black-Scholes
+// for consistency, so we ignore them here.
+func (w *IbWrapper) TickOptionComputation(
+	reqID ibapi.TickerID, tickType ibapi.TickType, _ int64,
+	impliedVol, _ float64, _ float64, _ float64,
+	_ float64, _ float64, _ float64, _ float64,
+) {
+	if impliedVol <= 0 {
+		return
+	}
+	w.mu.Lock()
+	po, ok := w.oi[reqID]
+	w.mu.Unlock()
+	if ok && po.iv == 0 {
+		po.iv = impliedVol
 	}
 }
 
@@ -342,6 +407,9 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 			default:
 				close(pcd.done)
 			}
+		}
+		if po, has := w.oi[reqID]; has {
+			po.once.Do(func() { close(po.done) })
 		}
 		w.mu.Unlock()
 	}

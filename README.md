@@ -234,6 +234,20 @@ docs: add contributing guide
 - **Python**: Format with `ruff` (`python/.venv/bin/ruff check python/`)
 - **Protobuf**: Follow [Buf style guide](https://buf.build/docs/best-practices/style-guide/)
 
+## Releases
+
+Tagged releases are published at https://github.com/IS908/optix/releases with
+prebuilt tarballs for `darwin-{arm64,amd64}` and `linux-{amd64,arm64}`. See
+[`CHANGELOG.md`](CHANGELOG.md) for the full version history.
+
+To cut a release as a maintainer:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+# .github/workflows/release.yml builds the matrix and publishes the release
+```
+
 ## License
 
 [MIT](LICENSE)

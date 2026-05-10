@@ -71,12 +71,25 @@ func initSignalHandler() {
 	}()
 }
 
+// version is set by main() via SetVersion. Build-time via:
+//   go build -ldflags="-X main.version=v1.2.3"
+var version = "dev"
+
+// SetVersion lets cmd/optix-cli/main.go pass through its build-time version
+// string. Called once at startup before Execute().
+func SetVersion(v string) {
+	if v != "" {
+		version = v
+	}
+}
+
 // NewRootCmd creates the root cobra command.
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "optix",
-		Short: "US stock & options strategy analysis tool",
-		Long:  "Optix analyzes stocks and options to recommend sell-side strategies for the upcoming expiration.",
+		Use:     "optix",
+		Short:   "US stock & options strategy analysis tool",
+		Long:    "Optix analyzes stocks and options to recommend sell-side strategies for the upcoming expiration.",
+		Version: version,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			cleanupOnce.Do(initSignalHandler)
 			p, err := resolveIBPort(ibPortRaw)

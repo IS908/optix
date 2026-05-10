@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-cli build-server tidy test test-integration clean proto py-server
+.PHONY: build build-cli build-server tidy test test-integration clean proto py-server release release-all release-clean
 
 PYTHON := python/.venv/bin/python
 
@@ -57,3 +57,22 @@ run-server:
 # Start Python analysis gRPC server (foreground)
 py-server:
 	$(PYTHON) -m optix_engine.grpc_server.server --addr=localhost:50052
+
+# ─── Release ─────────────────────────────────────────────────────────────────
+# Build a single-platform tarball at dist/optix-skill-$(VERSION)-$(GOOS)-$(GOARCH).tar.gz
+#   make release VERSION=v1.2.0                    # uses host GOOS/GOARCH
+#   make release VERSION=v1.2.0 GOOS=linux GOARCH=arm64
+release:
+	@if [ -z "$(VERSION)" ]; then echo "ERROR: VERSION is required (e.g. make release VERSION=v1.2.0)" >&2; exit 2; fi
+	VERSION="$(VERSION)" GOOS="$(GOOS)" GOARCH="$(GOARCH)" ./scripts/build-release.sh
+
+# Build all four supported platforms — convenience target for local pre-flight.
+release-all:
+	@if [ -z "$(VERSION)" ]; then echo "ERROR: VERSION is required" >&2; exit 2; fi
+	@for combo in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 ; do \
+		os=$${combo%/*} ; arch=$${combo#*/} ; \
+		$(MAKE) --no-print-directory release VERSION=$(VERSION) GOOS=$$os GOARCH=$$arch ; \
+	done
+
+release-clean:
+	rm -rf dist/

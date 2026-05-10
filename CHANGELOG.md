@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.1.0] - 2026-05-10
+
+First tagged release. Establishes the install/distribution model and consolidates
+the IBKR connection-handling work from the preceding PRs.
+
 ### Added
 - **Cross-platform release tarballs.** `make release VERSION=vX.Y.Z` (and
   `make release-all`) produces self-contained tarballs for
@@ -90,4 +97,5 @@ above it.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/commits/master
+[Unreleased]: https://github.com/IS908/optix/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

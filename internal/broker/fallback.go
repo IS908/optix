@@ -121,3 +121,16 @@ func (fb *FallbackBroker) GetHistoricalBars(ctx context.Context, symbol, timefra
 func (fb *FallbackBroker) GetOptionChain(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
 	return fb.active.GetOptionChain(ctx, underlying, expiration)
 }
+
+// GetOptionChainWithOI delegates to the active broker if it implements OIFetcher.
+// Returns ErrOINotSupported if the active broker is the yfinance fallback or
+// any other broker that cannot fetch per-contract Open Interest.
+func (fb *FallbackBroker) GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
+	if fb.active == nil {
+		return nil, fmt.Errorf("broker: not connected")
+	}
+	if f, ok := fb.active.(OIFetcher); ok {
+		return f.GetOptionChainWithOI(ctx, underlying, expiration)
+	}
+	return nil, ErrOINotSupported
+}

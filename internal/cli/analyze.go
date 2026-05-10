@@ -22,6 +22,7 @@ func newAnalyzeCmd() *cobra.Command {
 	var risk string
 	var useWatchlist bool
 	var analysisAddr string
+	var withOI bool
 
 	cmd := &cobra.Command{
 		Use:   "analyze [symbol]",
@@ -74,8 +75,12 @@ Examples:
 			svc := server.NewMarketDataService(b, store)
 
 			// Fetch all data for this symbol
-			fmt.Printf("📊 Fetching data for %s...\n", symbol)
-			stockData, err := fetchSymbolData(ctx, symbol, svc)
+			if withOI {
+				fmt.Printf("📊 Fetching data for %s (with per-contract OI — this may take ~10–30s)...\n", symbol)
+			} else {
+				fmt.Printf("📊 Fetching data for %s...\n", symbol)
+			}
+			stockData, err := server.FetchSymbolDataOpt(ctx, symbol, svc, server.FetchOptions{WithOI: withOI})
 			if err != nil {
 				return fmt.Errorf("fetch data: %w", err)
 			}
@@ -116,6 +121,7 @@ Examples:
 	cmd.Flags().StringVar(&risk, "risk", "moderate", "Risk tolerance: conservative, moderate, aggressive")
 	cmd.Flags().BoolVar(&useWatchlist, "watchlist", false, "Run deep analysis for all watchlist symbols")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().BoolVar(&withOI, "with-oi", false, "Fetch per-contract Open Interest for the nearest expiry (IBKR only; enables Max Pain). Adds ~10–30s.")
 
 	return cmd
 }
@@ -287,7 +293,7 @@ func printAnalysisReport(resp *analysisv1.AnalyzeStockResponse, symbol string, w
 		if o.MaxPain > 0 {
 			fmt.Printf("  Max Pain:   $%.2f  (expiry: %s)\n", o.MaxPain, o.MaxPainExpiry)
 		} else {
-			fmt.Println("  Max Pain:   N/A (no OI data from IB structure-only chain)")
+			fmt.Println("  Max Pain:   N/A (rerun with --with-oi to fetch per-contract Open Interest)")
 		}
 		fmt.Printf("  PCR (OI):   %.2f   PCR (Vol): %.2f\n", o.PcrOi, o.PcrVolume)
 		if len(o.OiClusters) > 0 {

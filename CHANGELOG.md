@@ -26,6 +26,18 @@ above it.
   install. The trailing `[[ "$MODE" == "dev" ]] && echo "..."` test, under
   `set -e`, propagated as the script's final exit status. Added `|| true`.
 
+### Documentation
+- **`README.md`**: added "Install from a release (recommended for end users)"
+  to Quick Start with a complete `curl | tar -xz | install.sh` flow
+  (OS/ARCH detection + SHA256SUMS verification); renamed the source-tree
+  path to "Build from source (developers)"; updated the Agent Skill Layout
+  to reflect the released `.runtime/` design and dropped the "coming soon"
+  tag now that v0.1.0 ships.
+- **`README_CN.md`** (new): full Chinese translation of the README,
+  structurally aligned with the English version. Adds a `make release`
+  local dry-run section that the English version doesn't yet cover.
+- Cross-links between the two READMEs at the top of each file.
+
 ## [0.1.0] - 2026-05-10
 
 First tagged release. Establishes the install/distribution model and consolidates

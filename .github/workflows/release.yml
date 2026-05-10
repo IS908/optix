@@ -1,0 +1,145 @@
+name: release
+
+# Triggered by version tags pushed to the repo:
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# workflow_dispatch is also supported for testing the matrix without cutting
+# a real release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.0.0-test). Skips the release-publishing step.'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # required for creating the GitHub Release
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: linux,  goarch: amd64 }
+          - { goos: linux,  goarch: arm64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Resolve and validate the version. We pipe the externally-influenced
+      # values (event_name, inputs.version, ref_name) through env vars so they
+      # never appear inline in the script body, and we reject anything that
+      # isn't a plain semver-ish tag.
+      - name: Resolve version
+        id: ver
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            v="$REF_NAME"
+          else
+            v="$INPUT_VERSION"
+          fi
+          if [[ ! "$v" =~ ^v[A-Za-z0-9._+-]+$ ]]; then
+            echo "ERROR: invalid version '$v' — must match ^v[A-Za-z0-9._+-]+$" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $v"
+
+      - name: Build tarball
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          GOOS:    ${{ matrix.goos }}
+          GOARCH:  ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          make release VERSION="$VERSION" GOOS="$GOOS" GOARCH="$GOARCH"
+          ls -la dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: optix-skill-${{ steps.ver.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/optix-skill-${{ steps.ver.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish release
+    # Only publish when the workflow was triggered by a real tag push.
+    # workflow_dispatch builds + uploads artifacts but never publishes —
+    # contributors can rehearse the matrix without accidentally cutting a release.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: ls -la dist/
+
+      - name: Compute checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          # Use shasum on macOS-compatible portable form; ubuntu-latest has both.
+          sha256sum optix-skill-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          # Pass the tag through env to avoid inline interpolation inside body.
+          VERSION: ${{ github.ref_name }}
+        with:
+          files: |
+            dist/optix-skill-*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## Install
+
+            Pick the tarball matching your OS and architecture:
+
+            ```bash
+            VERSION=${{ env.VERSION }}
+            OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # darwin or linux
+            ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+
+            curl -fL "https://github.com/${{ github.repository }}/releases/download/${VERSION}/optix-skill-${VERSION}-${OS}-${ARCH}.tar.gz" \
+              | tar -xz
+            cd "optix-skill-${VERSION}-${OS}-${ARCH}"
+            ./install.sh --agent claude     # or claude,openclaw,hermes
+            ```
+
+            ## Uninstall later
+
+            ```bash
+            ~/.agents/skills/optix/install.sh --uninstall --purge
+            ```
+
+            All artifacts are checksummed in `SHA256SUMS` (sha256).

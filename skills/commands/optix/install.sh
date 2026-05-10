@@ -410,4 +410,8 @@ echo ""
 echo "Done. Skill installed for: ${INSTALL_TARGETS[*]}"
 echo "  Canonical: $CANONICAL_DIR"
 echo "  Runtime:   $CANONICAL_DIR/.runtime"
-[[ "$MODE" == "dev" ]] && echo "  (dev mode: edits to $PROJECT_ROOT take effect immediately)"
+# Trailing `|| true` keeps the script's exit code at 0 in release mode.
+# Without it, `set -e` propagates the failed `[[ ... ]]` test as the script's
+# final exit status — install was successful but `$?` would be 1, which is
+# misleading to callers (and breaks chained shell commands).
+[[ "$MODE" == "dev" ]] && echo "  (dev mode: edits to $PROJECT_ROOT take effect immediately)" || true

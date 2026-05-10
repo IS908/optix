@@ -12,7 +12,19 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+- **Yahoo Finance fallback in release tarballs** — the Go binary located
+  `fetcher.py` via `runtime.Caller`, which under `-trimpath` returned a
+  module-relative path that Python then resolved against the user's `cwd`
+  (not the binary). Result: every `quote` / `analyze` / `dashboard`
+  invocation failed with `[Errno 2] No such file or directory:
+  '<cwd>/github.com/IS908/optix/internal/broker/yfinance/fetcher.py'`
+  whenever IBKR was unreachable. Fixed by embedding `fetcher.py` via
+  `//go:embed` and materializing it to a hash-named file under `$TMPDIR`
+  on first use — the binary is now fully self-contained. (#19)
+- `install.sh` exited with code 1 in release mode despite a successful
+  install. The trailing `[[ "$MODE" == "dev" ]] && echo "..."` test, under
+  `set -e`, propagated as the script's final exit status. Added `|| true`.
 
 ## [0.1.0] - 2026-05-10
 

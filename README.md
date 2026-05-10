@@ -2,6 +2,8 @@
 
 US stock & options strategy analysis tool — identify sell-side opportunities for upcoming expirations using real-time IBKR data and quantitative analysis.
 
+> 中文版本: [README_CN.md](README_CN.md)
+
 ## Overview
 
 Optix combines Interactive Brokers market data with a Python-powered analysis engine to help options sellers find opportunities:
@@ -14,16 +16,50 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 
 ## Quick Start
 
-### Prerequisites
+### Install from a release (recommended for end users)
 
-- **Go** 1.22+
-- **Python** 3.11+ (3.14 recommended)
-- **Interactive Brokers** TWS or IB Gateway running with API enabled
-
-### Setup
+Pick the latest release at <https://github.com/IS908/optix/releases> and download the tarball matching your OS/arch. The tarball contains a prebuilt binary, the Python engine source, the skill descriptor, and an `install.sh`.
 
 ```bash
-# Clone
+VERSION=v0.1.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')        # darwin | linux
+ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+
+curl -fL "https://github.com/IS908/optix/releases/download/${VERSION}/optix-skill-${VERSION}-${OS}-${ARCH}.tar.gz" \
+  | tar -xz
+cd "optix-skill-${VERSION}-${OS}-${ARCH}"
+
+# Optional: verify checksum
+curl -fsSL "https://github.com/IS908/optix/releases/download/${VERSION}/SHA256SUMS" -o SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+
+# Install (auto-detects Claude / OpenClaw / Hermes; pass --agent <list> to be explicit)
+./install.sh --agent claude
+```
+
+`install.sh` lays out `~/.agents/skills/optix/` (canonical bundle) and creates per-agent symlinks at `~/.<agent>/skills/optix`. The bundle includes `.runtime/` with the prebuilt binary and a freshly-created Python venv on your machine — see [Agent Skill → Layout](#layout) below.
+
+After install, the binary is reachable via:
+
+```bash
+~/.agents/skills/optix/.runtime/bin/optix dashboard
+~/.agents/skills/optix/.runtime/bin/optix analyze AAPL
+~/.agents/skills/optix/.runtime/bin/optix quote TSLA
+```
+
+…or via the agent (just ask Claude "查一下 AAPL 股价" / "analyze TSLA").
+
+To uninstall later (you don't need to keep the original tarball):
+
+```bash
+~/.agents/skills/optix/install.sh --uninstall --purge
+```
+
+### Build from source (developers)
+
+```bash
+# Prerequisites: Go 1.22+, Python 3.11+ (3.14 recommended), IBKR TWS or Gateway
+
 git clone https://github.com/IS908/optix.git
 cd optix
 
@@ -35,7 +71,7 @@ python/.venv/bin/pip install -e python/
 make build
 ```
 
-### Run
+### Run from source
 
 ```bash
 # Terminal 1: Start Python analysis engine
@@ -141,23 +177,26 @@ Install the optix skill so AI agents (Claude Code, OpenClaw, Hermes) can run quo
 
 The skill auto-triggers when you ask the agent things like "查一下 AAPL 股价" or "分析 TSLA"; explicit `/optix <command>` is also available in Claude Code.
 
+<a id="layout"></a>
 #### Layout
 
 ```
 ~/.agents/skills/optix/         ← canonical bundle (one copy, all agents share)
 ├── SKILL.md                     ← descriptor
 ├── bin/optix.sh                 ← entry wrapper
+├── install.sh                   ← kept for later --uninstall --purge
 └── .runtime                     ← symlink (dev) OR real dir (release)
     ├── bin/optix
     ├── python/.venv/
-    └── data/optix.db
+    ├── data/optix.db
+    └── skills/commands/optix/optix.sh
 
 ~/.<agent>/skills/optix → ../../.agents/skills/optix
 ```
 
-Two install modes are auto-detected:
-- **dev** — running from a source checkout: `.runtime` is a symlink to your repo, so `make build` edits take effect immediately
-- **release** — running from an extracted tarball (coming soon to GitHub Releases): `.runtime` is a real directory with bundled binary + on-machine Python venv
+Two install modes are auto-detected by `install.sh`:
+- **release** — running from an extracted release tarball: `.runtime` is a real directory with the bundled binary + a Python venv created on your machine
+- **dev** — running from a source-tree checkout (`.git` + `Makefile` present): `.runtime` is a symlink to your repo, so `make build` edits take effect immediately
 
 Override the runtime location with `export OPTIX_HOME=/path/to/optix` (useful when you have multiple checkouts or share dotfiles across machines).
 
@@ -236,16 +275,17 @@ docs: add contributing guide
 
 ## Releases
 
-Tagged releases are published at https://github.com/IS908/optix/releases with
-prebuilt tarballs for `darwin-{arm64,amd64}` and `linux-{amd64,arm64}`. See
-[`CHANGELOG.md`](CHANGELOG.md) for the full version history.
+Tagged releases are published at <https://github.com/IS908/optix/releases> with prebuilt tarballs for `darwin-{arm64,amd64}` and `linux-{amd64,arm64}`. See [`CHANGELOG.md`](CHANGELOG.md) for the full version history.
 
-To cut a release as a maintainer:
+**Users**: see [Quick Start → Install from a release](#install-from-a-release-recommended-for-end-users) for the install command.
+
+**Maintainers** cutting a release:
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
-# .github/workflows/release.yml builds the matrix and publishes the release
+# .github/workflows/release.yml runs the {darwin,linux}×{amd64,arm64} matrix
+# and publishes the release with all four tarballs + SHA256SUMS + CHANGELOG.md
 ```
 
 ## License

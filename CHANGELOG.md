@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.1.1] - 2026-05-10
+
+Patch release: fixes a regression in v0.1.0's Yahoo Finance fallback path
+and adds end-user release-install documentation.
+
 ### Fixed
 - **Yahoo Finance fallback in release tarballs** — the Go binary located
   `fetcher.py` via `runtime.Caller`, which under `-trimpath` returned a
@@ -121,5 +128,6 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/IS908/optix/releases/tag/v0.1.1
 [0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

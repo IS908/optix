@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(git -C "$(dirname "$0")" rev-parse --git-common-dir)/.." && pwd)"
+# PROJECT_ROOT (a.k.a. RUNTIME) is derived from this script's physical location:
+#   <runtime>/skills/commands/optix/optix.sh  →  PROJECT_ROOT = <runtime>
+#
+# This script is identical between source checkouts and release-mode .runtime/
+# bundles, so the same logic applies in both. Avoids `git rev-parse`, which
+# fails when the runtime is a tarball-extracted directory without .git, or
+# when called with a cwd outside the project.
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+    DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$DIR/$SCRIPT_PATH"
+done
+PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/../../.." && pwd)"
 
 # Skill uses a dedicated port to avoid conflict with local dev servers (50052)
 ANALYSIS_PORT="${OPTIX_ANALYSIS_PORT:-50053}"

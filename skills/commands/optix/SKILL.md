@@ -15,45 +15,49 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 
 Replace `<SYMBOL>` with the stock ticker the user mentions.
 
-The wrapper script is resolved via git so it works from any directory in the repo
-(project root, worktree, subdirectory). `--git-common-dir` is used instead of
-`--show-toplevel` so the path resolves to the main repo even when running inside
-a git worktree.
+All commands invoke `bin/optix.sh`, a thin entry-point bundled with the skill.
+The wrapper resolves the runtime (Go binary + Python engine) in this order:
+1. `$OPTIX_HOME` environment variable (developer override; points to a source checkout)
+2. `<skill_dir>/.runtime/` (release-mode install; populated by install.sh)
+3. `optix` command on `$PATH` (system install, e.g. via Homebrew)
 
 ### Get stock quote
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" quote <SYMBOL>
+bash bin/optix.sh quote <SYMBOL>
 ```
 
 ### Analyze a stock (technicals + options + strategy recommendations)
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" analyze <SYMBOL>
+bash bin/optix.sh analyze <SYMBOL>
+```
+
+### Analyze with per-contract Open Interest (enables Max Pain)
+```bash
+bash bin/optix.sh analyze <SYMBOL> --with-oi
 ```
 
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" dashboard
+bash bin/optix.sh dashboard
 ```
 
 ### List watchlist
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" watch list
+bash bin/optix.sh watch list
 ```
 
 ### Add to watchlist
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" watch add <SYMBOL>
+bash bin/optix.sh watch add <SYMBOL>
 ```
 
 ### Remove from watchlist
 ```bash
-MAIN_REPO="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)" && bash "$MAIN_REPO/skills/commands/optix/optix.sh" watch remove <SYMBOL>
+bash bin/optix.sh watch remove <SYMBOL>
 ```
 
 ## Notes
-- Python gRPC server auto-starts/stops for `analyze` and `dashboard` — no manual setup needed
-- Uses port 50053 by default (separate from local dev server on 50052)
-- **IBKR TWS/Gateway is optional**: live data is fetched from IBKR when available; if TWS is
-  unreachable, the tool automatically falls back to Yahoo Finance (delayed quotes, no options chain)
-- Connection pool (up to 8 concurrent IBKR connections, ClientIDs 30–37) is managed automatically;
-  connections are health-checked and auto-reconnected — no manual restart needed after TWS restarts
+- Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
+- IBKR TWS/Gateway is **optional**: defaults to Gateway port 4001 — automatically falls back to Yahoo Finance (delayed quotes, no options chain) if IBKR is unreachable
+- Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
+- `--with-oi` requires an IBKR market data subscription (e.g. OPRA Top of Book) for Open Interest ticks

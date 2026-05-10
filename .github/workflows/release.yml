@@ -92,11 +92,17 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout (for CHANGELOG.md)
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Stage CHANGELOG into dist
+        run: cp CHANGELOG.md dist/CHANGELOG.md
 
       - name: List downloaded files
         run: ls -la dist/
@@ -118,6 +124,7 @@ jobs:
           files: |
             dist/optix-skill-*.tar.gz
             dist/SHA256SUMS
+            dist/CHANGELOG.md
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |

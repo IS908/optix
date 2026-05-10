@@ -29,35 +29,40 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Detect mode by walking up from SCRIPT_DIR. Source layout has the script at
-# <project>/skills/commands/optix/install.sh; release tarball has it at
-# <tarball>/install.sh (top level). Mode is determined by what's at the
-# inferred PROJECT_ROOT.
-if [[ -f "$SCRIPT_DIR/../../../Makefile" && -d "$SCRIPT_DIR/../../../.git" ]]; then
-    MODE="dev"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-elif [[ -x "$SCRIPT_DIR/bin/optix" && -f "$SCRIPT_DIR/SKILL.md" ]]; then
-    MODE="release"
-    PROJECT_ROOT="$SCRIPT_DIR"
-else
-    echo "ERROR: cannot detect installation mode." >&2
-    echo "  Expected either:" >&2
-    echo "    • A source-tree checkout (.git + Makefile at \$SCRIPT_DIR/../../../)" >&2
-    echo "    • A release tarball (bin/optix + SKILL.md alongside install.sh)" >&2
-    exit 1
-fi
-
 CANONICAL_DIR="$HOME/.agents/skills/optix"
 AGENT=""
 UNINSTALL=false
 PURGE=false
 
+# MODE/PROJECT_ROOT are detected lazily — only required when installing.
+# For --uninstall we operate purely on $CANONICAL_DIR and per-agent symlinks,
+# so we don't need a source tree or tarball at all (which lets users uninstall
+# from the install.sh copy stashed at $CANONICAL_DIR/install.sh long after the
+# original tarball is gone).
+MODE=""
+PROJECT_ROOT=""
+
+detect_mode() {
+    if [[ -f "$SCRIPT_DIR/../../../Makefile" && -d "$SCRIPT_DIR/../../../.git" ]]; then
+        MODE="dev"
+        PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    elif [[ -f "$SCRIPT_DIR/bin/optix" && -f "$SCRIPT_DIR/SKILL.md" ]]; then
+        # Use -f (not -x): tar may strip the executable bit during extraction.
+        # install.sh re-chmods +x when copying.
+        MODE="release"
+        PROJECT_ROOT="$SCRIPT_DIR"
+    else
+        echo "ERROR: cannot detect installation mode." >&2
+        echo "  Expected either:" >&2
+        echo "    • A source-tree checkout (.git + Makefile at \$SCRIPT_DIR/../../../)" >&2
+        echo "    • A release tarball (bin/optix + SKILL.md alongside install.sh)" >&2
+        exit 1
+    fi
+}
+
 usage() {
     cat <<EOF
 Usage: install.sh [--agent <list>] [--uninstall] [--purge]
-
-Detected mode: $MODE
-Project/runtime root: $PROJECT_ROOT
 
 Options:
   --agent <list>   Comma-separated agents (claude, openclaw, hermes, generic).
@@ -217,6 +222,13 @@ install_canonical() {
     chmod +x "$CANONICAL_DIR/bin/optix.sh"
     echo "  ✓ bin/optix.sh (entry wrapper)"
 
+    # Stash a copy of install.sh so users can uninstall later without
+    # needing to keep the original tarball around. They can run:
+    #   bash ~/.agents/skills/optix/install.sh --uninstall --purge
+    cp "$SCRIPT_DIR/install.sh" "$CANONICAL_DIR/install.sh"
+    chmod +x "$CANONICAL_DIR/install.sh"
+    echo "  ✓ install.sh (kept for later uninstall)"
+
     build_runtime
 }
 
@@ -346,6 +358,8 @@ fi
 # ---------------------------------------------------------------------------
 # INSTALL
 # ---------------------------------------------------------------------------
+detect_mode
+
 echo "Mode: $MODE"
 echo "Project root: $PROJECT_ROOT"
 echo ""
@@ -385,10 +399,11 @@ done
 # ---------------------------------------------------------------------------
 echo ""
 echo "Verifying installation..."
-if "$CANONICAL_DIR/bin/optix.sh" watch list 2>/dev/null; then
-    echo "✓ Wrapper works."
+if "$CANONICAL_DIR/bin/optix.sh" watch list >/dev/null 2>&1; then
+    echo "✓ Verification passed."
 else
-    echo "  Wrapper invoked successfully (watchlist may be empty)."
+    echo "✗ Verification failed — re-running with errors visible:" >&2
+    "$CANONICAL_DIR/bin/optix.sh" watch list || true
 fi
 
 echo ""

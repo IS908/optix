@@ -20,10 +20,18 @@ PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/../../.." && pwd)"
 ANALYSIS_PORT="${OPTIX_ANALYSIS_PORT:-50053}"
 ANALYSIS_ADDR="localhost:${ANALYSIS_PORT}"
 
-# Auto-build if binary missing
+# Auto-build if the binary is missing — only when a Makefile is present (dev mode).
+# Release-mode runtimes have a prebuilt binary and no Makefile; if the binary
+# went missing there, we fail loudly instead of trying to build the impossible.
 if [[ ! -x "$PROJECT_ROOT/bin/optix" ]]; then
-    echo "Building optix CLI..." >&2
-    make -C "$PROJECT_ROOT" build >&2
+    if [[ -f "$PROJECT_ROOT/Makefile" ]] && command -v make >/dev/null 2>&1; then
+        echo "Building optix CLI..." >&2
+        make -C "$PROJECT_ROOT" build >&2
+    else
+        echo "ERROR: $PROJECT_ROOT/bin/optix not found and no Makefile to rebuild it." >&2
+        echo "  Reinstall the skill: ./install.sh --agent <name>" >&2
+        exit 1
+    fi
 fi
 
 # --- Check IBKR TWS/Gateway for commands that need live data ---
@@ -95,12 +103,19 @@ if [[ "$NEED_PY_SERVER" == true ]]; then
 fi
 
 # --- Cleanup on exit: stop Python server if we started it ---
+# IMPORTANT: this function MUST return 0. Bash propagates the EXIT trap's
+# return code as the script's exit code, so a stray non-zero from a failing
+# `[[ ... ]]` test would corrupt the real exit status (e.g. `watch list`
+# would appear to fail even when it succeeded).
 cleanup() {
     if [[ -n "$PY_SERVER_PID" ]]; then
-        kill "$PY_SERVER_PID" 2>/dev/null
-        wait "$PY_SERVER_PID" 2>/dev/null
+        kill "$PY_SERVER_PID" 2>/dev/null || true
+        wait "$PY_SERVER_PID" 2>/dev/null || true
     fi
-    [[ -n "$READY_FILE" ]] && rm -f "$READY_FILE"
+    if [[ -n "$READY_FILE" ]]; then
+        rm -f "$READY_FILE"
+    fi
+    return 0
 }
 trap cleanup EXIT
 

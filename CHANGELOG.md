@@ -14,6 +14,37 @@ above it.
 
 _No changes yet._
 
+## [0.1.1] - 2026-05-10
+
+Patch release: fixes a regression in v0.1.0's Yahoo Finance fallback path
+and adds end-user release-install documentation.
+
+### Fixed
+- **Yahoo Finance fallback in release tarballs** — the Go binary located
+  `fetcher.py` via `runtime.Caller`, which under `-trimpath` returned a
+  module-relative path that Python then resolved against the user's `cwd`
+  (not the binary). Result: every `quote` / `analyze` / `dashboard`
+  invocation failed with `[Errno 2] No such file or directory:
+  '<cwd>/github.com/IS908/optix/internal/broker/yfinance/fetcher.py'`
+  whenever IBKR was unreachable. Fixed by embedding `fetcher.py` via
+  `//go:embed` and materializing it to a hash-named file under `$TMPDIR`
+  on first use — the binary is now fully self-contained. (#19)
+- `install.sh` exited with code 1 in release mode despite a successful
+  install. The trailing `[[ "$MODE" == "dev" ]] && echo "..."` test, under
+  `set -e`, propagated as the script's final exit status. Added `|| true`.
+
+### Documentation
+- **`README.md`**: added "Install from a release (recommended for end users)"
+  to Quick Start with a complete `curl | tar -xz | install.sh` flow
+  (OS/ARCH detection + SHA256SUMS verification); renamed the source-tree
+  path to "Build from source (developers)"; updated the Agent Skill Layout
+  to reflect the released `.runtime/` design and dropped the "coming soon"
+  tag now that v0.1.0 ships.
+- **`README_CN.md`** (new): full Chinese translation of the README,
+  structurally aligned with the English version. Adds a `make release`
+  local dry-run section that the English version doesn't yet cover.
+- Cross-links between the two READMEs at the top of each file.
+
 ## [0.1.0] - 2026-05-10
 
 First tagged release. Establishes the install/distribution model and consolidates
@@ -97,5 +128,6 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/IS908/optix/releases/tag/v0.1.1
 [0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

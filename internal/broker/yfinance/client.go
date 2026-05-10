@@ -9,15 +9,82 @@ package yfinance
 
 import (
 	"context"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"sync"
 	"time"
 
 	"github.com/IS908/optix/pkg/model"
 )
+
+// fetcherSource is the Python script invoked as a subprocess to call into the
+// yfinance library. It's embedded at compile time so the binary is fully
+// self-contained — release tarballs don't ship the .py separately and don't
+// need cwd-relative path resolution (which broke under -trimpath builds where
+// runtime.Caller returns module-relative paths).
+//
+//go:embed fetcher.py
+var fetcherSource []byte
+
+// fetcherPath caches the path to a temp file holding fetcherSource.
+// Materialized once per process; subsequent calls reuse it.
+var (
+	fetcherOnce sync.Once
+	fetcherPath string
+	fetcherErr  error
+)
+
+// resolveFetcher writes fetcherSource to a stable per-build temp file and
+// returns its path. The filename embeds a SHA-256 of the script so different
+// builds (with different fetcher.py contents) don't collide, and re-runs of
+// the same build skip the write entirely.
+func resolveFetcher() (string, error) {
+	fetcherOnce.Do(func() {
+		sum := sha256.Sum256(fetcherSource)
+		name := fmt.Sprintf("optix-fetcher-%s.py", hex.EncodeToString(sum[:8]))
+		dir := os.TempDir()
+		path := filepath.Join(dir, name)
+
+		// Idempotent: if the file already exists with the right contents, reuse.
+		// (Common case: same binary invoked many times in the same /tmp.)
+		if existing, err := os.ReadFile(path); err == nil && len(existing) == len(fetcherSource) {
+			fetcherPath = path
+			return
+		}
+
+		// Write atomically via a temp+rename so a concurrent invocation doesn't
+		// see a half-written file.
+		tmp, err := os.CreateTemp(dir, name+".*")
+		if err != nil {
+			fetcherErr = fmt.Errorf("yfinance: stage fetcher.py: %w", err)
+			return
+		}
+		if _, err := tmp.Write(fetcherSource); err != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+			fetcherErr = fmt.Errorf("yfinance: write fetcher.py: %w", err)
+			return
+		}
+		if err := tmp.Close(); err != nil {
+			os.Remove(tmp.Name())
+			fetcherErr = fmt.Errorf("yfinance: close fetcher.py: %w", err)
+			return
+		}
+		if err := os.Rename(tmp.Name(), path); err != nil {
+			os.Remove(tmp.Name())
+			fetcherErr = fmt.Errorf("yfinance: rename fetcher.py: %w", err)
+			return
+		}
+		fetcherPath = path
+	})
+	return fetcherPath, fetcherErr
+}
 
 // Config holds yfinance client configuration.
 type Config struct {
@@ -28,8 +95,7 @@ type Config struct {
 
 // Client implements broker.Broker using Yahoo Finance data.
 type Client struct {
-	cfg       Config
-	fetcherPy string // absolute path to fetcher.py
+	cfg Config
 }
 
 // New creates a new yfinance broker client.
@@ -37,15 +103,7 @@ func New(cfg Config) *Client {
 	if cfg.PythonBin == "" {
 		cfg.PythonBin = "python3"
 	}
-
-	// Resolve fetcher.py relative to this source file
-	_, thisFile, _, _ := runtime.Caller(0)
-	fetcherPy := filepath.Join(filepath.Dir(thisFile), "fetcher.py")
-
-	return &Client{
-		cfg:       cfg,
-		fetcherPy: fetcherPy,
-	}
+	return &Client{cfg: cfg}
 }
 
 // Connect is a no-op for yfinance (no persistent connection needed).
@@ -180,7 +238,11 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 
 // runFetcher executes the Python fetcher script and returns its stdout.
 func (c *Client) runFetcher(ctx context.Context, args ...string) ([]byte, error) {
-	cmdArgs := append([]string{c.fetcherPy}, args...)
+	fetcher, err := resolveFetcher()
+	if err != nil {
+		return nil, err
+	}
+	cmdArgs := append([]string{fetcher}, args...)
 	cmd := exec.CommandContext(ctx, c.cfg.PythonBin, cmdArgs...)
 
 	out, err := cmd.Output()

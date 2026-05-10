@@ -221,10 +221,77 @@ install_agent() {
     echo "--- Installing for: $agent ---"
     case "$agent" in
         claude)
-            mkdir -p "$PROJECT_ROOT/.claude/commands"
-            # Use PROJECT_ROOT (absolute) so the slash command works from any CWD,
-            # including worktrees, subdirectories, and non-root invocations.
+            # Use PROJECT_ROOT (absolute) so paths work from any CWD —
+            # global skill location (~/.claude/skills/) cannot use git rev-parse.
             SCRIPT_ABS="$PROJECT_ROOT/skills/commands/optix/optix.sh"
+
+            # ----------------------------------------------------------------
+            # 1) Install the SKILL globally so Claude auto-triggers from any
+            #    directory (not just inside this project). Skills live in
+            #    ~/.claude/skills/<name>/SKILL.md.
+            # ----------------------------------------------------------------
+            local CLAUDE_SKILL_DIR="$HOME/.claude/skills/optix"
+            mkdir -p "$CLAUDE_SKILL_DIR"
+            cat > "$CLAUDE_SKILL_DIR/SKILL.md" << SKILL_EOF
+---
+name: optix
+description: "美股期权分析工具 / US stock & options analysis: 查看股价行情、期权分析、策略推荐、自选股管理、看板总览。Use when user asks about stock prices, quotes, options strategies, market analysis, watchlist, or dashboard."
+---
+
+# Optix — 美股期权分析 / US Stock & Options Analysis
+
+Use this skill when the user asks about (当用户提到以下内容时触发):
+- 股价、行情、报价 / Stock prices, quotes (e.g., "AAPL 现在多少钱?", "查一下特斯拉股价", "get me a quote for TSLA")
+- 期权分析、策略推荐 / Options analysis, strategy recommendations (e.g., "分析一下 NVDA", "有什么期权机会?", "analyze AAPL")
+- 自选股、关注列表 / Watchlist management (e.g., "把 META 加入自选", "看看自选股", "删掉 COIN")
+- 看板、总览、持仓概览 / Dashboard, overview (e.g., "看看大盘", "打开看板", "show dashboard")
+
+## Commands
+
+Replace \`<SYMBOL>\` with the stock ticker the user mentions.
+
+### Get stock quote
+\`\`\`bash
+bash "${SCRIPT_ABS}" quote <SYMBOL>
+\`\`\`
+
+### Analyze a stock (technicals + options + strategy recommendations)
+\`\`\`bash
+bash "${SCRIPT_ABS}" analyze <SYMBOL>
+\`\`\`
+
+### Show dashboard (all watchlist stocks with analysis)
+\`\`\`bash
+bash "${SCRIPT_ABS}" dashboard
+\`\`\`
+
+### List watchlist
+\`\`\`bash
+bash "${SCRIPT_ABS}" watch list
+\`\`\`
+
+### Add to watchlist
+\`\`\`bash
+bash "${SCRIPT_ABS}" watch add <SYMBOL>
+\`\`\`
+
+### Remove from watchlist
+\`\`\`bash
+bash "${SCRIPT_ABS}" watch remove <SYMBOL>
+\`\`\`
+
+## Notes
+- Python gRPC server auto-starts/stops on port 50053
+- IBKR TWS/Gateway is **optional**: defaults to Gateway port 4001 — falls back to Yahoo Finance (delayed quotes, no options) if unreachable
+- Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
+SKILL_EOF
+            echo "  ✓ Skill installed: $CLAUDE_SKILL_DIR/SKILL.md"
+
+            # ----------------------------------------------------------------
+            # 2) Also install a /optix slash command in the project for
+            #    explicit invocation. This is project-local.
+            # ----------------------------------------------------------------
+            mkdir -p "$PROJECT_ROOT/.claude/commands"
             cat > "$PROJECT_ROOT/.claude/commands/optix.md" << CLAUDE_EOF
 # Optix — Stock & Options Analysis
 
@@ -263,9 +330,9 @@ bash "${SCRIPT_ABS}" watch remove COIN
 - Python gRPC server is auto-started and auto-stopped; no manual setup needed
 - Connection pool (ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
 CLAUDE_EOF
-            echo "  ✓ Installed: .claude/commands/optix.md"
+            echo "  ✓ Slash command installed: .claude/commands/optix.md"
             echo "  Script path: ${SCRIPT_ABS}"
-            echo "  Use with: /optix <args>"
+            echo "  Use with: just ask Claude (auto-trigger), or /optix <args> for explicit"
             ;;
         openclaw)
             local INSTALL_DIR="$HOME/.openclaw/skills/optix"
@@ -333,6 +400,8 @@ uninstall_agent() {
     echo "--- Uninstalling for: $agent ---"
     case "$agent" in
         claude)
+            rm -rf "$HOME/.claude/skills/optix"
+            echo "  ✓ Removed ~/.claude/skills/optix/"
             rm -f "$PROJECT_ROOT/.claude/commands/optix.md"
             echo "  ✓ Removed .claude/commands/optix.md"
             ;;

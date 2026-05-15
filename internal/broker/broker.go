@@ -29,6 +29,23 @@ type OIFetcher interface {
 // Open Interest (e.g., yfinance fallback).
 var ErrOINotSupported = errors.New("broker does not support per-contract Open Interest (requires IBKR)")
 
+// AccountReader is an optional interface for brokers that can read account
+// holdings and execution history. IBKR implements it; yfinance does not.
+type AccountReader interface {
+	GetPositions(ctx context.Context) ([]model.Position, error)
+	GetExecutions(ctx context.Context, filter model.ExecutionFilter) ([]model.Execution, error)
+}
+
+// OptionQuoter is an optional interface for brokers that can return a single
+// option contract's mark price. Used by AccountService to mark option positions.
+type OptionQuoter interface {
+	GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error)
+}
+
+// ErrAccountNotSupported is returned by brokers that cannot provide account
+// data (e.g., the yfinance fallback).
+var ErrAccountNotSupported = errors.New("broker does not support account data (requires IBKR)")
+
 // Broker defines the interface for interacting with a brokerage.
 type Broker interface {
 	// Connect establishes a connection to the broker.

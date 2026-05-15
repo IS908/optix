@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/IS908/optix/pkg/model"
 	"github.com/scmhub/ibapi"
 )
 
@@ -59,6 +60,20 @@ type pendingContractDetails struct {
 	done  chan struct{}
 }
 
+// pendingPositions accumulates account positions. ReqPositions is
+// account-global (no reqID), so this is a singleton slot on IbWrapper,
+// not a map entry.
+type pendingPositions struct {
+	positions []model.Position
+	done      chan struct{}
+}
+
+// pendingExecutions accumulates executions for a single ReqExecutions request.
+type pendingExecutions struct {
+	executions []model.Execution
+	done       chan struct{}
+}
+
 // IbWrapper implements ibapi.EWrapper and routes callbacks to waiting goroutines
 // via per-request channels.  It embeds ibapi.Wrapper for all unimplemented methods.
 type IbWrapper struct {
@@ -70,6 +85,8 @@ type IbWrapper struct {
 	optParams       map[int64]*pendingOptParams
 	contractDetails map[int64]*pendingContractDetails
 	oi              map[int64]*pendingOI
+	positions       *pendingPositions             // singleton — ReqPositions has no reqID
+	executions      map[int64]*pendingExecutions
 	errors          map[int64]chan error
 	nextValidID     chan int64
 
@@ -89,6 +106,7 @@ func newIbWrapper() *IbWrapper {
 		optParams:       make(map[int64]*pendingOptParams),
 		contractDetails: make(map[int64]*pendingContractDetails),
 		oi:              make(map[int64]*pendingOI),
+		executions:      make(map[int64]*pendingExecutions),
 		errors:          make(map[int64]chan error),
 		nextValidID:     make(chan int64, 1),
 		disconnectCh:    make(chan struct{}, 1),
@@ -142,6 +160,28 @@ func (w *IbWrapper) registerOI(reqID int64) *pendingOI {
 	return po
 }
 
+func (w *IbWrapper) registerPositions() *pendingPositions {
+	pp := &pendingPositions{done: make(chan struct{})}
+	w.mu.Lock()
+	w.positions = pp
+	w.mu.Unlock()
+	return pp
+}
+
+func (w *IbWrapper) unregisterPositions() {
+	w.mu.Lock()
+	w.positions = nil
+	w.mu.Unlock()
+}
+
+func (w *IbWrapper) registerExecutions(reqID int64) *pendingExecutions {
+	pe := &pendingExecutions{done: make(chan struct{})}
+	w.mu.Lock()
+	w.executions[reqID] = pe
+	w.mu.Unlock()
+	return pe
+}
+
 func (w *IbWrapper) registerError(reqID int64) chan error {
 	ch := make(chan error, 1)
 	w.mu.Lock()
@@ -157,6 +197,7 @@ func (w *IbWrapper) unregister(reqID int64) {
 	delete(w.optParams, reqID)
 	delete(w.contractDetails, reqID)
 	delete(w.oi, reqID)
+	delete(w.executions, reqID)
 	delete(w.errors, reqID)
 	w.mu.Unlock()
 }
@@ -343,6 +384,46 @@ func (w *IbWrapper) SecurityDefinitionOptionParameterEnd(reqID int64) {
 	}
 }
 
+// Position is called once per account holding in response to ReqPositions.
+func (w *IbWrapper) Position(account string, contract *ibapi.Contract, position ibapi.Decimal, avgCost float64) {
+	w.mu.Lock()
+	pp := w.positions
+	w.mu.Unlock()
+	if pp != nil && contract != nil {
+		pp.positions = append(pp.positions, positionFromIB(account, contract, position, avgCost))
+	}
+}
+
+// PositionEnd signals all positions have been delivered.
+func (w *IbWrapper) PositionEnd() {
+	w.mu.Lock()
+	pp := w.positions
+	w.mu.Unlock()
+	if pp != nil {
+		close(pp.done)
+	}
+}
+
+// ExecDetails is called once per fill in response to ReqExecutions.
+func (w *IbWrapper) ExecDetails(reqID int64, contract *ibapi.Contract, execution *ibapi.Execution) {
+	w.mu.Lock()
+	pe, ok := w.executions[reqID]
+	w.mu.Unlock()
+	if ok && contract != nil && execution != nil {
+		pe.executions = append(pe.executions, executionFromIB(contract, execution))
+	}
+}
+
+// ExecDetailsEnd signals all executions for this request have been delivered.
+func (w *IbWrapper) ExecDetailsEnd(reqID int64) {
+	w.mu.Lock()
+	pe, ok := w.executions[reqID]
+	w.mu.Unlock()
+	if ok {
+		close(pe.done)
+	}
+}
+
 // ConnectionClosed is called by ibapi when the TCP connection to TWS is dropped
 // (e.g., TWS restart, network failure). We forward the signal to Client so it
 // can mark the connection unhealthy immediately, before the next health check.
@@ -410,6 +491,13 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 		}
 		if po, has := w.oi[reqID]; has {
 			po.once.Do(func() { close(po.done) })
+		}
+		if pe, has := w.executions[reqID]; has {
+			select {
+			case <-pe.done:
+			default:
+				close(pe.done)
+			}
 		}
 		w.mu.Unlock()
 	}

@@ -112,6 +112,8 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newDashboardCmd())
 	root.AddCommand(newAnalyzeCmd())
 	root.AddCommand(newChainCmd())
+	root.AddCommand(newPositionsCmd())
+	root.AddCommand(newTradesCmd())
 	root.AddCommand(newServerCmd())
 
 	return root

@@ -650,3 +650,121 @@ func parseIBDate(s string) (time.Time, error) {
 	return time.ParseInLocation("20060102 15:04:05", s, time.UTC)
 }
 
+// GetPositions fetches all current account holdings via ReqPositions.
+// ReqPositions is account-global with no reqID — errors arrive with reqID -1
+// and cannot be routed to a pending request, so this relies on a 15s context
+// timeout as the backstop (see spec Constraint 4).
+func (c *Client) GetPositions(ctx context.Context) ([]model.Position, error) {
+	if !c.IsConnected() {
+		return nil, fmt.Errorf("not connected to IB TWS")
+	}
+
+	pp := c.wrapper.registerPositions()
+	defer c.wrapper.unregisterPositions()
+
+	c.ibClient.ReqPositions()
+	defer c.ibClient.CancelPositions()
+
+	posCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	select {
+	case <-pp.done:
+		return pp.positions, nil
+	case <-posCtx.Done():
+		return nil, fmt.Errorf("GetPositions: timeout fetching positions")
+	}
+}
+
+// GetExecutions fetches the last-7-days execution history via ReqExecutions,
+// narrowed by the supplied filter.
+// NOTE: Side is NOT passed to IBKR's ExecutionFilter. IBKR expects "BUY"/"SELL"
+// there, but the values in ExecDetails are "BOT"/"SLD". Passing an unrecognized
+// Side causes IBKR to silently send neither ExecDetailsEnd nor an error, hanging
+// the call forever. We filter by Side client-side instead.
+func (c *Client) GetExecutions(ctx context.Context, filter model.ExecutionFilter) ([]model.Execution, error) {
+	if !c.IsConnected() {
+		return nil, fmt.Errorf("not connected to IB TWS")
+	}
+
+	reqID := c.nextReqID()
+	pe := c.wrapper.registerExecutions(reqID)
+	errCh := c.wrapper.registerError(reqID)
+	defer c.wrapper.unregister(reqID)
+
+	f := ibapi.NewExecutionFilter()
+	if filter.Symbol != "" {
+		f.Symbol = filter.Symbol
+	}
+	if !filter.Since.IsZero() {
+		f.Time = filter.Since.Format("20060102-15:04:05")
+	}
+
+	c.ibClient.ReqExecutions(reqID, f)
+
+	execCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	select {
+	case <-pe.done:
+		// fall through to side filtering below
+	case err := <-errCh:
+		return nil, fmt.Errorf("GetExecutions: %w", err)
+	case <-execCtx.Done():
+		return nil, fmt.Errorf("GetExecutions: timeout fetching executions")
+	}
+
+	execs := pe.executions
+	if filter.Side != "" {
+		want := strings.ToUpper(filter.Side)
+		filtered := make([]model.Execution, 0, len(execs))
+		for _, e := range execs {
+			if strings.ToUpper(e.Side) == want {
+				filtered = append(filtered, e)
+			}
+		}
+		execs = filtered
+	}
+	return execs, nil
+}
+
+// GetOptionQuote returns a single option contract's mark price. It mirrors
+// GetQuote but builds an OPT contract; the mark is LAST, falling back to the
+// bid/ask midpoint, then CLOSE. Returns an error (e.g. IB 10091 — no OPRA
+// subscription) when no price is available.
+func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error) {
+	if !c.IsConnected() {
+		return 0, fmt.Errorf("not connected to IB TWS")
+	}
+
+	reqID := c.nextReqID()
+	pq := c.wrapper.registerQuote(reqID)
+	errCh := c.wrapper.registerError(reqID)
+	defer c.wrapper.unregister(reqID)
+
+	c.ibClient.ReqMktData(reqID, optionContract(underlying, expiration, right, strike), "", false, false, nil)
+	defer c.ibClient.CancelMktData(reqID)
+
+	tickCtx, tickCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer tickCancel()
+
+	select {
+	case <-pq.done:
+	case <-tickCtx.Done():
+	case err := <-errCh:
+		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: %w", underlying, expiration, right, strike, err)
+	}
+
+	mark := pq.last
+	if mark == 0 && pq.bid > 0 && pq.ask > 0 {
+		mark = (pq.bid + pq.ask) / 2
+	}
+	if mark == 0 {
+		mark = pq.close
+	}
+	if mark == 0 {
+		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: no price data", underlying, expiration, right, strike)
+	}
+	return mark, nil
+}
+

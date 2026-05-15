@@ -143,6 +143,8 @@ optix/
 | `./bin/optix analyze <SYMBOL>` | 深度分析：技术面 + 期权 + 策略 |
 | `./bin/optix analyze <SYMBOL> --with-oi` | 同上，但拉取每张合约的 Open Interest 以计算 Max Pain（需 OPRA 订阅） |
 | `./bin/optix quote <SYMBOL>` | 实时股票报价 |
+| `./bin/optix positions [--type stk\|opt]` | IBKR 账户持仓 + 实时 P&L（必须连 IBKR；期权 mark 需 OPRA 订阅，否则 mark/P&L 列降级为 `—`） |
+| `./bin/optix trades [--symbol] [--side] [--since]` | IBKR 近 7 天成交记录（`--since` 超过 7 天会自动截断并提示） |
 | `./bin/optix watch list` | 列出自选股 |
 | `./bin/optix watch add <SYMBOL>` | 加入自选股 |
 | `./bin/optix watch remove <SYMBOL>` | 移除自选股 |

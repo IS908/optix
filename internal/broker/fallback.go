@@ -134,3 +134,40 @@ func (fb *FallbackBroker) GetOptionChainWithOI(ctx context.Context, underlying s
 	}
 	return nil, ErrOINotSupported
 }
+
+// GetPositions delegates to the active broker if it implements AccountReader.
+// Returns ErrAccountNotSupported when the active broker is the yfinance
+// fallback (which has no account concept).
+func (fb *FallbackBroker) GetPositions(ctx context.Context) ([]model.Position, error) {
+	if fb.active == nil {
+		return nil, fmt.Errorf("broker: not connected")
+	}
+	if ar, ok := fb.active.(AccountReader); ok {
+		return ar.GetPositions(ctx)
+	}
+	return nil, ErrAccountNotSupported
+}
+
+// GetExecutions delegates to the active broker if it implements AccountReader.
+// Returns ErrAccountNotSupported when running on the yfinance fallback.
+func (fb *FallbackBroker) GetExecutions(ctx context.Context, filter model.ExecutionFilter) ([]model.Execution, error) {
+	if fb.active == nil {
+		return nil, fmt.Errorf("broker: not connected")
+	}
+	if ar, ok := fb.active.(AccountReader); ok {
+		return ar.GetExecutions(ctx, filter)
+	}
+	return nil, ErrAccountNotSupported
+}
+
+// GetOptionQuote delegates to the active broker if it implements OptionQuoter.
+// Returns ErrAccountNotSupported when running on the yfinance fallback.
+func (fb *FallbackBroker) GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error) {
+	if fb.active == nil {
+		return 0, fmt.Errorf("broker: not connected")
+	}
+	if oq, ok := fb.active.(OptionQuoter); ok {
+		return oq.GetOptionQuote(ctx, underlying, expiration, right, strike)
+	}
+	return 0, ErrAccountNotSupported
+}

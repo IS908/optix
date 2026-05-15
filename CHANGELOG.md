@@ -12,6 +12,15 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.2.0] - 2026-05-15
+
+Minor release: introduces read-only IBKR account commands (positions
+holdings with mark-to-market P&L, and last-7-days execution history),
+along with two new optional broker interfaces (`AccountReader`,
+`OptionQuoter`) that keep the yfinance fallback path clean. (#21)
+
 ### Added
 - `optix positions [--type stk|opt]` — current account holdings snapshot from
   IBKR, with mark-to-market P&L. Stocks and options are shown in separate
@@ -35,6 +44,14 @@ above it.
   options via `GetOptionQuote`) at bounded concurrency (5 concurrent fetches).
   Failed marks degrade gracefully: that position's P&L stays zero, others
   are unaffected.
+
+### Repo hygiene
+- `docs/superpowers/{plans,specs}/` is now `.gitignore`d. These are agent
+  workflow artifacts (brainstorming → writing-plans output), not maintained
+  documentation; the rationale that produced any merged feature lives in
+  commit messages and PR descriptions. The 8 pre-existing scaffolding files
+  from earlier features were removed in the same change (content preserved
+  in git history).
 
 ## [0.1.1] - 2026-05-10
 
@@ -150,6 +167,7 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/IS908/optix/releases/tag/v0.2.0
 [0.1.1]: https://github.com/IS908/optix/releases/tag/v0.1.1
 [0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

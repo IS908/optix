@@ -141,7 +141,10 @@ optix/
 |---------|-------------|
 | `./bin/optix dashboard` | Watchlist overview with quotes, technicals, recommendations |
 | `./bin/optix analyze <SYMBOL>` | Deep analysis: technicals + options + strategies |
+| `./bin/optix analyze <SYMBOL> --with-oi` | Same, plus per-contract Open Interest for Max Pain (needs OPRA subscription) |
 | `./bin/optix quote <SYMBOL>` | Real-time stock quote |
+| `./bin/optix positions [--type stk\|opt]` | IBKR account holdings with mark-to-market P&L (requires IBKR; option marks need OPRA) |
+| `./bin/optix trades [--symbol] [--side] [--since]` | IBKR execution history (last 7 days; `--since` older than 7d is clamped) |
 | `./bin/optix watch list` | List watchlist symbols |
 | `./bin/optix watch add <SYMBOL>` | Add symbol to watchlist |
 | `./bin/optix watch remove <SYMBOL>` | Remove symbol from watchlist |

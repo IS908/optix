@@ -32,3 +32,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Agent workflow scaffolding (brainstorming specs + execution plans).
+# These are working artifacts of the design/planning loop, not maintained
+# documentation. The rationale that produced any merged feature lives in
+# its commit messages and PR description.
+docs/superpowers/plans/
+docs/superpowers/specs/

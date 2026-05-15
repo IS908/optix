@@ -12,7 +12,29 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- `optix positions [--type stk|opt]` — current account holdings snapshot from
+  IBKR, with mark-to-market P&L. Stocks and options are shown in separate
+  sections; stock P&L uses the live quote, option P&L uses the option mark
+  (requires an OPRA subscription — without it the option mark/P&L columns
+  degrade to "—", identity + cost still render). Option P&L correctly
+  applies the contract `Multiplier`; short positions show a properly-signed
+  `UnrealPnLPct`. `--type` is case-insensitive (`stk`/`STK`/`Stk` all work).
+- `optix trades [--symbol] [--side] [--since]` — execution history for the
+  last 7 days (IBKR's `ReqExecutions` window). `--symbol` and `--side` are
+  case-insensitive; `--side` accepts `BOT`/`SLD` (filtered client-side, since
+  IBKR's `ExecutionFilter.Side` expects `BUY`/`SELL`). `--since` older than
+  7 days is clamped with a warning; the clamp boundary is date-aligned at
+  UTC midnight so `--since` matching exactly today−7d passes through.
+- Optional broker interfaces `AccountReader` and `OptionQuoter` mirroring
+  the existing `Pinger`/`OIFetcher` pattern. IBKR implements both; the
+  yfinance fallback returns `ErrAccountNotSupported` and the CLI prints a
+  clear "需要 IBKR 连接" error with non-zero exit.
+- `AccountService` (`internal/server/account_svc.go`) — fetches positions
+  and executions and enriches positions with marks (stocks via `GetQuote`,
+  options via `GetOptionQuote`) at bounded concurrency (5 concurrent fetches).
+  Failed marks degrade gracefully: that position's P&L stays zero, others
+  are unaffected.
 
 ## [0.1.1] - 2026-05-10
 

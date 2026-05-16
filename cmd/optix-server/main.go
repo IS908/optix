@@ -19,5 +19,7 @@ func main() {
 	if len(os.Args) == 1 || (len(os.Args) > 1 && os.Args[1][0] == '-') {
 		os.Args = append([]string{os.Args[0], "server"}, os.Args[1:]...)
 	}
-	cli.Execute()
+	if err := cli.Execute(); err != nil {
+		os.Exit(cli.AsExitCode(err))
+	}
 }

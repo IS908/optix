@@ -404,6 +404,37 @@ optix dashboard --capital=100000
 | `trend` | 看多 → 中性 → 看空（按趋势评分绝对值） |
 | `pcr` | PCR 偏离中性（1.0）越远排越前 |
 
+### 4.6 `optix journal` — 交易日记与复盘
+
+Optix 把 IBKR 成交记录持久化到本地 SQLite，绕过 IBKR API 仅保留 7 天历史的限制。所有子命令都支持 `--format json`（便于 agent 消费）；读取类命令默认自动同步，可加 `--no-sync` 跳过 IBKR 调用。
+
+| 命令 | 作用 |
+|------|------|
+| `optix journal sync` | 从 IBKR 拉取最近成交写入 SQLite（需要 IBKR） |
+| `optix journal status` | 查看日记大小与上次同步时间差（**不需要 IBKR**） |
+| `optix journal list [--symbol] [--since] [--until] [--side] [--type]` | 列出已持久化的成交记录 |
+| `optix journal trips [--status open\|closed\|expired]` | FIFO 配对的 round trip（含已实现 P&L、持仓天数） |
+| `optix journal review [--since] [--until]` | 复盘摘要：胜率、总 P&L、按标的分组 |
+
+#### 自动后台同步
+
+`optix-server` 启动后会自动每 6 小时同步一次（可用 `--journal-sync-interval=0` 关闭，或设为其他时长如 `1h`）。Web UI 的 `/journal` 页面提供 Trades / Round Trips / Review 三个标签，以及 Sync Now 按钮。
+
+#### 退出码（agent 友好）
+
+| Code | 含义 |
+|------|------|
+| 0 | 成功 |
+| 1 | 通用错误（参数错误等） |
+| 2 | IBKR 不可达 |
+| 3 | SQLite 读写失败 |
+
+#### Gap 警告
+
+当 `last_sync_at` 距今超过 6 天，`journal status` 与 `/journal` 页面都会显示醒目警告 — 7 天后部分成交可能已超出 IBKR 历史窗口而无法找回。
+
+> **注意：** Optix 对 IBKR 是**只读**的 — 不会下单、改单、撤单。这些操作请在 TWS / Gateway 中由用户自行完成。
+
 ---
 
 ## 5. 技术指标计算方法

@@ -12,7 +12,76 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+Trade journal: a persistent record of IBKR executions that survives the
+broker's 7-day history window, with FIFO round-trip matching and a
+retrospective (复盘) summary surface. Also adds an explicit read-only
+scope warning to the agent skill descriptor. (#23, #24)
+
+### Added
+- `optix journal status` — show journal size, last-sync time, and gap-warning
+  state. **Offline-safe** — does NOT contact IBKR. Useful for agents to
+  decide whether to call `sync` first.
+- `optix journal sync` — pull the last 7 days of executions from IBKR into
+  the local journal. Idempotent (`INSERT OR IGNORE` on `exec_id UNIQUE`);
+  re-running reports `new_count: 0`. Uses clientID 7 to avoid colliding
+  with `positions` (4), `trades` (5), and `analyze --watchlist` (6).
+- `optix journal list [--symbol] [--side] [--type] [--since] [--until] [--limit]`
+  — list persisted executions. Auto-syncs from IBKR first; `--no-sync`
+  skips the IBKR round-trip and reads SQLite only.
+- `optix journal trips [--symbol] [--status open|closed|expired] [--since] [--until]`
+  — FIFO-matched round trips (LONG/SHORT, scaling in/out, option expiry)
+  with realized P&L per trip and holding days. Computed on read from the
+  execution log — never materialized.
+- `optix journal review [--since] [--until]` — retrospective summary:
+  total trades, win rate, total/avg realized P&L, average holding days,
+  by-symbol breakdown sorted by P&L descending. Win-rate denominator is
+  `closed + expired` (open trips don't count for or against win rate).
+- All journal commands support `--format text|json`. JSON shapes are
+  documented in [`docs/journal_json_schema.md`](docs/journal_json_schema.md)
+  as a stable agent contract; field additions are non-breaking, removals
+  require a versioned bump.
+- Documented CLI exit codes: 0 success · 1 generic error · 2 IBKR unreachable
+  · 3 SQLite read/write failed. Wired via `cli.ExitErr` so agents can
+  branch reliably on failure modes.
+- Web UI `/journal` page with three tabs (Trades / Round Trips / Review)
+  and a "Sync now" button. DOM is constructed via `createElement` +
+  `textContent` (no `innerHTML`) for XSS safety. A gap-warning banner
+  appears when `last_sync_at` is missing or more than 6 days old —
+  distinguishes "never synced" from a stale sync.
+- Web UI JSON endpoints: `GET /api/journal{,/trips,/review}` and
+  `POST /api/journal/sync` (returns HTTP 502 with `ibkr_ok:false` on
+  broker failure).
+- `optix-server --journal-sync-interval=6h` background ticker (set `0`
+  to disable). Runs an initial catch-up sync at startup, then ticks on
+  the interval. Failures are logged and recorded into
+  `sync_state.last_error`; they never block the HTTP listener.
+- SQLite migration `003_trade_journal.sql`: new `trade_journal` table
+  (UNIQUE `exec_id`, ORDER BY time DESC indexes on symbol/time/account)
+  and `trade_journal_sync_state` single-row table.
+- New SKILL.md top-of-file warning making the **read-only IBKR scope**
+  explicit (bilingual EN/中文): the skill cannot place, modify, or
+  cancel orders. All trading must be performed in TWS/Gateway directly.
+
+### Changed
+- `cli.Execute()` now returns `error` (was `void`). The `cmd/optix-cli`
+  and `cmd/optix-server` `main()` functions translate the result via
+  `cli.AsExitCode(err)` to honor `ExitErr` codes. Pre-existing commands
+  unaffected.
+- `webui.NewServer` is unchanged; a new `webui.NewWithJournal(...)`
+  constructor accepts `JournalDeps{Service, Store}`. The journal HTTP
+  handlers nil-guard the dep and return 503 if absent (defensive).
+
+### Notes
+- IBKR-side trading is **out of scope** — Optix is read-only with respect
+  to IBKR and this PR introduces no order-placement paths (verified by
+  grep: zero matches for `placeOrder|cancelOrder|modifyOrder` across
+  `internal/`, `cmd/`, `pkg/`).
+- The first `optix journal list --format json` response currently emits
+  `Execution` fields in PascalCase (`"Symbol"`, `"ExecID"`, …) because
+  the existing `model.Execution` type has no JSON tags. The schema doc
+  notes this; adding snake_case tags would be a coordinated breaking
+  change across all existing JSON consumers and is deferred to a
+  follow-up.
 
 ## [0.2.0] - 2026-05-15
 

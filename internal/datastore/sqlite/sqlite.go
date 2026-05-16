@@ -20,6 +20,9 @@ var migration001SQL string
 //go:embed migrations/002_background_refresh.sql
 var migration002SQL string
 
+//go:embed migrations/003_trade_journal.sql
+var migration003SQL string
+
 // Store implements data persistence using SQLite.
 type Store struct {
 	db *sql.DB
@@ -73,6 +76,11 @@ func (s *Store) migrate() error {
 	// Migration 002: Background refresh system (idempotent)
 	if err := s.migrate002(); err != nil {
 		return fmt.Errorf("migration 002: %w", err)
+	}
+
+	// Migration 003: Trade journal (idempotent via IF NOT EXISTS + INSERT OR IGNORE)
+	if _, err := s.db.Exec(migration003SQL); err != nil {
+		return fmt.Errorf("migration 003: %w", err)
 	}
 
 	// Idempotent schema additions — error is swallowed when column already exists.

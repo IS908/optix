@@ -1,0 +1,178 @@
+{{define "title"}}Trade Journal · Optix{{end}}
+{{define "content"}}
+<div class="px-6 py-4 space-y-6">
+  <div class="flex items-baseline justify-between">
+    <h1 class="text-2xl font-semibold">Trade Journal</h1>
+    <button id="syncBtn" class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Sync now</button>
+  </div>
+
+  {{if .NeverSynced}}
+  <div class="bg-yellow-50 border border-yellow-300 text-yellow-900 px-4 py-3 rounded">
+    Journal has never been synced — click <strong>Sync now</strong> to start.
+  </div>
+  {{else if .GapWarning}}
+  <div class="bg-yellow-50 border border-yellow-300 text-yellow-900 px-4 py-3 rounded">
+    Last sync was {{.HumanGap}} ago. Trades older than 7 days from that sync may be missing — click <strong>Sync now</strong>.
+  </div>
+  {{end}}
+
+  <nav class="flex space-x-4 border-b">
+    <a href="#trades" class="tab-link" data-tab="trades">Trades</a>
+    <a href="#trips"  class="tab-link" data-tab="trips">Round Trips</a>
+    <a href="#review" class="tab-link" data-tab="review">Review</a>
+  </nav>
+
+  <section id="trades" class="tab-panel">
+    <p class="text-sm text-gray-500 mb-2">{{.TotalExecutions}} executions on file. Most recent first.</p>
+    <table class="text-sm w-full">
+      <thead class="bg-gray-100"><tr>
+        <th class="text-left px-2 py-1">Time</th>
+        <th class="text-left px-2 py-1">Symbol</th>
+        <th class="text-left px-2 py-1">Side</th>
+        <th class="text-right px-2 py-1">Qty</th>
+        <th class="text-right px-2 py-1">Price</th>
+        <th class="text-left px-2 py-1">Account</th>
+      </tr></thead>
+      <tbody>
+        {{range .Executions}}
+        <tr>
+          <td class="px-2 py-1">{{.Time.Format "2006-01-02 15:04"}}</td>
+          <td class="px-2 py-1">{{.Symbol}}</td>
+          <td class="px-2 py-1">{{.Side}}</td>
+          <td class="px-2 py-1 text-right">{{printf "%.0f" .Shares}}</td>
+          <td class="px-2 py-1 text-right">{{printf "%.2f" .Price}}</td>
+          <td class="px-2 py-1">{{.Account}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="px-2 py-3 text-gray-500">No executions yet — try clicking Sync now.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <section id="trips" class="tab-panel hidden">
+    <p class="text-sm text-gray-500">Loading…</p>
+  </section>
+  <section id="review" class="tab-panel hidden">
+    <p class="text-sm text-gray-500">Loading…</p>
+  </section>
+</div>
+
+<script>
+(function() {
+  function el(tag, attrs, ...children) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'colspan') e.colSpan = v;
+      else e.setAttribute(k, v);
+    }
+    for (const c of children) {
+      if (c == null) continue;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return e;
+  }
+
+  function fmtDateTime(s) {
+    if (!s || s.startsWith('0001')) return '';
+    return s.slice(0, 16).replace('T', ' ');
+  }
+
+  document.querySelectorAll('.tab-link').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const tab = a.dataset.tab;
+      document.querySelectorAll('.tab-panel').forEach(p => {
+        p.classList.toggle('hidden', p.id !== tab);
+      });
+      if (tab === 'trips')  loadTrips();
+      if (tab === 'review') loadReview();
+    });
+  });
+
+  async function loadTrips() {
+    const panel = document.getElementById('trips');
+    panel.replaceChildren(el('p', {class: 'text-sm text-gray-500'}, 'Loading…'));
+    const r = await fetch('/api/journal/trips');
+    const j = await r.json();
+    const trips = j.round_trips || [];
+
+    const headers = ['Symbol', 'Dir', 'Open', 'Close', 'Qty', 'OpenPx', 'ClosePx', 'P&L', 'Status'];
+    const thead = el('thead', {class: 'bg-gray-100'},
+      el('tr', {}, ...headers.map(h => el('th', {class: 'px-2 py-1 text-left'}, h))));
+
+    const tbody = el('tbody');
+    if (trips.length === 0) {
+      tbody.appendChild(el('tr', {},
+        el('td', {colspan: '9', class: 'px-2 py-3 text-gray-500'}, 'No round trips.')));
+    } else {
+      trips.forEach(t => {
+        const pnlCls = 'px-2 py-1 text-right ' + (t.realized_pnl >= 0 ? 'text-green-700' : 'text-red-700');
+        tbody.appendChild(el('tr', {},
+          el('td', {class: 'px-2 py-1'}, t.symbol),
+          el('td', {class: 'px-2 py-1'}, t.direction),
+          el('td', {class: 'px-2 py-1'}, fmtDateTime(t.open_time)),
+          el('td', {class: 'px-2 py-1'}, fmtDateTime(t.close_time) || '—'),
+          el('td', {class: 'px-2 py-1 text-right'}, String(t.open_qty)),
+          el('td', {class: 'px-2 py-1 text-right'}, t.open_avg_price.toFixed(2)),
+          el('td', {class: 'px-2 py-1 text-right'}, (t.close_avg_price || 0).toFixed(2)),
+          el('td', {class: pnlCls}, t.realized_pnl.toFixed(2)),
+          el('td', {class: 'px-2 py-1'}, t.status)));
+      });
+    }
+    panel.replaceChildren(el('table', {class: 'text-sm w-full'}, thead, tbody));
+  }
+
+  async function loadReview() {
+    const panel = document.getElementById('review');
+    panel.replaceChildren(el('p', {class: 'text-sm text-gray-500'}, 'Loading…'));
+    const r = await fetch('/api/journal/review');
+    const s = await r.json();
+    const bySym = s.by_symbol || [];
+
+    const dl = el('dl', {class: 'grid grid-cols-2 gap-y-2 text-sm max-w-md'},
+      el('dt', {}, 'Total executions'),      el('dd', {}, String(s.total_executions)),
+      el('dt', {}, 'Total round trips'),     el('dd', {}, String(s.total_round_trips)),
+      el('dt', {}, 'Closed / Open / Expired'),
+      el('dd', {}, `${s.closed_round_trips} / ${s.open_round_trips} / ${s.expired_round_trips}`),
+      el('dt', {}, 'Win rate'),
+      el('dd', {}, `${(s.win_rate * 100).toFixed(1)}% (${s.win_count}W / ${s.loss_count}L)`),
+      el('dt', {}, 'Total realized P&L'),    el('dd', {}, s.total_realized_pnl.toFixed(2)),
+      el('dt', {}, 'Avg per round trip'),    el('dd', {}, s.avg_realized_pnl.toFixed(2)),
+      el('dt', {}, 'Avg holding days'),      el('dd', {}, s.avg_holding_days.toFixed(1)));
+
+    const thead = el('thead', {class: 'bg-gray-100'},
+      el('tr', {},
+        el('th', {class: 'px-2 py-1 text-left'},  'Symbol'),
+        el('th', {class: 'px-2 py-1 text-right'}, 'Trips'),
+        el('th', {class: 'px-2 py-1 text-right'}, 'P&L'),
+        el('th', {class: 'px-2 py-1 text-right'}, 'Win%')));
+    const tbody = el('tbody');
+    if (bySym.length === 0) {
+      tbody.appendChild(el('tr', {},
+        el('td', {colspan: '4', class: 'px-2 py-3 text-gray-500'}, 'No data.')));
+    } else {
+      bySym.forEach(x => {
+        tbody.appendChild(el('tr', {},
+          el('td', {class: 'px-2 py-1'}, x.symbol),
+          el('td', {class: 'px-2 py-1 text-right'}, String(x.round_trip_count)),
+          el('td', {class: 'px-2 py-1 text-right'}, x.realized_pnl.toFixed(2)),
+          el('td', {class: 'px-2 py-1 text-right'}, `${(x.win_rate * 100).toFixed(1)}%`)));
+      });
+    }
+    panel.replaceChildren(
+      dl,
+      el('h3', {class: 'mt-4 font-semibold'}, 'By symbol'),
+      el('table', {class: 'text-sm'}, thead, tbody));
+  }
+
+  document.getElementById('syncBtn').addEventListener('click', async () => {
+    const r = await fetch('/api/journal/sync', {method: 'POST'});
+    const j = await r.json();
+    alert(j.ibkr_ok ? `Synced ${j.new_count} new executions.` : `Sync failed: ${j.error}`);
+    if (j.ibkr_ok) location.reload();
+  });
+})();
+</script>
+{{end}}

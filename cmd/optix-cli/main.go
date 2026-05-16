@@ -1,6 +1,10 @@
 package main
 
-import "github.com/IS908/optix/internal/cli"
+import (
+	"os"
+
+	"github.com/IS908/optix/internal/cli"
+)
 
 // version is overridden at build time via:
 //   go build -ldflags="-X main.version=v1.2.3"
@@ -9,5 +13,7 @@ var version = "dev"
 
 func main() {
 	cli.SetVersion(version)
-	cli.Execute()
+	if err := cli.Execute(); err != nil {
+		os.Exit(cli.AsExitCode(err))
+	}
 }

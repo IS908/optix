@@ -5,6 +5,18 @@ description: "美股期权分析工具 / US stock & options analysis: 查看股�
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
 
+> ⚠️ **Read-only scope** / **只读范围**
+>
+> This skill exclusively reads market data, account holdings, and execution
+> history from IBKR. It **cannot place, modify, or cancel orders** (no market
+> orders, no limit orders, no options orders, no order replacement). All
+> trading operations must be performed by the user directly in the IBKR
+> client (TWS or Gateway).
+>
+> 本 skill 仅支持通过 IBKR **读取**行情、账户持仓与成交记录，**不支持**下单、
+> 挂单、撤单等任何交易操作。下单、挂单请用户自行在 IBKR 客户端（TWS / Gateway）
+> 中操作。
+
 Use this skill when the user asks about (当用户提到以下内容时触发):
 - 股价、行情、报价 / Stock prices, quotes (e.g., "AAPL 现在多少钱?", "查一下特斯拉股价", "get me a quote for TSLA")
 - 期权分析、策略推荐 / Options analysis, strategy recommendations (e.g., "分析一下 NVDA", "有什么期权机会?", "analyze AAPL")
@@ -12,6 +24,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 看板、总览 / Dashboard, overview (e.g., "看看大盘", "打开看板", "show dashboard", "how are my stocks doing?")
 - 账户持仓、P&L、市值 / Account positions, holdings, P&L (e.g., "看看我的持仓", "我现在持有什么", "show my positions", "what do I hold?", "盈亏怎么样")
 - 交易记录、近期成交 / Recent executions, trade history (e.g., "最近的交易", "近 7 天成交记录", "show recent trades", "trade history")
+- 交易日记、复盘、长期成交记录 / Trade journal, retrospective, long-term execution history (e.g., "复盘最近一周的交易", "我这个月的胜率", "show my journal", "trade retrospective")
 
 ## Commands
 
@@ -73,6 +86,42 @@ bash bin/optix.sh trades --side BOT            # only buys (or SLD for sells)
 bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
 ```
 
+### Trade Journal (交易日记 / 复盘)
+
+Persists IBKR executions to a local SQLite database, working around IBKR's
+7-day history limit. All journal commands support `--format json` for
+agent-friendly structured output.
+
+#### Journal status (does NOT require IBKR)
+```bash
+bash bin/optix.sh journal status --format json
+```
+
+#### Pull recent executions into the journal
+```bash
+bash bin/optix.sh journal sync --format json
+```
+
+#### List persisted executions
+```bash
+bash bin/optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
+```
+
+#### View round-trip P&L
+```bash
+bash bin/optix.sh journal trips --status closed --format json
+```
+
+#### Retrospective summary
+```bash
+bash bin/optix.sh journal review --since 2026-05-01 --format json
+```
+
+Pass `--no-sync` to any read command to skip the IBKR round-trip and read
+SQLite only (useful when IBKR is unavailable or after a recent sync).
+
+Exit codes: `0` success · `1` generic error · `2` IBKR unreachable · `3` SQLite error.
+
 ## Notes
 - Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
 - IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance (delayed quotes, no options chain) if IBKR is unreachable
@@ -81,3 +130,5 @@ bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
 - `positions` option mark prices require an OPRA market-data subscription; without it the option Mark / MktValue / UnrealPnL columns degrade to `—` (identity + cost columns still render)
 - Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
 - `--with-oi` requires an IBKR market data subscription (e.g. OPRA Top of Book) for Open Interest ticks
+- `journal status` is offline-safe — does not require IBKR; useful for agents to decide whether to call `journal sync` first
+- `journal sync` requires IBKR; the `optix-server` web UI runs a 6h background sync ticker so users who keep the server running never accumulate gap warnings

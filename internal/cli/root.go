@@ -114,15 +114,20 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newChainCmd())
 	root.AddCommand(newPositionsCmd())
 	root.AddCommand(newTradesCmd())
+	root.AddCommand(newJournalCmd())
 	root.AddCommand(newServerCmd())
 
 	return root
 }
 
-// Execute runs the root command.
-func Execute() {
-	if err := NewRootCmd().Execute(); err != nil {
+// Execute runs the root command. Returns the error from cobra so the caller
+// (cmd/optix-cli/main.go) can translate it to a documented exit code via
+// AsExitCode.
+func Execute() error {
+	cmd := NewRootCmd()
+	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

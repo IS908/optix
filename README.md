@@ -12,7 +12,10 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 - **Technical analysis** — SMA, EMA, RSI, MACD, Bollinger Bands, ATR
 - **Options pricing** — Black-Scholes, Greeks, implied volatility, max pain
 - **Strategy recommendations** — Covered calls, cash-secured puts, credit spreads, iron condors
+- **Account holdings & trade journal** — positions snapshot with P&L, plus a persistent execution log with FIFO round-trip matching and retrospective stats (works around IBKR's 7-day history limit)
 - **Web dashboard** with auto-refresh and data freshness tracking
+
+> **Read-only with respect to IBKR.** Optix never places, modifies, or cancels orders. All trading operations must be performed by the user directly in TWS or Gateway.
 
 ## Quick Start
 
@@ -145,6 +148,11 @@ optix/
 | `./bin/optix quote <SYMBOL>` | Real-time stock quote |
 | `./bin/optix positions [--type stk\|opt]` | IBKR account holdings with mark-to-market P&L (requires IBKR; option marks need OPRA) |
 | `./bin/optix trades [--symbol] [--side] [--since]` | IBKR execution history (last 7 days; `--since` older than 7d is clamped) |
+| `./bin/optix journal status` | Trade journal sync state and size — **offline-safe**, no IBKR required |
+| `./bin/optix journal sync` | Pull recent executions from IBKR into the local journal (idempotent) |
+| `./bin/optix journal list [--symbol] [--since] [--until]` | List persisted executions (auto-syncs; `--no-sync` to skip) |
+| `./bin/optix journal trips [--status open\|closed\|expired]` | FIFO-matched round trips with realized P&L |
+| `./bin/optix journal review [--since] [--until]` | Retrospective summary: win rate, total P&L, by-symbol breakdown |
 | `./bin/optix watch list` | List watchlist symbols |
 | `./bin/optix watch add <SYMBOL>` | Add symbol to watchlist |
 | `./bin/optix watch remove <SYMBOL>` | Remove symbol from watchlist |
@@ -159,11 +167,18 @@ Start with `./bin/optix-server` (default: `http://127.0.0.1:8080`).
 | `/dashboard` | Watchlist overview with auto-refresh |
 | `/analyze/{symbol}` | Per-symbol deep analysis |
 | `/watchlist` | Manage watchlist (add/remove) |
+| `/journal` | Trade journal — Trades / Round Trips / Review tabs |
 | `/help` | Field reference documentation |
 | `/api/dashboard` | JSON API for dashboard data |
 | `/api/analyze/{symbol}` | JSON API for analysis data |
+| `/api/journal` | JSON: filtered executions list |
+| `/api/journal/trips` | JSON: FIFO-matched round trips |
+| `/api/journal/review` | JSON: aggregate stats |
+| `POST /api/journal/sync` | Trigger sync from IBKR (502 + `ibkr_ok:false` on broker failure) |
 
 Append `?refresh=true` to any page to fetch fresh data from IBKR instead of cache.
+
+The web UI runs a background trade-journal sync ticker (`--journal-sync-interval=6h` by default; `0` disables) so users who keep `optix-server` running stay within IBKR's 7-day history window without manual sync.
 
 ### Agent Skill
 

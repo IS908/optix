@@ -12,7 +12,10 @@ Optix 把 Interactive Brokers 的市场数据和 Python 分析引擎结合起来
 - **技术分析** — SMA / EMA / RSI / MACD / 布林带 / ATR
 - **期权定价** — Black-Scholes、希腊字母、隐含波动率、Max Pain
 - **策略推荐** — Covered Call、Cash-Secured Put、信用价差、Iron Condor
+- **账户持仓 + 交易日记** — 持仓快照含 P&L；持久化成交记录 + FIFO 开平仓配对 + 复盘统计（绕开 IBKR 7 天历史窗口）
 - **Web 看板** — 自动刷新、数据新鲜度追踪
+
+> **对 IBKR 只读**。Optix 不会下单、改单、撤单。所有交易操作请用户在 TWS / Gateway 中自行完成。
 
 ## 快速上手
 
@@ -145,6 +148,11 @@ optix/
 | `./bin/optix quote <SYMBOL>` | 实时股票报价 |
 | `./bin/optix positions [--type stk\|opt]` | IBKR 账户持仓 + 实时 P&L（必须连 IBKR；期权 mark 需 OPRA 订阅，否则 mark/P&L 列降级为 `—`） |
 | `./bin/optix trades [--symbol] [--side] [--since]` | IBKR 近 7 天成交记录（`--since` 超过 7 天会自动截断并提示） |
+| `./bin/optix journal status` | 交易日记状态与大小 — **离线安全**，不连 IBKR |
+| `./bin/optix journal sync` | 从 IBKR 拉取最近成交写入本地日记（幂等） |
+| `./bin/optix journal list [--symbol] [--since] [--until]` | 列出已持久化的成交记录（默认自动同步，可加 `--no-sync` 跳过） |
+| `./bin/optix journal trips [--status open\|closed\|expired]` | FIFO 配对的 round trip + 已实现 P&L |
+| `./bin/optix journal review [--since] [--until]` | 复盘摘要：胜率、总 P&L、按标的分组 |
 | `./bin/optix watch list` | 列出自选股 |
 | `./bin/optix watch add <SYMBOL>` | 加入自选股 |
 | `./bin/optix watch remove <SYMBOL>` | 移除自选股 |
@@ -159,11 +167,18 @@ optix/
 | `/dashboard` | 自选股看板，自动刷新 |
 | `/analyze/{symbol}` | 单股深度分析 |
 | `/watchlist` | 自选股管理（增删） |
+| `/journal` | 交易日记 — Trades / Round Trips / Review 三个标签页 |
 | `/help` | 字段说明 |
 | `/api/dashboard` | 看板 JSON 接口 |
 | `/api/analyze/{symbol}` | 分析 JSON 接口 |
+| `/api/journal` | 成交记录 JSON 接口 |
+| `/api/journal/trips` | Round trip JSON 接口 |
+| `/api/journal/review` | 复盘摘要 JSON 接口 |
+| `POST /api/journal/sync` | 触发同步（broker 不可达时返回 502 + `ibkr_ok:false`） |
 
 任意页面追加 `?refresh=true` 可绕过缓存，直接从 IBKR 拉新数据。
+
+Web UI 启动后还会运行交易日记后台同步定时器（`--journal-sync-interval=6h` 默认；`0` 关闭），常驻 `optix-server` 的用户不需要手动 `journal sync` 也能保持在 IBKR 7 天历史窗口内。
 
 ### Agent Skill
 

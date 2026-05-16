@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.3.0] - 2026-05-16
+
 Trade journal: a persistent record of IBKR executions that survives the
 broker's 7-day history window, with FIFO round-trip matching and a
 retrospective (复盘) summary surface. Also adds an explicit read-only

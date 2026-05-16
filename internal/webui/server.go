@@ -45,10 +45,18 @@ type Server struct {
 	sfGroup     singleflight.Group  // deduplicates concurrent live fetches per symbol
 	brokerPool  *brokerPool         // bounded IBKR connection pool
 	qCache      quoteCache          // TTL cache for /api/quotes (avoids 10s broker round-trips)
+	journal     *JournalDeps        // optional trade-journal service (nil → endpoints return 503)
 }
 
 // New creates a Server and registers all routes.
 func New(cfg Config, store *sqlite.Store) *Server {
+	return NewWithJournal(cfg, store, nil)
+}
+
+// NewWithJournal creates a Server with an optional trade-journal service.
+// When journal is nil, /journal page and /api/journal/* endpoints respond
+// with 503 Service Unavailable.
+func NewWithJournal(cfg Config, store *sqlite.Store, journal *JournalDeps) *Server {
 	if cfg.ForecastDays == 0 {
 		cfg.ForecastDays = 14
 	}
@@ -64,6 +72,7 @@ func New(cfg Config, store *sqlite.Store) *Server {
 			cfg.MaxConcurrentBrokers,
 			defaultBrokerFactory(cfg.IBHost, cfg.IBPort, cfg.PythonBin),
 		),
+		journal: journal,
 	}
 	s.mux = http.NewServeMux()
 	s.registerRoutes()
@@ -158,6 +167,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/freshness", s.handleFreshness)
 	s.mux.HandleFunc("GET /api/quotes", s.handleAPIQuotes)
 	s.mux.HandleFunc("GET /api/quote/{symbol}", s.handleAPIQuoteSingle)
+
+	// Trade journal
+	s.mux.HandleFunc("GET /journal", s.handleJournalPage)
+	s.mux.HandleFunc("GET /api/journal", s.handleAPIJournalList)
+	s.mux.HandleFunc("GET /api/journal/trips", s.handleAPIJournalTrips)
+	s.mux.HandleFunc("GET /api/journal/review", s.handleAPIJournalReview)
+	s.mux.HandleFunc("POST /api/journal/sync", s.handleAPIJournalSync)
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

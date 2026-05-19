@@ -144,7 +144,8 @@ optix/
 |------|------|
 | `./bin/optix dashboard` | 自选股看板：行情 + 技术面 + 策略推荐 |
 | `./bin/optix analyze <SYMBOL>` | 深度分析：技术面 + 期权 + 策略 |
-| `./bin/optix analyze <SYMBOL> --with-oi` | 同上，但拉取每张合约的 Open Interest 以计算 Max Pain（需 OPRA 订阅） |
+| `./bin/optix analyze <SYMBOL> --with-oi [--expiry YYYY-MM-DD]` | 同上，但拉取每张合约的 Open Interest 以计算 Max Pain（需 OPRA 订阅）；`--expiry` 指定具体到期日（默认最近一档） |
+| `./bin/optix max-pain <SYMBOL> [--expiry] [--source ibkr\|yfinance\|auto]` | 独立 Max Pain 查询，针对单个到期日 |
 | `./bin/optix quote <SYMBOL>` | 实时股票报价 |
 | `./bin/optix positions [--type stk\|opt]` | IBKR 账户持仓 + 实时 P&L（必须连 IBKR；期权 mark 需 OPRA 订阅，否则 mark/P&L 列降级为 `—`） |
 | `./bin/optix trades [--symbol] [--side] [--since]` | IBKR 近 7 天成交记录（`--since` 超过 7 天会自动截断并提示） |

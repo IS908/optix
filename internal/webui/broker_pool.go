@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 )
 
@@ -108,7 +109,7 @@ func newBrokerPool(size int, factory brokerFactory) *brokerPool {
 // (with yfinance fallback) and returns an already-connected broker.
 func defaultBrokerFactory(ibHost string, ibPort int, pythonBin string) brokerFactory {
 	return func(ctx context.Context, clientID int64) (broker.Broker, error) {
-		b := broker.NewWithFallback(ibkr.Config{
+		b := factory.NewWithFallback(ibkr.Config{
 			Host:     ibHost,
 			Port:     ibPort,
 			ClientID: clientID,

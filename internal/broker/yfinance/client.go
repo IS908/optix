@@ -3,8 +3,8 @@
 //
 // Limitations vs IBKR:
 //   - Data is delayed (not real-time)
-//   - GetOptionChain always returns an empty chain (options require IBKR)
 //   - Bid/Ask may be stale or zero
+//   - Greeks are not available (yfinance does not expose them); only IV is provided
 package yfinance
 
 import (
@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -97,6 +98,14 @@ type Config struct {
 type Client struct {
 	cfg Config
 }
+
+// Compile-time guarantees that yfinance.Client satisfies broker.Broker and
+// broker.OIFetcher. The latter lets max-pain and other OI-aware callers use
+// the yfinance fallback transparently.
+var (
+	_ broker.Broker    = (*Client)(nil)
+	_ broker.OIFetcher = (*Client)(nil)
+)
 
 // New creates a new yfinance broker client.
 func New(cfg Config) *Client {
@@ -227,13 +236,118 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 	return bars, nil
 }
 
-// GetOptionChain returns an empty option chain in yfinance fallback mode.
-// Options data requires IBKR for real-time Greeks and accurate pricing.
+// GetOptionChain fetches an option chain via yfinance. `expiration` is the
+// YYYYMMDD form; an empty string requests the nearest-available expiry.
+//
+// When `expiration` is specified but not in yfinance's available list, returns
+// *broker.ErrExpiryNotAvailable with the full list of expirations yfinance
+// does offer — parity with the IBKR path.
+//
+// yfinance does not expose Greeks; Delta/Gamma/Theta/Vega/Rho on each
+// OptionQuote remain zero. Callers needing Greeks should use IBKR or compute
+// them via the Python analysis engine.
 func (c *Client) GetOptionChain(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
-	return &model.OptionChain{
-		Underlying:  underlying,
-		Expirations: nil,
-	}, nil
+	args := []string{"option_chain", underlying}
+	if expiration != "" {
+		args = append(args, expiration)
+	}
+	out, err := c.runFetcher(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("yfinance option_chain %s: %w", underlying, err)
+	}
+
+	var raw struct {
+		Underlying  string `json:"underlying"`
+		Expirations []struct {
+			Expiration string         `json:"expiration"`
+			Calls      []rawOptionRow `json:"calls"`
+			Puts       []rawOptionRow `json:"puts"`
+		} `json:"expirations"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parse yfinance option_chain: %w", err)
+	}
+
+	chain := &model.OptionChain{Underlying: raw.Underlying}
+	for _, e := range raw.Expirations {
+		exp := model.OptionChainExpiry{Expiration: e.Expiration}
+		for _, c := range e.Calls {
+			exp.Calls = append(exp.Calls, c.toQuote(raw.Underlying, e.Expiration, model.OptionTypeCall))
+		}
+		for _, p := range e.Puts {
+			exp.Puts = append(exp.Puts, p.toQuote(raw.Underlying, e.Expiration, model.OptionTypePut))
+		}
+		chain.Expirations = append(chain.Expirations, exp)
+	}
+
+	// When a specific expiry was requested, surface ErrExpiryNotAvailable if
+	// the chain doesn't contain a populated entry for it. (Python emits the
+	// available list as empty-contract entries on miss; the requested entry
+	// is absent in that payload, so any populated entry signals a hit.)
+	if expiration != "" {
+		var matched *model.OptionChainExpiry
+		for i := range chain.Expirations {
+			e := &chain.Expirations[i]
+			if e.Expiration == expiration && (len(e.Calls) > 0 || len(e.Puts) > 0) {
+				matched = e
+				break
+			}
+		}
+		if matched == nil {
+			avail := make([]string, 0, len(chain.Expirations))
+			for _, e := range chain.Expirations {
+				avail = append(avail, e.Expiration)
+			}
+			return nil, &broker.ErrExpiryNotAvailable{
+				Underlying: underlying,
+				Requested:  expiration,
+				Available:  avail,
+			}
+		}
+		// Narrow to just the matched expiry (parity with IBKR contract).
+		chain.Expirations = []model.OptionChainExpiry{*matched}
+	}
+	return chain, nil
+}
+
+// GetOptionChainWithOI is the same as GetOptionChain for yfinance — yfinance
+// returns openInterest inline on every contract, so there's no separate
+// "with OI" cost or interface. Implementing this also lets yfinance.Client
+// satisfy broker.OIFetcher so callers (e.g. max-pain) can use it transparently.
+func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
+	return c.GetOptionChain(ctx, underlying, expiration)
+}
+
+// rawOptionRow mirrors the JSON shape emitted by fetcher.py's option_chain
+// subcommand — one row per contract.
+type rawOptionRow struct {
+	Strike       float64 `json:"strike"`
+	Bid          float64 `json:"bid"`
+	Ask          float64 `json:"ask"`
+	Last         float64 `json:"last"`
+	Volume       int64   `json:"volume"`
+	OpenInterest int32   `json:"openInterest"`
+	IV           float64 `json:"iv"`
+}
+
+func (r rawOptionRow) toQuote(underlying, expiration string, kind model.OptionType) model.OptionQuote {
+	mid := 0.0
+	if r.Bid > 0 && r.Ask > 0 {
+		mid = (r.Bid + r.Ask) / 2
+	}
+	return model.OptionQuote{
+		Underlying:        underlying,
+		Expiration:        expiration,
+		Strike:            r.Strike,
+		OptionType:        kind,
+		Last:              r.Last,
+		Bid:               r.Bid,
+		Ask:               r.Ask,
+		Mid:               mid,
+		Volume:            r.Volume,
+		OpenInterest:      r.OpenInterest,
+		ImpliedVolatility: r.IV,
+	}
 }
 
 // runFetcher executes the Python fetcher script and returns its stdout.

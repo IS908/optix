@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/scheduler"
@@ -30,7 +30,7 @@ type journalBrokerAdapter struct {
 }
 
 func (a *journalBrokerAdapter) GetExecutions(ctx context.Context, filter model.ExecutionFilter) ([]model.Execution, error) {
-	b := broker.NewWithFallback(ibkr.Config{
+	b := factory.NewWithFallback(ibkr.Config{
 		Host: a.host, Port: a.port, ClientID: journalClientID,
 	}, a.pythonBin)
 	if err := b.Connect(ctx); err != nil {

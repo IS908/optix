@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/analysis"
-	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -61,7 +61,7 @@ Examples:
 			fmt.Printf("⏳ Connecting to market data source...\n")
 
 			// 3. Connect to broker (IBKR with yfinance fallback)
-			b := broker.NewWithFallback(ibkr.Config{
+			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 3,

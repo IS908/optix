@@ -12,7 +12,47 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+Adds `--expiry YYYY-MM-DD` to `optix analyze --with-oi` and a standalone
+`optix max-pain` command, fixing a bug where the broker's *nearest* option
+expiration was silently used for Max Pain computation. Users wanting a
+specific Friday cycle had no way to override, and the output never disclosed
+which expiry was used. (#?)
+
+### Added
+- `optix analyze --with-oi --expiry YYYY-MM-DD` — opt-in expiry override.
+  Default behaviour (no `--expiry`) unchanged; bad expiries surface a
+  closest-first suggestion list with a copy-paste-ready "Did you mean".
+- `optix max-pain <SYMBOL> [--expiry] [--source ibkr|yfinance|auto] [--format text|json]`
+  — standalone Max Pain query. ClientID 8. JSON output includes a
+  `max_pain_offset_pct` field convenient for agents.
+- yfinance broker `GetOptionChain` is now functional (previously a stub),
+  with an `option_chain` subcommand added to fetcher.py. `yfinance.Client`
+  also implements `broker.OIFetcher` (yfinance returns OI inline at no
+  extra cost), so `max-pain --source yfinance` works end-to-end without
+  IBKR.
+- Shared `broker.ErrExpiryNotAvailable` structured error + CLI helper
+  `cli.FormatExpiryError` that renders a closest-first suggestion list,
+  reused by both `analyze` and `max-pain`.
+
+### Changed
+- `optix analyze --with-oi` output always shows the expiry used
+  (`Max Pain: $X.XX (expiry YYYY-MM-DD)`), even when no `--expiry` is
+  given. Makes the previously-silent "default = nearest" choice visible.
+  `, requested` is appended only when the user explicitly chose.
+- `internal/broker/factory.go` moved to `internal/broker/factory/factory.go`
+  (own subpackage) to break an import cycle introduced by `ibkr` needing
+  to reference `*broker.ErrExpiryNotAvailable`. Concrete brokers now
+  depend on the abstract `broker` package; the factory composes both.
+  Callers: `factory.NewWithFallback(...)` instead of `broker.NewWithFallback(...)`.
+
+### Notes
+- `--source auto` (the new `max-pain` default) reuses the existing
+  IBKR→Yahoo Finance fallback chain. JSON `source` field resolves to
+  the *actual* broker used (`"ibkr"` or `"yfinance"`), not `"auto"`.
+- Bad-expiry errors carry exit code 1; IBKR/yfinance unreachable carry 2;
+  analysis engine unreachable carries 3 — matching v0.3.0's journal codes.
+- Hard scope boundary preserved: zero `placeOrder|cancelOrder|modifyOrder`
+  introduced. Optix remains read-only with respect to IBKR.
 
 ## [0.3.0] - 2026-05-16
 

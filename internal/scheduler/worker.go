@@ -10,7 +10,7 @@ import (
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
-	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -123,7 +123,7 @@ func (w *Worker) executeTask(ctx context.Context, task Task) {
 // This replicates the logic from webui.fetchLiveAnalysis() but runs in background.
 func (w *Worker) fetchAndCache(ctx context.Context, symbol string) error {
 	// Create broker with fallback (IBKR → yfinance)
-	b := broker.NewWithFallback(ibkr.Config{
+	b := factory.NewWithFallback(ibkr.Config{
 		Host:     w.ibCfg.Host,
 		Port:     w.ibCfg.Port,
 		ClientID: int64(10 + w.id),

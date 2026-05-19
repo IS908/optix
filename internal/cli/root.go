@@ -115,6 +115,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newPositionsCmd())
 	root.AddCommand(newTradesCmd())
 	root.AddCommand(newJournalCmd())
+	root.AddCommand(newMaxPainCmd())
 	root.AddCommand(newServerCmd())
 
 	return root

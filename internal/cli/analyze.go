@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/IS908/optix/internal/analysis"
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -23,6 +25,7 @@ func newAnalyzeCmd() *cobra.Command {
 	var useWatchlist bool
 	var analysisAddr string
 	var withOI bool
+	var expiry string
 
 	cmd := &cobra.Command{
 		Use:   "analyze [symbol]",
@@ -35,6 +38,11 @@ Examples:
   optix analyze AAPL --weeks=2 --capital=50000
   optix analyze AAPL --risk=conservative
   optix analyze --watchlist --capital=100000`,
+		// We render our own errors (FormatExpiryError) and don't want cobra
+		// dumping a usage banner or duplicating the "Error:" prefix on every
+		// runtime failure.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			forecastDays := int32(weeks * 7)
@@ -49,6 +57,14 @@ Examples:
 
 			symbol := strings.ToUpper(args[0])
 
+			expiryCompact, err := parseExpiryFlag(expiry, time.Now())
+			if err != nil {
+				return err
+			}
+			if expiryCompact != "" && !withOI {
+				return fmt.Errorf("--expiry requires --with-oi")
+			}
+
 			fmt.Printf("⏳ Connecting to market data source...\n")
 
 			// Open SQLite store for caching
@@ -60,7 +76,7 @@ Examples:
 			defer store.Close()
 
 			// Connect to broker (IBKR with yfinance fallback)
-			b := broker.NewWithFallback(ibkr.Config{
+			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 2,
@@ -80,8 +96,16 @@ Examples:
 			} else {
 				fmt.Printf("📊 Fetching data for %s...\n", symbol)
 			}
-			stockData, err := server.FetchSymbolDataOpt(ctx, symbol, svc, server.FetchOptions{WithOI: withOI})
+			stockData, err := server.FetchSymbolDataOpt(ctx, symbol, svc, server.FetchOptions{
+				WithOI: withOI,
+				Expiry: expiryCompact,
+			})
 			if err != nil {
+				var miss *broker.ErrExpiryNotAvailable
+				if errors.As(err, &miss) {
+					tmpl := fmt.Sprintf("optix analyze %s --with-oi --expiry %%s", symbol)
+					return errors.New(FormatExpiryError(miss.Underlying, miss.Requested, miss.Available, tmpl))
+				}
 				return fmt.Errorf("fetch data: %w", err)
 			}
 
@@ -111,7 +135,7 @@ Examples:
 			}
 
 			// Print the report
-			printAnalysisReport(resp, symbol, weeks)
+			printAnalysisReport(resp, symbol, weeks, expiryCompact != "")
 			return nil
 		},
 	}
@@ -121,9 +145,41 @@ Examples:
 	cmd.Flags().StringVar(&risk, "risk", "moderate", "Risk tolerance: conservative, moderate, aggressive")
 	cmd.Flags().BoolVar(&useWatchlist, "watchlist", false, "Run deep analysis for all watchlist symbols")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
-	cmd.Flags().BoolVar(&withOI, "with-oi", false, "Fetch per-contract Open Interest for the nearest expiry (IBKR only; enables Max Pain). Adds ~10–30s.")
+	cmd.Flags().BoolVar(&withOI, "with-oi", false, "Fetch per-contract Open Interest for the nearest expiry (requires OI-capable broker; enables Max Pain). Adds ~10–30s.")
+	cmd.Flags().StringVar(&expiry, "expiry", "", "Specific option expiration YYYY-MM-DD (default: nearest); requires --with-oi")
 
 	return cmd
+}
+
+// parseExpiryFlag validates a --expiry flag value and returns the canonical
+// YYYYMMDD form. Empty input yields ("", nil) — caller treats as "nearest".
+// Today is allowed; dates in the past are rejected. `now` is injected for
+// test determinism.
+func parseExpiryFlag(value string, now time.Time) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	t, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return "", fmt.Errorf("invalid --expiry %q: use YYYY-MM-DD", value)
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if t.Before(today) {
+		return "", fmt.Errorf("expiry %s is in the past; pick today or a future date", value)
+	}
+	return t.Format("20060102"), nil
+}
+
+// maxPainExpiryAnnotation renders the expiry the Python engine reported it
+// computed Max Pain over. The Python servicer sends back the value already
+// formatted as YYYY-MM-DD (see formatIBExpiry in server/fetch.go); we still
+// pass it through dashed() so an unexpected YYYYMMDD survives gracefully.
+// Empty/unknown values surface as "unknown" so the line stays honest.
+func maxPainExpiryAnnotation(maxPainExpiry string) string {
+	if maxPainExpiry == "" {
+		return "unknown"
+	}
+	return dashed(maxPainExpiry)
 }
 
 // runWatchlistAnalysis runs full deep analysis sequentially for all watchlist symbols.
@@ -151,7 +207,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	fmt.Printf("⏳ Connecting to market data source...\n")
 
 	// Connect to broker (IBKR with yfinance fallback)
-	b := broker.NewWithFallback(ibkr.Config{
+	b := factory.NewWithFallback(ibkr.Config{
 		Host:     ibHost,
 		Port:     ibPort,
 		ClientID: 6,
@@ -200,7 +256,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 			continue
 		}
 
-		printAnalysisReport(resp, sym, weeks)
+		printAnalysisReport(resp, sym, weeks, false)
 	}
 
 	fmt.Printf("\n✅ Watchlist analysis complete (%d symbols)\n", len(items))
@@ -220,7 +276,7 @@ const (
 	doubleSep   = "═════════════════════════════════════════════════════════════════"
 )
 
-func printAnalysisReport(resp *analysisv1.AnalyzeStockResponse, symbol string, weeks int) {
+func printAnalysisReport(resp *analysisv1.AnalyzeStockResponse, symbol string, weeks int, userRequestedExpiry bool) {
 	if resp == nil {
 		fmt.Println("No analysis data returned.")
 		return
@@ -291,7 +347,11 @@ func printAnalysisReport(resp *analysisv1.AnalyzeStockResponse, symbol string, w
 		fmt.Printf("  HV/IV(20d): %.1f%%   IV Rank: %.1f%%   IV Pctile: %.1f%%\n",
 			o.IvCurrent*100, o.IvRank, o.IvPercentile)
 		if o.MaxPain > 0 {
-			fmt.Printf("  Max Pain:   $%.2f  (expiry: %s)\n", o.MaxPain, o.MaxPainExpiry)
+			annotation := maxPainExpiryAnnotation(o.MaxPainExpiry)
+			if userRequestedExpiry {
+				annotation += ", requested"
+			}
+			fmt.Printf("  Max Pain:   $%.2f  (expiry %s)\n", o.MaxPain, annotation)
 		} else {
 			fmt.Println("  Max Pain:   N/A (rerun with --with-oi to fetch per-contract Open Interest)")
 		}

@@ -4,13 +4,32 @@
 Usage:
     python fetcher.py quote AAPL
     python fetcher.py bars AAPL 1d 365
+    python fetcher.py option_chain AAPL [YYYYMMDD]
 
 Outputs JSON to stdout. Errors go to stderr with non-zero exit code.
 """
 
 import json
+import math
 import sys
 from datetime import datetime, timedelta, timezone
+
+
+def _safe_float(v) -> float:
+    """Coerce to finite float; treat None/NaN/inf as 0.0."""
+    try:
+        f = float(v) if v is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(f):
+        return 0.0
+    return f
+
+
+def _safe_int(v) -> int:
+    """Coerce to int; treat None/NaN/inf/non-numeric as 0. yfinance sometimes
+    returns NaN for volume/openInterest on illiquid contracts."""
+    return int(_safe_float(v))
 
 
 def _ensure_yfinance():
@@ -104,9 +123,78 @@ def fetch_bars(symbol: str, timeframe: str, days: int) -> list:
     return bars
 
 
+def fetch_option_chain(symbol: str, expiration: str = "") -> dict:
+    """Fetch option chain for `symbol`.
+
+    expiration: optional YYYYMMDD. If empty, returns the nearest expiry.
+    Returns a dict matching model.OptionChain shape:
+      {
+        "underlying": "GOOGL",
+        "expirations": [
+          {
+            "expiration": "20260522",
+            "calls": [{"strike": ..., "bid": ..., "ask": ..., "last": ..., "volume": ..., "openInterest": ..., "iv": ...}],
+            "puts":  [...],
+          },
+          ...
+        ]
+      }
+
+    When expiration is specified but not in yfinance's available list, returns
+    all available expirations as empty-contract entries (Go side will detect
+    the missing requested expiry and produce ErrExpiryNotAvailable).
+    """
+    import yfinance as yf
+
+    ticker = yf.Ticker(symbol)
+    avail = list(ticker.options or [])  # yfinance returns YYYY-MM-DD strings
+    if not avail:
+        return {"underlying": symbol, "expirations": []}
+
+    if expiration:
+        # Caller passes YYYYMMDD; convert to YYYY-MM-DD for yfinance lookup.
+        target = f"{expiration[:4]}-{expiration[4:6]}-{expiration[6:]}"
+        if target not in avail:
+            # Return the full available list so Go side can build
+            # ErrExpiryNotAvailable. Expirations are emitted in YYYYMMDD.
+            return {
+                "underlying": symbol,
+                "expirations": [
+                    {"expiration": e.replace("-", ""), "calls": [], "puts": []}
+                    for e in avail
+                ],
+            }
+        targets = [target]
+    else:
+        # Without a request, surface nearest only (parity with IBKR's default).
+        targets = [avail[0]]
+
+    def row(r):
+        return {
+            "strike":       _safe_float(r.get("strike")),
+            "bid":          _safe_float(r.get("bid")),
+            "ask":          _safe_float(r.get("ask")),
+            "last":         _safe_float(r.get("lastPrice")),
+            "volume":       _safe_int(r.get("volume")),
+            "openInterest": _safe_int(r.get("openInterest")),
+            "iv":           _safe_float(r.get("impliedVolatility")),
+        }
+
+    expirations_out = []
+    for tgt in targets:
+        oc = ticker.option_chain(tgt)
+        expirations_out.append({
+            "expiration": tgt.replace("-", ""),
+            "calls": [row(c) for c in oc.calls.to_dict("records")],
+            "puts":  [row(p) for p in oc.puts.to_dict("records")],
+        })
+
+    return {"underlying": symbol, "expirations": expirations_out}
+
+
 def main():
     if len(sys.argv) < 3:
-        print("Usage: fetcher.py <quote|bars> <SYMBOL> [timeframe] [days]", file=sys.stderr)
+        print("Usage: fetcher.py <quote|bars|option_chain> <SYMBOL> [args...]", file=sys.stderr)
         sys.exit(1)
 
     _ensure_yfinance()
@@ -121,6 +209,9 @@ def main():
             timeframe = sys.argv[3] if len(sys.argv) > 3 else "1d"
             days = int(sys.argv[4]) if len(sys.argv) > 4 else 365
             result = fetch_bars(symbol, timeframe, days)
+        elif command == "option_chain":
+            expiration = sys.argv[3] if len(sys.argv) > 3 else ""
+            result = fetch_option_chain(symbol, expiration)
         else:
             print(f"Unknown command: {command}", file=sys.stderr)
             sys.exit(1)

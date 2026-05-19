@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -187,7 +188,7 @@ func errString(e error) string {
 // quote(1), analyze(2), dashboard(3), positions(4), trades(5), and
 // `analyze --watchlist`(6). Scheduler workers use 10+ and the web pool 30+.
 func connectJournalBroker(ctx context.Context) (broker.Broker, error) {
-	b := broker.NewWithFallback(ibkr.Config{
+	b := factory.NewWithFallback(ibkr.Config{
 		Host: ibHost, Port: ibPort, ClientID: journalClientID,
 	}, pythonBin)
 	if err := b.Connect(ctx); err != nil {

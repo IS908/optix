@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
 	"github.com/scmhub/ibapi"
 )
@@ -419,14 +420,12 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 	// Filter and sort expirations.
 	sort.Strings(pp.expirations)
 	expirations := pp.expirations
-	if expiration != "" {
-		// Caller wants a specific expiry.
-		expirations = []string{expiration}
-	} else {
-		// Default: return the 4 nearest expirations (enough for 2-week analysis).
-		if len(expirations) > 4 {
-			expirations = expirations[:4]
-		}
+	// When the caller specifies an expiration, we need the full list so a
+	// miss can produce a meaningful ErrExpiryNotAvailable. Without an explicit
+	// expiration, truncate to the 4 nearest (sufficient for ~2-week analysis
+	// and matches the historical behaviour).
+	if expiration == "" && len(expirations) > 4 {
+		expirations = expirations[:4]
 	}
 
 	sort.Float64s(pp.strikes)
@@ -450,6 +449,18 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 			})
 		}
 		chain.Expirations = append(chain.Expirations, expiry)
+	}
+
+	// When the caller specified an expiration, narrow the chain to that single
+	// expiry. This preserves the historical GetOptionChain(symbol, expiry)
+	// contract (1-element chain) and surfaces *broker.ErrExpiryNotAvailable on
+	// a miss, mirroring the behaviour of GetOptionChainWithOI.
+	if expiration != "" {
+		matched, err := pickRequestedExpiry(chain, expiration)
+		if err != nil {
+			return nil, err
+		}
+		chain.Expirations = []model.OptionChainExpiry{*matched}
 	}
 
 	return chain, nil
@@ -496,8 +507,13 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	low := spot * (1 - oiStrikeWindowPct)
 	high := spot * (1 + oiStrikeWindowPct)
 
-	// Only the nearest expiry — Max Pain analysis typically uses one expiry.
-	exp := &chain.Expirations[0]
+	// Pick the requested expiry (or the nearest when none specified). If the
+	// caller asked for an expiry IBKR doesn't offer, pickRequestedExpiry
+	// returns *broker.ErrExpiryNotAvailable with the full available list.
+	exp, perr := pickRequestedExpiry(chain, expiration)
+	if perr != nil {
+		return nil, perr
+	}
 
 	// Build the worklist: every (strike, right) pair within the window.
 	type job struct {
@@ -639,6 +655,34 @@ func (c *Client) quoteFromHistory(ctx context.Context, symbol string) (*model.St
 		Volume:    last.Volume,
 		Timestamp: last.Timestamp,
 	}, nil
+}
+
+// pickRequestedExpiry returns the OptionChainExpiry matching `requested` (a
+// YYYYMMDD string). When requested is empty, returns the first expiration in
+// the chain (current "nearest" semantics). When requested doesn't match any
+// expiration, returns *broker.ErrExpiryNotAvailable with the full available
+// list so callers can render a helpful suggestion.
+func pickRequestedExpiry(chain *model.OptionChain, requested string) (*model.OptionChainExpiry, error) {
+	if len(chain.Expirations) == 0 {
+		return nil, fmt.Errorf("no expirations returned for %s", chain.Underlying)
+	}
+	if requested == "" {
+		return &chain.Expirations[0], nil
+	}
+	for i := range chain.Expirations {
+		if chain.Expirations[i].Expiration == requested {
+			return &chain.Expirations[i], nil
+		}
+	}
+	avail := make([]string, 0, len(chain.Expirations))
+	for _, e := range chain.Expirations {
+		avail = append(avail, e.Expiration)
+	}
+	return nil, &broker.ErrExpiryNotAvailable{
+		Underlying: chain.Underlying,
+		Requested:  requested,
+		Available:  avail,
+	}
 }
 
 // parseIBDate parses IB historical bar date strings ("20240101" or "20240101 09:30:00").

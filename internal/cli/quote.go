@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -27,7 +27,7 @@ func newQuoteCmd() *cobra.Command {
 			RegisterCleanup(store)
 			defer store.Close()
 
-			b := broker.NewWithFallback(ibkr.Config{
+			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 1,

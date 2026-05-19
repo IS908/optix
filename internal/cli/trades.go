@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
@@ -63,7 +64,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 			RegisterCleanup(store)
 			defer store.Close()
 
-			b := broker.NewWithFallback(ibkr.Config{
+			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
 				ClientID: 5,

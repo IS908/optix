@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -16,6 +18,10 @@ type FetchOptions struct {
 	// WithOI fetches per-contract Open Interest for the nearest expiration.
 	// Requires an IBKR connection; non-fatal if the active broker is yfinance.
 	WithOI bool
+
+	// Expiry, when non-empty, requests options data for a specific
+	// expiration (YYYYMMDD format). Empty means "nearest available".
+	Expiry string
 }
 
 // FetchSymbolDataOpt fetches quote + historical bars + option chain (optionally
@@ -67,16 +73,28 @@ func fetchSymbolDataInternal(
 	var chain *model.OptionChain
 	var chainErr error
 	if opts.WithOI {
-		chain, chainErr = svc.GetOptionChainWithOI(ctx, symbol, "")
+		chain, chainErr = svc.GetOptionChainWithOI(ctx, symbol, opts.Expiry)
 		if chainErr != nil {
-			// Falls back to plain chain so analysis still runs (just without OI).
+			// Bad-expiry errors are user-input issues — propagate so the CLI can
+			// render a closest-first suggestion. Other chain errors (no OPRA
+			// subscription, transient broker faults, etc.) are non-fatal: fall
+			// back to the plain chain so technical analysis can still run.
+			var miss *broker.ErrExpiryNotAvailable
+			if errors.As(chainErr, &miss) {
+				return nil, chainErr
+			}
 			fmt.Printf("warning: OI fetch failed (%v) — using structure-only chain\n", chainErr)
-			chain, chainErr = svc.GetOptionChain(ctx, symbol, "")
+			chain, chainErr = svc.GetOptionChain(ctx, symbol, opts.Expiry)
 		}
 	} else {
-		chain, chainErr = svc.GetOptionChain(ctx, symbol, "")
+		chain, chainErr = svc.GetOptionChain(ctx, symbol, opts.Expiry)
 	}
 	if chainErr != nil {
+		// Same discrimination for the no-OI path.
+		var miss *broker.ErrExpiryNotAvailable
+		if errors.As(chainErr, &miss) {
+			return nil, chainErr
+		}
 		chain = &model.OptionChain{Underlying: symbol}
 	}
 

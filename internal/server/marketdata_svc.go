@@ -90,9 +90,9 @@ func (svc *MarketDataService) GetOptionChain(ctx context.Context, underlying, ex
 }
 
 // GetOptionChainWithOI fetches the option chain enriched with per-contract
-// Open Interest. Requires the broker to implement broker.OIFetcher (currently
-// only IBKR). Returns broker.ErrOINotSupported when the active data source
-// (e.g., yfinance fallback) cannot provide OI.
+// Open Interest. Requires the broker to implement broker.OIFetcher.
+// Returns broker.ErrOINotSupported when the active data source cannot
+// provide OI.
 func (svc *MarketDataService) GetOptionChainWithOI(ctx context.Context, underlying, expiration string) (*model.OptionChain, error) {
 	f, ok := svc.broker.(broker.OIFetcher)
 	if !ok {

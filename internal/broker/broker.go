@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/IS908/optix/pkg/model"
 )
@@ -16,8 +17,8 @@ type Pinger interface {
 
 // OIFetcher is an optional interface for brokers that can populate
 // per-contract Open Interest on top of the structure-only chain returned
-// by GetOptionChain. Currently only IBKR implements this — yfinance returns
-// ErrOINotSupported.
+// by GetOptionChain. Both IBKR and yfinance implement this; brokers that
+// cannot supply per-contract OI return ErrOINotSupported.
 type OIFetcher interface {
 	// GetOptionChainWithOI returns the option chain enriched with OpenInterest
 	// values. Implementations may limit to the nearest expiration and a strike
@@ -28,6 +29,21 @@ type OIFetcher interface {
 // ErrOINotSupported is returned by brokers that cannot provide per-contract
 // Open Interest (e.g., yfinance fallback).
 var ErrOINotSupported = errors.New("broker does not support per-contract Open Interest (requires IBKR)")
+
+// ErrExpiryNotAvailable is returned by GetOptionChainWithOI when the caller
+// requested a specific expiration that the broker does not offer for this
+// underlying. Available contains the full unsorted list of expirations the
+// broker returned (caller is responsible for sorting/distance ranking).
+type ErrExpiryNotAvailable struct {
+	Underlying string   // e.g. "GOOGL"
+	Requested  string   // YYYYMMDD as supplied to GetOptionChainWithOI
+	Available  []string // YYYYMMDD, unsorted
+}
+
+func (e *ErrExpiryNotAvailable) Error() string {
+	return fmt.Sprintf("expiry %s not available for %s (%d alternatives)",
+		e.Requested, e.Underlying, len(e.Available))
+}
 
 // AccountReader is an optional interface for brokers that can read account
 // holdings and execution history. IBKR implements it; yfinance does not.

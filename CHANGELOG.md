@@ -12,11 +12,15 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.4.0] - 2026-05-20
+
 Adds `--expiry YYYY-MM-DD` to `optix analyze --with-oi` and a standalone
 `optix max-pain` command, fixing a bug where the broker's *nearest* option
 expiration was silently used for Max Pain computation. Users wanting a
 specific Friday cycle had no way to override, and the output never disclosed
-which expiry was used. (#?)
+which expiry was used. (#25)
 
 ### Added
 - `optix analyze --with-oi --expiry YYYY-MM-DD` — opt-in expiry override.

@@ -435,6 +435,89 @@ Optix 把 IBKR 成交记录持久化到本地 SQLite，绕过 IBKR API 仅保留
 
 > **注意：** Optix 对 IBKR 是**只读**的 — 不会下单、改单、撤单。这些操作请在 TWS / Gateway 中由用户自行完成。
 
+### 4.7 `optix max-pain` — 指定到期日的 Max Pain 查询
+
+独立的 Max Pain 查询命令，针对单个期权到期日；复用现有的 `GetMaxPain` gRPC RPC。同时给 `optix analyze --with-oi` 新增了 `--expiry` 标志。
+
+#### 命令
+
+| 命令 | 作用 |
+|------|------|
+| `optix analyze <SYMBOL> --with-oi --expiry YYYY-MM-DD` | 让 analyze 使用指定的到期日（默认仍是最近一档） |
+| `optix max-pain <SYMBOL>` | 独立 Max Pain 查询，默认使用最近到期日 |
+| `optix max-pain <SYMBOL> --expiry YYYY-MM-DD` | 指定到期日 |
+| `optix max-pain <SYMBOL> --source ibkr\|yfinance\|auto` | 选择数据源；默认 `auto`（IBKR 优先，失败回退 yfinance） |
+| `optix max-pain <SYMBOL> --format json` | JSON 输出（含 `max_pain_offset_pct` 字段） |
+
+#### 透明化的 Max Pain 输出
+
+为了避免"默认最近到期日"的隐式选择再造成误判，`analyze --with-oi` 的 Max Pain 行现在始终显示使用的到期日：
+
+```
+Max Pain: $397.50  (expiry 2026-05-20)            ← 默认（最近）
+Max Pain: $399.50  (expiry 2026-05-22, requested)  ← 用户指定
+```
+
+`, requested` 后缀只在用户显式传 `--expiry` 时出现。
+
+#### 错误日期的提示
+
+输入不存在的到期日时（如 `--expiry 2026-05-23` 而实际只有 5/20、5/22、5/30…），命令会按距离排序展示可用日期，并给出 copy-paste-ready 的建议：
+
+```
+Error: no such expiry 2026-05-23 for GOOGL
+
+Available (closest first):
+  2026-05-22  (1 day away)
+  2026-05-20  (3 days away)
+  2026-05-30  (7 days away)
+  ...
+
+Did you mean:
+  optix max-pain GOOGL --expiry 2026-05-22
+```
+
+JSON 模式返回结构化的 `expiry_not_available` 错误信封：
+
+```json
+{
+  "error": "expiry_not_available",
+  "requested": "2026-05-23",
+  "available": [
+    {"expiry": "2026-05-22", "days_away": 1},
+    {"expiry": "2026-05-20", "days_away": 3}
+  ],
+  "suggestion": "2026-05-22"
+}
+```
+
+#### `max_pain_offset_pct` 字段（agent 友好）
+
+JSON 输出包含 `max_pain_offset_pct = (max_pain - spot) / spot × 100`，agent 一眼判断方向偏离：
+
+| 取值 | 解读 |
+|------|------|
+| `≈ 0` | 股价坐在 Max Pain 附近，到期日 pin risk 最高 |
+| `+3%` 等正值 | Max Pain 在上方，结构暗示上行漂移压力 |
+| `-3%` 等负值 | Max Pain 在下方，结构暗示下行漂移压力 |
+
+#### `--source` 三种模式
+
+- `--source auto`（默认）：先试 IBKR，失败回退 yfinance；JSON 输出的 `source` 字段会反映**实际使用的源**（`"ibkr"` 或 `"yfinance"`，不会是 `"auto"`）。
+- `--source ibkr`：强制 IBKR，不可达就直接报错退出 2。
+- `--source yfinance`：强制 yfinance，**无需 IBKR**，无需 OPRA 订阅（yfinance 把 OI 内联在 chain 里，免费拿到）。
+
+#### 退出码
+
+| Code | 含义 |
+|------|------|
+| 0 | 成功 |
+| 1 | 通用错误（标志格式错、过去日期、到期日不存在） |
+| 2 | 数据源不可达 |
+| 3 | Python 分析引擎不可达 |
+
+> **注意：** `max-pain` 同样是只读的 — 不会下单。
+
 ---
 
 ## 5. 技术指标计算方法

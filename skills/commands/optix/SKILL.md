@@ -25,12 +25,13 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 账户持仓、P&L、市值 / Account positions, holdings, P&L (e.g., "看看我的持仓", "我现在持有什么", "show my positions", "what do I hold?", "盈亏怎么样")
 - 交易记录、近期成交 / Recent executions, trade history (e.g., "最近的交易", "近 7 天成交记录", "show recent trades", "trade history")
 - 交易日记、复盘、长期成交记录 / Trade journal, retrospective, long-term execution history (e.g., "复盘最近一周的交易", "我这个月的胜率", "show my journal", "trade retrospective")
+- Max Pain、指定到期日 / Max Pain for a specific expiration (e.g., "GOOGL 5/22 的 max pain 是多少?", "max pain for AAPL this Friday", "本周五的 max pain", "用 yfinance 算 max pain")
 
 ## Commands
 
 Replace `<SYMBOL>` with the stock ticker the user mentions.
 
-All commands invoke `bin/optix.sh`, a thin entry-point bundled with the skill.
+All commands invoke `optix.sh` from the skill directory, a thin entry-point bundled with the skill.
 The wrapper resolves the runtime (Go binary + Python engine) in this order:
 1. `$OPTIX_HOME` environment variable (developer override; points to a source checkout)
 2. `<skill_dir>/.runtime/` (release-mode install; populated by install.sh)
@@ -38,52 +39,55 @@ The wrapper resolves the runtime (Go binary + Python engine) in this order:
 
 ### Get stock quote
 ```bash
-bash bin/optix.sh quote <SYMBOL>
+bash optix.sh quote <SYMBOL>
 ```
 
 ### Analyze a stock (technicals + options + strategy recommendations)
 ```bash
-bash bin/optix.sh analyze <SYMBOL>
+bash optix.sh analyze <SYMBOL>
 ```
 
 ### Analyze with per-contract Open Interest (enables Max Pain)
 ```bash
-bash bin/optix.sh analyze <SYMBOL> --with-oi
+bash optix.sh analyze <SYMBOL> --with-oi
+bash optix.sh analyze <SYMBOL> --with-oi --expiry 2026-05-22   # specific expiration
 ```
+
+The Max Pain line always shows the expiry used (e.g. `(expiry 2026-05-20)`), so the default-nearest pick is transparent. Use `--expiry YYYY-MM-DD` to override; bad expiries print a closest-first suggestion list.
 
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
-bash bin/optix.sh dashboard
+bash optix.sh dashboard
 ```
 
 ### List watchlist
 ```bash
-bash bin/optix.sh watch list
+bash optix.sh watch list
 ```
 
 ### Add to watchlist
 ```bash
-bash bin/optix.sh watch add <SYMBOL>
+bash optix.sh watch add <SYMBOL>
 ```
 
 ### Remove from watchlist
 ```bash
-bash bin/optix.sh watch remove <SYMBOL>
+bash optix.sh watch remove <SYMBOL>
 ```
 
 ### Show current account positions (stocks + options, with P&L)
 ```bash
-bash bin/optix.sh positions
-bash bin/optix.sh positions --type stk    # only stocks
-bash bin/optix.sh positions --type opt    # only options
+bash optix.sh positions
+bash optix.sh positions --type stk    # only stocks
+bash optix.sh positions --type opt    # only options
 ```
 
 ### Show recent executions (last 7 days)
 ```bash
-bash bin/optix.sh trades
-bash bin/optix.sh trades --symbol <SYMBOL>     # filter by symbol
-bash bin/optix.sh trades --side BOT            # only buys (or SLD for sells)
-bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
+bash optix.sh trades
+bash optix.sh trades --symbol <SYMBOL>     # filter by symbol
+bash optix.sh trades --side BOT            # only buys (or SLD for sells)
+bash optix.sh trades --since 2026-05-10    # only on/after this date
 ```
 
 ### Trade Journal (交易日记 / 复盘)
@@ -94,33 +98,56 @@ agent-friendly structured output.
 
 #### Journal status (does NOT require IBKR)
 ```bash
-bash bin/optix.sh journal status --format json
+bash optix.sh journal status --format json
 ```
 
 #### Pull recent executions into the journal
 ```bash
-bash bin/optix.sh journal sync --format json
+bash optix.sh journal sync --format json
 ```
 
 #### List persisted executions
 ```bash
-bash bin/optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
+bash optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
 ```
 
 #### View round-trip P&L
 ```bash
-bash bin/optix.sh journal trips --status closed --format json
+bash optix.sh journal trips --status closed --format json
 ```
 
 #### Retrospective summary
 ```bash
-bash bin/optix.sh journal review --since 2026-05-01 --format json
+bash optix.sh journal review --since 2026-05-01 --format json
 ```
 
 Pass `--no-sync` to any read command to skip the IBKR round-trip and read
 SQLite only (useful when IBKR is unavailable or after a recent sync).
 
 Exit codes: `0` success · `1` generic error · `2` IBKR unreachable · `3` SQLite error.
+
+### Max Pain (specific expiration)
+
+Standalone Max Pain query for one option expiration. Reuses the existing
+`GetMaxPain` gRPC RPC; supports IBKR, Yahoo Finance, or automatic fallback.
+
+```bash
+bash optix.sh max-pain GOOGL --expiry 2026-05-22 --format json
+bash optix.sh max-pain GOOGL --source yfinance --format json   # no IBKR required
+bash optix.sh max-pain GOOGL --expiry 2026-05-22               # text mode
+```
+
+`--source ibkr|yfinance|auto` (default `auto` — IBKR first, fall back to
+Yahoo Finance). `--expiry YYYY-MM-DD` defaults to the broker's nearest
+expiration. Bad expiries print a closest-first suggestion list (in JSON
+mode: structured `expiry_not_available` envelope with sorted `available`
+and `suggestion` fields).
+
+JSON includes a `max_pain_offset_pct` field = `(max_pain - spot) / spot × 100`
+— positive = Max Pain above spot, negative = below. Useful for agents to
+decide directional bias at a glance.
+
+Exit codes: `0` · `1` bad flags · `2` broker unreachable · `3` analysis engine unreachable.
 
 ## Notes
 - Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
@@ -132,3 +159,5 @@ Exit codes: `0` success · `1` generic error · `2` IBKR unreachable · `3` SQLi
 - `--with-oi` requires an IBKR market data subscription (e.g. OPRA Top of Book) for Open Interest ticks
 - `journal status` is offline-safe — does not require IBKR; useful for agents to decide whether to call `journal sync` first
 - `journal sync` requires IBKR; the `optix-server` web UI runs a 6h background sync ticker so users who keep the server running never accumulate gap warnings
+- `max-pain --source yfinance` works without IBKR; yfinance returns Open Interest inline, so no OPRA subscription is needed (delayed quotes, may differ slightly from IBKR's real-time chain)
+- `analyze --with-oi` and `max-pain` both surface a closest-first suggestion list when `--expiry` doesn't match — agents/users can copy-paste the "Did you mean" line

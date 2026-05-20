@@ -31,7 +31,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 
 Replace `<SYMBOL>` with the stock ticker the user mentions.
 
-All commands invoke `optix.sh` from the skill directory, a thin entry-point bundled with the skill.
+All commands invoke `bin/optix.sh`, a thin entry-point bundled with the skill.
 The wrapper resolves the runtime (Go binary + Python engine) in this order:
 1. `$OPTIX_HOME` environment variable (developer override; points to a source checkout)
 2. `<skill_dir>/.runtime/` (release-mode install; populated by install.sh)
@@ -39,55 +39,55 @@ The wrapper resolves the runtime (Go binary + Python engine) in this order:
 
 ### Get stock quote
 ```bash
-bash optix.sh quote <SYMBOL>
+bash bin/optix.sh quote <SYMBOL>
 ```
 
 ### Analyze a stock (technicals + options + strategy recommendations)
 ```bash
-bash optix.sh analyze <SYMBOL>
+bash bin/optix.sh analyze <SYMBOL>
 ```
 
 ### Analyze with per-contract Open Interest (enables Max Pain)
 ```bash
-bash optix.sh analyze <SYMBOL> --with-oi
-bash optix.sh analyze <SYMBOL> --with-oi --expiry 2026-05-22   # specific expiration
+bash bin/optix.sh analyze <SYMBOL> --with-oi
+bash bin/optix.sh analyze <SYMBOL> --with-oi --expiry 2026-05-22   # specific expiration
 ```
 
 The Max Pain line always shows the expiry used (e.g. `(expiry 2026-05-20)`), so the default-nearest pick is transparent. Use `--expiry YYYY-MM-DD` to override; bad expiries print a closest-first suggestion list.
 
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
-bash optix.sh dashboard
+bash bin/optix.sh dashboard
 ```
 
 ### List watchlist
 ```bash
-bash optix.sh watch list
+bash bin/optix.sh watch list
 ```
 
 ### Add to watchlist
 ```bash
-bash optix.sh watch add <SYMBOL>
+bash bin/optix.sh watch add <SYMBOL>
 ```
 
 ### Remove from watchlist
 ```bash
-bash optix.sh watch remove <SYMBOL>
+bash bin/optix.sh watch remove <SYMBOL>
 ```
 
 ### Show current account positions (stocks + options, with P&L)
 ```bash
-bash optix.sh positions
-bash optix.sh positions --type stk    # only stocks
-bash optix.sh positions --type opt    # only options
+bash bin/optix.sh positions
+bash bin/optix.sh positions --type stk    # only stocks
+bash bin/optix.sh positions --type opt    # only options
 ```
 
 ### Show recent executions (last 7 days)
 ```bash
-bash optix.sh trades
-bash optix.sh trades --symbol <SYMBOL>     # filter by symbol
-bash optix.sh trades --side BOT            # only buys (or SLD for sells)
-bash optix.sh trades --since 2026-05-10    # only on/after this date
+bash bin/optix.sh trades
+bash bin/optix.sh trades --symbol <SYMBOL>     # filter by symbol
+bash bin/optix.sh trades --side BOT            # only buys (or SLD for sells)
+bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
 ```
 
 ### Trade Journal (交易日记 / 复盘)
@@ -98,27 +98,27 @@ agent-friendly structured output.
 
 #### Journal status (does NOT require IBKR)
 ```bash
-bash optix.sh journal status --format json
+bash bin/optix.sh journal status --format json
 ```
 
 #### Pull recent executions into the journal
 ```bash
-bash optix.sh journal sync --format json
+bash bin/optix.sh journal sync --format json
 ```
 
 #### List persisted executions
 ```bash
-bash optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
+bash bin/optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
 ```
 
 #### View round-trip P&L
 ```bash
-bash optix.sh journal trips --status closed --format json
+bash bin/optix.sh journal trips --status closed --format json
 ```
 
 #### Retrospective summary
 ```bash
-bash optix.sh journal review --since 2026-05-01 --format json
+bash bin/optix.sh journal review --since 2026-05-01 --format json
 ```
 
 Pass `--no-sync` to any read command to skip the IBKR round-trip and read
@@ -132,9 +132,9 @@ Standalone Max Pain query for one option expiration. Reuses the existing
 `GetMaxPain` gRPC RPC; supports IBKR, Yahoo Finance, or automatic fallback.
 
 ```bash
-bash optix.sh max-pain GOOGL --expiry 2026-05-22 --format json
-bash optix.sh max-pain GOOGL --source yfinance --format json   # no IBKR required
-bash optix.sh max-pain GOOGL --expiry 2026-05-22               # text mode
+bash bin/optix.sh max-pain GOOGL --expiry 2026-05-22 --format json
+bash bin/optix.sh max-pain GOOGL --source yfinance --format json   # no IBKR required
+bash bin/optix.sh max-pain GOOGL --expiry 2026-05-22               # text mode
 ```
 
 `--source ibkr|yfinance|auto` (default `auto` — IBKR first, fall back to

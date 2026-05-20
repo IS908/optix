@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.4.1] - 2026-05-20
+
 ### Fixed
 - `skills/commands/optix/SKILL.md`: corrected the wrapper invocation path
   back to `bin/optix.sh`. A concurrent edit during the v0.4.0 work
@@ -19,7 +23,7 @@ above it.
   but the installed skill layout places the thin wrapper at
   `<skill_dir>/bin/optix.sh` (per `install.sh`'s own layout doc). Agents
   following the v0.4.0 descriptor hit `bash: optix.sh: No such file or
-  directory`.
+  directory`. (#26)
 
 ## [0.4.0] - 2026-05-20
 

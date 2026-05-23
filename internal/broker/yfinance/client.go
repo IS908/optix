@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -205,7 +206,16 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 	if err != nil {
 		return nil, fmt.Errorf("yfinance bars %s: %w", symbol, err)
 	}
+	return parseBarsJSON(out)
+}
 
+// parseBarsJSON converts yfinance's bars JSON response into a slice of
+// model.OHLCV. Bars whose timestamp can't be parsed by any known layout are
+// dropped (and logged) — letting them through with a zero Time would poison
+// the SQLite dedup key (`Timestamp.UTC().Truncate(24h).Format(RFC3339)`),
+// collapsing every bad bar onto the same "0001-01-01T00:00:00Z" row across
+// symbols. See #31.
+func parseBarsJSON(data []byte) ([]model.OHLCV, error) {
 	var rawBars []struct {
 		Timestamp string  `json:"timestamp"`
 		Open      float64 `json:"open"`
@@ -214,15 +224,15 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 		Close     float64 `json:"close"`
 		Volume    int64   `json:"volume"`
 	}
-	if err := json.Unmarshal(out, &rawBars); err != nil {
+	if err := json.Unmarshal(data, &rawBars); err != nil {
 		return nil, fmt.Errorf("parse yfinance bars: %w", err)
 	}
-
 	bars := make([]model.OHLCV, 0, len(rawBars))
 	for _, b := range rawBars {
-		ts, _ := time.Parse(time.RFC3339, b.Timestamp)
+		ts := parseBarTimestamp(b.Timestamp)
 		if ts.IsZero() {
-			ts, _ = time.Parse("2006-01-02T15:04:05-07:00", b.Timestamp)
+			log.Printf("yfinance: parseBarsJSON: skipping bar with unparseable timestamp %q", b.Timestamp)
+			continue
 		}
 		bars = append(bars, model.OHLCV{
 			Timestamp: ts,
@@ -234,6 +244,22 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 		})
 	}
 	return bars, nil
+}
+
+// parseBarTimestamp tries the two timestamp layouts yfinance has been
+// observed to emit. Returns time.Time{} on no match — the caller is
+// responsible for treating that as a skip signal (not as a valid datum).
+func parseBarTimestamp(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05-07:00", s); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // GetOptionChain fetches an option chain via yfinance. `expiration` is the

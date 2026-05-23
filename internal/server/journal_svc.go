@@ -78,15 +78,44 @@ type RoundTripFilter struct {
 }
 
 func (s *JournalService) ListRoundTrips(ctx context.Context, f RoundTripFilter) ([]model.RoundTrip, error) {
-	execs, err := s.store.ListExecutions(ctx, sqlite.JournalFilter{
-		Symbol: f.Symbol, Since: f.Since, Until: f.Until,
-	})
+	// Load executions WITHOUT time filtering — the matcher needs the full
+	// open/close history to pair fills correctly. Time-window narrowing
+	// happens below, anchored on trip CloseTime instead of execution time.
+	// This fixes the "open before window, close inside window" miscount
+	// (see issue #29 follow-up).
+	execs, err := s.store.ListExecutions(ctx, sqlite.JournalFilter{Symbol: f.Symbol})
 	if err != nil {
 		return nil, err
 	}
 	// Matcher expects ASC; store returns DESC.
 	sort.SliceStable(execs, func(i, j int) bool { return execs[i].Time.Before(execs[j].Time) })
 	trips := journal.MatchRoundTrips(execs, time.Now().UTC())
+
+	// Filter by CloseTime window when set. Boundary contract: Since is
+	// inclusive lower bound, Until is inclusive upper bound (callers — CLI
+	// and webui — already adjust YYYY-MM-DD inputs to EOD via
+	// `t.Add(24h - 1s)`; tests must mirror that). Status=open trips have a
+	// zero CloseTime and are dropped from windowed queries; callers wanting
+	// open trips should query without Since/Until (and optionally pass
+	// Status="open").
+	hasWindow := !f.Since.IsZero() || !f.Until.IsZero()
+	if hasWindow {
+		filtered := trips[:0]
+		for _, t := range trips {
+			if t.CloseTime.IsZero() {
+				continue // open trip has no close anchor → skip in windowed query
+			}
+			if !f.Since.IsZero() && t.CloseTime.Before(f.Since) {
+				continue
+			}
+			if !f.Until.IsZero() && t.CloseTime.After(f.Until) {
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		trips = filtered
+	}
+
 	if f.Status != "" {
 		wanted := strings.ToLower(f.Status)
 		filtered := trips[:0]
@@ -107,6 +136,12 @@ func (s *JournalService) Review(ctx context.Context, since, until time.Time) (mo
 		return model.ReviewSummary{}, err
 	}
 	sum := model.ReviewSummary{Since: since, Until: until, TotalRoundTrips: len(trips)}
+	// TotalExecutions counts raw fills with execution time in [since, until],
+	// intentionally a different metric than TotalRoundTrips. Trips are
+	// windowed by inclusive CloseTime ∈ [since, until] (see ListRoundTrips —
+	// callers pre-adjust YYYY-MM-DD to EOD), executions by raw time inclusive
+	// — they answer different questions: "how many trades happened this
+	// period" vs "how many positions realized P&L".
 	execs, err := s.store.ListExecutions(ctx, sqlite.JournalFilter{Since: since, Until: until})
 	if err != nil {
 		return model.ReviewSummary{}, err

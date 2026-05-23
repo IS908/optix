@@ -14,6 +14,70 @@ above it.
 
 _No changes yet._
 
+## [0.4.5] - 2026-05-23
+
+Patch release: two related correctness bugs in the trade journal subsystem
+that together prevented meaningful weekly P&L review for any account with
+spread trades. Discovered while doing a weekly review of GLW Bull Put
+Spread trades — the surface symptom ("realized P&L is wrong") was actually
+two independent bugs stacked.
+
+### Fixed
+
+- **BAG combo executions (spreads) now match as a single round trip
+  (#29).** IBKR sends three executions per spread trade: one BAG combo
+  row (no expiration/strike/right, signed combo price) plus one OPT row
+  per leg — all sharing the same PermID. The matcher was grouping by
+  SecType, so the three rows fell into three separate buckets and
+  produced three independent round trips per spread, with wrong per-trip
+  P&L (legs taken in isolation; BAG with multiplier=1 and unhandled
+  signed price) plus a phantom "open" BAG trip that never expired. The
+  GLW Bull Put Spread case produced 3 trips totalling -$180 plus a
+  phantom open; should have been 1 trip @ +$180.
+
+  **Fix (Path A):** group executions by `(Account, PermID)`; when a
+  group contains a BAG row, drop the OPT legs from matching and inherit
+  `max(legs.expiration)` onto the BAG (supports vertical, IC, butterfly,
+  and calendar spreads). Normalize the BAG's signed price to its
+  absolute value — IBKR's `Side` (SLD/BOT) stays authoritative for
+  open/close direction; the price sign is informational. Extend
+  `multiplierFor` and `emitOpen`'s expired-conversion logic to treat BAG
+  identically to OPT. Account-keyed grouping prevents silent
+  cross-account merging if two accounts ever produce the same numeric
+  PermID. Single-leg OPT and STK paths are untouched — Path A's
+  discipline is verified by 8 pre-existing matcher tests passing
+  unchanged. 14 new tests cover the GLW reproduction (T1), BTC closes
+  (T2), iron condor (T3), calendar fully-expired (T4), calendar
+  mid-state (T5), solo OPT regression (T6), STK regression (T7),
+  BAG+OPT coexistence (T8), cross-account isolation, plus a 4-row truth
+  table for the price normalization invariant.
+
+- **`journal review` and `journal trips` time windows now anchor on
+  round-trip CloseTime (#29 follow-up).** Both commands previously
+  filtered executions by time *before* feeding the matcher, so a trip
+  opened before the window but closed inside (e.g. a put sold last week
+  that expired this week) appeared as a dangling close fill with no
+  prior open — the matcher emitted a phantom "open" trip and the
+  realized P&L was silently dropped from the weekly aggregate.
+
+  **Fix:** load all executions (filtered only by `--symbol` when set),
+  run the matcher on the full history, then filter resulting trips by
+  inclusive `CloseTime ∈ [since, until]`. Callers (CLI and webui)
+  pre-adjust `--until YYYY-MM-DD` to end-of-day (`t.Add(24h - 1s)`) so
+  the inclusive upper bound covers the whole day the user typed. Open
+  trips (zero CloseTime) are skipped in windowed queries; callers
+  wanting open trips query without `--since/--until` or pass
+  `--status open`. `Review`'s `TotalExecutions` count intentionally
+  still uses the raw-execution window (it answers "how many fills this
+  week", distinct from "how many positions realized P&L"); the
+  divergence is documented in code. CLI help text for `journal trips`
+  and `journal review` `--since`/`--until` updated to reflect the new
+  anchor ("Earliest/Latest close date YYYY-MM-DD (filters by trip
+  CloseTime)"). 6 new R-tests pin the open-outside/close-inside
+  scenario, both-inside case, open-trip skip, boundary-inclusive
+  semantics, multi-window isolation, and an off-by-one regression
+  guard.
+
 ## [0.4.4] - 2026-05-23
 
 Patch release: two more silent-failure fixes continuing the v0.4.2 / v0.4.3

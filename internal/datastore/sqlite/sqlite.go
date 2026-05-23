@@ -162,7 +162,7 @@ func (s *Store) GetStockQuote(ctx context.Context, symbol string) (*model.StockQ
 	if err != nil {
 		return nil, err
 	}
-	q.Timestamp, _ = time.Parse(time.RFC3339, ts)
+	q.Timestamp = parseTimeOrLog(ts, "stock_quotes.updated_at")
 	return q, nil
 }
 
@@ -281,7 +281,7 @@ func (s *Store) GetBars(ctx context.Context, symbol, timeframe string, limit int
 		if err := rows.Scan(&ts, &b.Open, &b.High, &b.Low, &b.Close, &b.Volume); err != nil {
 			return nil, err
 		}
-		b.Timestamp, _ = time.Parse(time.RFC3339, ts)
+		b.Timestamp = parseTimeOrLog(ts, "ohlcv_bars.open_time")
 		bars = append(bars, b)
 	}
 	return bars, rows.Err()
@@ -456,7 +456,7 @@ func (s *Store) GetAnalysisCache(ctx context.Context, symbol string) ([]byte, ti
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	t, _ := time.Parse(time.RFC3339, cachedAt)
+	t := parseTimeOrLog(cachedAt, "analysis_cache.cached_at")
 	return []byte(payload), t, nil
 }
 
@@ -508,11 +508,11 @@ func (s *Store) GetSymbolFreshness(ctx context.Context, symbol string) (model.Sy
 		return model.SymbolFreshness{Symbol: symbol}, err
 	}
 	f := model.SymbolFreshness{Symbol: symbol}
-	if quoteAt != ""  { f.QuoteAt, _   = time.Parse(time.RFC3339, quoteAt) }
-	if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
-	if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
-	if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
-	if snapDate != "" { f.SnapshotAt, _ = time.Parse(time.RFC3339, snapDate) }
+	f.QuoteAt = parseTimeOrLog(quoteAt, "stock_quotes.updated_at")
+	f.OHLCVAt = parseTimeOrLog(ohlcvAt, "ohlcv_bars.{fetched_at,open_time}")
+	f.OptionsAt = parseTimeOrLog(optAt, "option_quotes.snapshot_time")
+	f.CacheAt = parseTimeOrLog(cacheAt, "analysis_cache.cached_at")
+	f.SnapshotAt = parseTimeOrLog(snapDate, "watchlist_snapshots.last_refreshed_at")
 	return f, nil
 }
 
@@ -557,11 +557,11 @@ func (s *Store) GetAllSymbolFreshness(ctx context.Context) ([]model.SymbolFreshn
 		if err := rows.Scan(&f.Symbol, &quoteAt, &ohlcvAt, &optAt, &cacheAt, &snapDate); err != nil {
 			return nil, err
 		}
-		if quoteAt != ""  { f.QuoteAt, _   = time.Parse(time.RFC3339, quoteAt) }
-		if ohlcvAt != ""  { f.OHLCVAt, _   = time.Parse(time.RFC3339, ohlcvAt) }
-		if optAt != ""    { f.OptionsAt, _  = time.Parse(time.RFC3339, optAt) }
-		if cacheAt != ""  { f.CacheAt, _   = time.Parse(time.RFC3339, cacheAt) }
-		if snapDate != "" { f.SnapshotAt, _ = time.Parse(time.RFC3339, snapDate) }
+		f.QuoteAt = parseTimeOrLog(quoteAt, "stock_quotes.updated_at")
+		f.OHLCVAt = parseTimeOrLog(ohlcvAt, "ohlcv_bars.{fetched_at,open_time}")
+		f.OptionsAt = parseTimeOrLog(optAt, "option_quotes.snapshot_time")
+		f.CacheAt = parseTimeOrLog(cacheAt, "analysis_cache.cached_at")
+		f.SnapshotAt = parseTimeOrLog(snapDate, "watchlist_snapshots.last_refreshed_at")
 		result = append(result, f)
 	}
 	return result, rows.Err()
@@ -601,7 +601,7 @@ func (s *Store) GetSymbolsNeedingRefresh() ([]model.SymbolRefresh, error) {
 			continue
 		}
 
-		sr.LastRefresh, _ = time.Parse(time.RFC3339, lastRefreshStr)
+		sr.LastRefresh = parseTimeOrLog(lastRefreshStr, "watchlist.last_refreshed_at")
 		results = append(results, sr)
 	}
 
@@ -705,16 +705,16 @@ func (s *Store) GetBackgroundJob(id int64) (*model.BackgroundJob, error) {
 	}
 
 	if startedStr.Valid {
-		t, _ := time.Parse(time.RFC3339, startedStr.String)
+		t := parseTimeOrLog(startedStr.String, "background_jobs.started_at")
 		job.StartedAt = &t
 	}
 
 	if completedStr.Valid {
-		t, _ := time.Parse(time.RFC3339, completedStr.String)
+		t := parseTimeOrLog(completedStr.String, "background_jobs.completed_at")
 		job.CompletedAt = &t
 	}
 
-	job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+	job.CreatedAt = parseTimeOrLog(createdStr, "background_jobs.created_at")
 
 	return &job, nil
 }
@@ -753,16 +753,16 @@ func (s *Store) GetBackgroundJobsForSymbol(symbol string) ([]*model.BackgroundJo
 		}
 
 		if startedStr.Valid {
-			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			t := parseTimeOrLog(startedStr.String, "background_jobs.started_at")
 			job.StartedAt = &t
 		}
 
 		if completedStr.Valid {
-			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			t := parseTimeOrLog(completedStr.String, "background_jobs.completed_at")
 			job.CompletedAt = &t
 		}
 
-		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+		job.CreatedAt = parseTimeOrLog(createdStr, "background_jobs.created_at")
 
 		jobs = append(jobs, &job)
 	}
@@ -806,16 +806,16 @@ func (s *Store) GetRecentFailures(hours int) ([]*model.BackgroundJob, error) {
 		}
 
 		if startedStr.Valid {
-			t, _ := time.Parse(time.RFC3339, startedStr.String)
+			t := parseTimeOrLog(startedStr.String, "background_jobs.started_at")
 			job.StartedAt = &t
 		}
 
 		if completedStr.Valid {
-			t, _ := time.Parse(time.RFC3339, completedStr.String)
+			t := parseTimeOrLog(completedStr.String, "background_jobs.completed_at")
 			job.CompletedAt = &t
 		}
 
-		job.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+		job.CreatedAt = parseTimeOrLog(createdStr, "background_jobs.created_at")
 
 		jobs = append(jobs, &job)
 	}

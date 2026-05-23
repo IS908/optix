@@ -45,6 +45,14 @@ func (fb *FallbackBroker) Connect(ctx context.Context) error {
 	// call it again here defensively in case the ibapi library left state behind.
 	_ = fb.primary.Disconnect()
 
+	// If the ctx was cancelled (user Ctrl-C, parent timeout fired), respect
+	// the cancellation rather than silently degrading to yfinance. yfinance's
+	// Connect is a no-op and would happily "succeed" on a dead ctx — pre-fix
+	// the user's abort was reinterpreted as "please use delayed data." See #41.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	log.Printf("⚠️  IBKR unavailable (%v), falling back to Yahoo Finance (delayed data, no options)", err)
 
 	if fbErr := fb.fallback.Connect(ctx); fbErr != nil {

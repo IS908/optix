@@ -37,11 +37,27 @@ const (
 	// and skills/commands/optix/SKILL.md.
 
 	// journalClientID is the IBKR ClientID used by every `optix journal …`
-	// subcommand and by the web UI's background journal sync ticker. It must
-	// not collide with other CLI subcommands: 1 quote, 2 analyze single,
-	// 3 dashboard, 4 positions, 5 trades, 6 `analyze --watchlist`. 7 is free
-	// today; scheduler workers start at 10 and the web pool starts at 30.
-	journalClientID = 7
+	// subcommand and by the web UI's background journal sync ticker.
+	//
+	// IBKR's `reqExecutions` only returns the connecting client's own fills
+	// unless the connecting ClientID matches TWS's "Master API Client ID"
+	// setting. Since optix is read-only (never places orders), a non-zero
+	// ClientID would always see 0 fills. ClientID 0 is IBKR's implicit
+	// master — it gets cross-client execution visibility without requiring
+	// users to configure anything in TWS. See issue #30.
+	//
+	// Users who have explicitly configured TWS → API → Master API Client ID
+	// to a different non-zero value will need to match that value here (or
+	// clear the TWS setting). No CLI override exists today; if this becomes
+	// a real need, expose it as a flag.
+	//
+	// Other CLI subcommands use their own non-zero IDs because they only
+	// need to read account-level data (positions, quotes) that does not
+	// require master client status: 1 quote, 2 analyze single, 3 dashboard,
+	// 4 positions, 5 trades (also reads executions but separately tracked),
+	// 6 `analyze --watchlist`, 8 max-pain. Scheduler workers start at 10
+	// and the web pool starts at 30.
+	journalClientID = 0
 )
 
 func cliExit(err error, code int) error {
@@ -184,9 +200,13 @@ func errString(e error) string {
 	return e.Error()
 }
 
-// connectJournalBroker connects using journalClientID (7), distinct from
-// quote(1), analyze(2), dashboard(3), positions(4), trades(5), and
-// `analyze --watchlist`(6). Scheduler workers use 10+ and the web pool 30+.
+// connectJournalBroker connects using journalClientID (0, the IBKR implicit
+// master). See the journalClientID const doc for the full rationale —
+// journal needs cross-client execution visibility, which requires master
+// status. Other subcommands use distinct non-zero IDs to avoid colliding
+// with each other: quote(1), analyze(2), dashboard(3), positions(4),
+// trades(5), `analyze --watchlist`(6), max-pain(8). Scheduler workers use
+// 10+ and the web pool 30+.
 func connectJournalBroker(ctx context.Context) (broker.Broker, error) {
 	b := factory.NewWithFallback(ibkr.Config{
 		Host: ibHost, Port: ibPort, ClientID: journalClientID,

@@ -16,6 +16,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// tradesClientID is the IBKR ClientID used by `optix trades`. Like
+// journalClientID, it must be 0 (IBKR implicit master) to get cross-client
+// execution visibility from `reqExecutions`. A non-zero ClientID would only
+// see fills the optix process itself placed — but optix is read-only and
+// never places orders, so a non-zero ID effectively returns 0 fills. See
+// issue #30.
+const tradesClientID = 0
+
 func newTradesCmd() *cobra.Command {
 	var symbol, side, since string
 
@@ -67,7 +75,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
-				ClientID: 5,
+				ClientID: tradesClientID,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
 				return fmt.Errorf("connect to broker: %w", err)

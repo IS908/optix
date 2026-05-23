@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -127,4 +128,70 @@ func TestMinFunction(t *testing.T) {
 			t.Errorf("min(%d, %d) = %d, expected %d", tt.a, tt.b, actual, tt.expected)
 		}
 	}
+}
+
+// TestWaitOrCancel pins the contract for #32: the throttle helper must
+// honor ctx cancellation so worker.Run() doesn't hang up to 12s after a
+// graceful shutdown signal. Returns true on cancel, false on timer fire.
+func TestWaitOrCancel(t *testing.T) {
+	t.Run("timer fires before cancel", func(t *testing.T) {
+		ctx := context.Background()
+		start := time.Now()
+		cancelled := waitOrCancel(ctx, 20*time.Millisecond)
+		elapsed := time.Since(start)
+		if cancelled {
+			t.Errorf("expected timer fire (cancelled=false), got cancelled=true")
+		}
+		if elapsed < 15*time.Millisecond {
+			t.Errorf("returned too early (%v); expected ~20ms", elapsed)
+		}
+	})
+
+	t.Run("pre-cancelled ctx returns immediately", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		start := time.Now()
+		cancelled := waitOrCancel(ctx, 5*time.Second)
+		elapsed := time.Since(start)
+		if !cancelled {
+			t.Errorf("expected cancelled=true, got false")
+		}
+		if elapsed > 100*time.Millisecond {
+			t.Errorf("waited too long (%v) on pre-cancelled ctx; expected <100ms", elapsed)
+		}
+	})
+
+	t.Run("cancel mid-wait returns within bound", func(t *testing.T) {
+		// This is the core regression check — the symptom in the wild is
+		// worker.Run() not returning after ctx is cancelled because the
+		// throttle was a bare time.Sleep. Verify we exit well under d.
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			cancel()
+		}()
+		start := time.Now()
+		cancelled := waitOrCancel(ctx, 5*time.Second)
+		elapsed := time.Since(start)
+		if !cancelled {
+			t.Errorf("expected cancelled=true after mid-wait cancel, got false")
+		}
+		if elapsed > 200*time.Millisecond {
+			t.Errorf("exit took %v; should be <200ms (cancelled after ~20ms)", elapsed)
+		}
+	})
+
+	t.Run("zero duration short-circuits", func(t *testing.T) {
+		// d <= 0 means "no throttle" — the function should still report
+		// the ctx state so the caller can decide whether to continue.
+		ctxAlive := context.Background()
+		if waitOrCancel(ctxAlive, 0) {
+			t.Errorf("d=0 with live ctx: expected false, got true")
+		}
+		ctxDead, cancel := context.WithCancel(context.Background())
+		cancel()
+		if !waitOrCancel(ctxDead, 0) {
+			t.Errorf("d=0 with cancelled ctx: expected true, got false")
+		}
+	})
 }

@@ -75,3 +75,88 @@ func TestWrapperExecutionsAccumulator(t *testing.T) {
 		t.Errorf("execution 0 Time failed to parse")
 	}
 }
+
+// TestWrapperEndAfterErrorNoDoubleClose pins the invariant that an End
+// callback firing AFTER an Error callback for the same reqID does not
+// crash the process with "close of closed channel". See #28.
+//
+// IBKR's API can deliver an Error followed by the request's End
+// callback (e.g. partial-data + error responses, or empty-result
+// requests that still emit XxxEnd). Before the fix, the Error path
+// closed `done` via `select { case <-done: default: close(done) }`
+// while End paths called raw `close(done)` — so on the End-after-Error
+// path the End would double-close and panic. The fix is to route every
+// close through a per-pending sync.Once.
+func TestWrapperEndAfterErrorNoDoubleClose(t *testing.T) {
+	cases := []struct {
+		name    string
+		setup   func(w *IbWrapper, reqID int64) <-chan struct{}
+		fireEnd func(w *IbWrapper, reqID int64)
+	}{
+		{
+			name: "executions",
+			setup: func(w *IbWrapper, reqID int64) <-chan struct{} {
+				pe := w.registerExecutions(reqID)
+				_ = w.registerError(reqID)
+				return pe.done
+			},
+			fireEnd: func(w *IbWrapper, reqID int64) { w.ExecDetailsEnd(reqID) },
+		},
+		{
+			name: "bars",
+			setup: func(w *IbWrapper, reqID int64) <-chan struct{} {
+				pb := w.registerBars(reqID)
+				_ = w.registerError(reqID)
+				return pb.done
+			},
+			fireEnd: func(w *IbWrapper, reqID int64) { w.HistoricalDataEnd(reqID, "", "") },
+		},
+		{
+			name: "contractDetails",
+			setup: func(w *IbWrapper, reqID int64) <-chan struct{} {
+				pcd := w.registerContractDetails(reqID)
+				_ = w.registerError(reqID)
+				return pcd.done
+			},
+			fireEnd: func(w *IbWrapper, reqID int64) { w.ContractDetailsEnd(reqID) },
+		},
+		{
+			name: "optParams",
+			setup: func(w *IbWrapper, reqID int64) <-chan struct{} {
+				pp := w.registerOptParams(reqID)
+				_ = w.registerError(reqID)
+				return pp.done
+			},
+			fireEnd: func(w *IbWrapper, reqID int64) { w.SecurityDefinitionOptionParameterEnd(reqID) },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("End after Error panicked: %v", r)
+				}
+			}()
+			w := newIbWrapper()
+			reqID := int64(42)
+			done := tc.setup(w, reqID)
+			defer w.unregister(reqID)
+
+			// 1. Error fires first — closes done via the Error handler's
+			//    data-channel-close branch (errCode 10168 = ≥2000 and ≠10167).
+			w.Error(reqID, 0, 10168, "test error", "")
+			select {
+			case <-done:
+				// expected: Error closed done
+			default:
+				t.Fatal("Error did not close the done channel")
+			}
+
+			// 2. End fires second. Pre-fix: raw close(done) on an
+			//    already-closed channel → panic (caught by defer above).
+			//    Post-fix: sync.Once swallows the second close.
+			tc.fireEnd(w, reqID)
+		})
+	}
+}

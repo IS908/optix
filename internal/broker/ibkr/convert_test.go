@@ -2,6 +2,7 @@ package ibkr
 
 import (
 	"testing"
+	"time"
 
 	"github.com/scmhub/ibapi"
 )
@@ -62,5 +63,77 @@ func TestExecutionFromIB(t *testing.T) {
 	}
 	if ex.Time.IsZero() {
 		t.Errorf("Time failed to parse from %q", "20260510-14:32:00")
+	}
+}
+
+// TestParseExecTime covers the layouts IBKR has been observed to send via
+// scmhub/ibapi, including the IANA-timezone-suffixed variant that started
+// landing in newer API versions and which broke journal sync (see #27).
+// Silent zero returns on parse failure had made the bug invisible —
+// these cases lock the parser's contract so the next format change shows up
+// in tests, not in days of bogus 0001-01-01 rows.
+func TestParseExecTime(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantZero bool
+		wantTZ   string // IANA name; empty = don't assert tz
+	}{
+		{
+			name:   "IANA timezone suffix (America/New_York)",
+			in:     "20260520 14:30:21 America/New_York",
+			wantTZ: "America/New_York",
+		},
+		{
+			name:   "IANA timezone suffix (Asia/Singapore)",
+			in:     "20260520 14:30:21 Asia/Singapore",
+			wantTZ: "Asia/Singapore",
+		},
+		{
+			name: "dash separator (legacy / paper)",
+			in:   "20260510-14:32:00",
+		},
+		{
+			name: "single space separator",
+			in:   "20260510 14:32:00",
+		},
+		{
+			name:     "empty string",
+			in:       "",
+			wantZero: true,
+		},
+		{
+			name:     "garbage",
+			in:       "not-a-time",
+			wantZero: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseExecTime(tt.in)
+			if tt.wantZero {
+				if !got.IsZero() {
+					t.Errorf("parseExecTime(%q) = %v, want zero time", tt.in, got)
+				}
+				return
+			}
+			if got.IsZero() {
+				t.Errorf("parseExecTime(%q) returned zero time; expected a parsed time", tt.in)
+				return
+			}
+			if tt.wantTZ != "" {
+				loc, err := time.LoadLocation(tt.wantTZ)
+				if err != nil {
+					t.Fatalf("LoadLocation(%q): %v", tt.wantTZ, err)
+				}
+				// Compare by wall-clock-in-tz: the parsed instant, rendered
+				// in the expected tz, should match the source HH:MM:SS.
+				if got.In(loc).Format("20060102 15:04:05") != "20260520 14:30:21" {
+					t.Errorf("parseExecTime(%q) = %v (in %s: %v), want wall time 20260520 14:30:21 in %s",
+						tt.in, got, tt.wantTZ, got.In(loc), tt.wantTZ)
+				}
+			}
+		})
 	}
 }

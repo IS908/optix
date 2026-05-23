@@ -14,6 +14,65 @@ above it.
 
 _No changes yet._
 
+## [0.4.4] - 2026-05-23
+
+Patch release: two more silent-failure fixes continuing the v0.4.2 / v0.4.3
+audit. The first is the most impactful since v0.4.0 — `optix journal sync`
+and `optix trades` were effectively dead on default TWS configurations,
+which explains why the journal feature looked sparse in real-world use.
+
+### Fixed
+- **`journal sync` and `trades` returned 0 fills on default TWS configs
+  (#30, #43).** IBKR's `reqExecutions` returns only the connecting
+  client's own fills *unless* the connecting ClientID matches TWS's
+  "Master API Client ID" setting. Since optix is read-only and never
+  places orders, the journal client (ClientID 7) and trades client
+  (ClientID 5) silently saw the empty set regardless of how much the
+  user traded in TWS. ClientID 0 is IBKR's *implicit* master and gets
+  cross-client execution visibility without requiring users to configure
+  TWS. Change `journalClientID` from 7 → 0 and extract a new
+  `tradesClientID = 0` const replacing the inline `ClientID: 5`. Other
+  subcommands keep their non-zero IDs since they call account/market
+  APIs (`reqMktData`, `reqPositions`, etc.) that aren't gated on master
+  status. New `TestExecutionsReaderClientIDsAreMaster` pins both
+  constants at 0 with a docstring tying the assertion back to #30 so a
+  future refactor can't silently regress.
+
+  **Caveat (documented in const docstrings):** users who have explicitly
+  set TWS → API → Master API Client ID to a different non-zero value
+  will still hit the original bug. No CLI override exists today — file
+  an issue if you need it.
+
+- **sqlite read paths silently dropped `time.Parse` errors (#44, #45).**
+  Seven read sites (`GetAnalysisCache`, `GetBackgroundJob` ×3 fields,
+  `GetBackgroundJobsForSymbol` ×3 fields, `GetRecentFailures` ×3 fields)
+  used `t, _ := time.Parse(time.RFC3339, ...)` and returned the zero
+  `time.Time` on parse failure. Under steady state this works (writers
+  format RFC3339), but the first writer/reader format drift (e.g. a
+  future writer switching to `RFC3339Nano`) would silently zero every
+  read and downstream code would mistake the zero for "no value." New
+  `parseTimeOrLog(s, fieldCtx) time.Time` helper: empty string returns
+  zero quietly (legitimate "no value"), parse failure returns zero AND
+  logs the field context + offending value so the next stale read shows
+  up in operator logs. Same silent-failure family as #27 / #31 / #37 /
+  #41.
+
+  Twelve other `time.Parse` sites in `sqlite.go` (freshness/cache
+  markers — `*At` fields) are out of scope per issue #44's deliberate
+  enumeration: their zero values render gracefully as "(never)" in user
+  output, not silent breaks.
+
+### Notes
+- Both fixes are independent (zero file overlap); merge order was
+  immaterial.
+- No `placeOrder` / `cancelOrder` / `modifyOrder` introduced —
+  read-only IBKR boundary preserved.
+- The v0.4.2 → v0.4.4 silent-failure audit has shipped **9 fixes
+  total** across IBKR, yfinance, scheduler, webui, server, broker, and
+  sqlite. Worth a follow-up sweep to catch any remaining
+  `_ = err` / `t, _ := time.Parse(...)` patterns in less-trafficked
+  code paths.
+
 ## [0.4.3] - 2026-05-23
 
 Patch release: three silent-failure bugs caught by the systematic review

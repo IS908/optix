@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -54,11 +55,14 @@ func (s *Server) handleWatchlistAdd(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Apply auto-refresh config to each added symbol
-	for _, symbol := range parts {
-		if err := s.store.UpdateWatchlistConfig(symbol, autoRefresh, refreshInterval); err != nil {
-			// Log error but don't fail the whole operation
-			_ = err
+	// Apply auto-refresh config to each added symbol. Per-symbol failures
+	// (e.g. transient SQLite errors) are logged but don't fail the batch —
+	// the symbols are already added; only their auto-refresh setting is at
+	// risk. See #37 — the pre-fix code claimed "Log error but don't fail"
+	// in a comment but actually swallowed errors with `_ = err`.
+	if cfgErrs := applyWatchlistConfig(s.store, parts, autoRefresh, refreshInterval); len(cfgErrs) > 0 {
+		for symbol, err := range cfgErrs {
+			log.Printf("webui: UpdateWatchlistConfig(%s) failed: %v", symbol, err)
 		}
 	}
 

@@ -14,6 +14,64 @@ above it.
 
 _No changes yet._
 
+## [0.4.2] - 2026-05-23
+
+Patch release: four root-cause fixes for production issues observed against
+live IBKR + Yahoo Finance. No new functionality; no schema changes; no
+behavior changes on the happy paths.
+
+### Fixed
+- **IBKR `Execution.time` IANA-tz parse failure (#27, #33).** `parseExecTime`
+  only handled three timestamp layouts; newer `scmhub/ibapi` versions deliver
+  the field with a trailing IANA timezone (e.g. `20260520 14:30:21
+  America/New_York`). None of the existing layouts matched, the function
+  silently returned `time.Time{}`, and downstream `journal list --since` /
+  `journal trips` consumed the zero-time as "year 1 AD" — surfaced as
+  ~106,000-day holding periods. Strip IANA suffix, resolve via
+  `time.LoadLocation`, parse with `ParseInLocation`. Log on any
+  no-layout-match so the next IBKR format change shows in logs instead of
+  rotting silently. Backwards-compatible with the old (no-tz) format.
+- **IBKR wrapper double-close panic (#28, #34).** `wrapper.go`'s Error
+  handler and the four `*End` callbacks (`HistoricalDataEnd`,
+  `ContractDetailsEnd`, `ExecDetailsEnd`,
+  `SecurityDefinitionOptionParameterEnd`) both closed the request's `done`
+  channel. On the End-after-Error sequence — realistic from IBKR's API on
+  partial-data + error responses — End would close an already-closed
+  channel and panic the whole process. `pendingQuote` and `pendingOI` were
+  already protected by `sync.Once`; this brings `pendingBars`,
+  `pendingOptParams`, `pendingContractDetails`, and `pendingExecutions`
+  to parity. Regression test wraps all four types in a `recover()`-guarded
+  table.
+- **yfinance silent data loss on unparseable timestamp (#31, #35).**
+  `GetHistoricalBars` swallowed `time.Parse` errors with `_, _ :=` and
+  appended a bar with `Timestamp = time.Time{}`. Downstream,
+  `sqlite.InsertBars` derives the dedup key from
+  `Timestamp.UTC().Truncate(24h).Format(RFC3339)` — every bad bar collapses
+  onto `0001-01-01T00:00:00Z` and `INSERT OR REPLACE` overwrites earlier
+  bad rows *across symbols*. Extract bar parsing into a pure
+  `parseBarsJSON([]byte) ([]model.OHLCV, error)` (testable without the
+  Python subprocess), drop bars with unparseable timestamps, and log the
+  miss.
+- **Scheduler worker hang on shutdown (#32, #36).** `worker.Run()` used a
+  bare `time.Sleep(w.throttle)` between tasks; the outer select honored
+  `ctx.Done()` while waiting for a task, but during the post-task throttle
+  (default 12s) cancellation was invisible. Graceful shutdown hung up to
+  12s per worker, 5× amplified at the default fleet size. New
+  `waitOrCancel(ctx, d) bool` helper uses `time.NewTimer` +
+  `defer timer.Stop()` (no timer leak) and selects between the timer and
+  `ctx.Done()`. Workers now exit promptly mid-throttle while preserving
+  the throttle behavior on the happy path. Helper-level unit test covers
+  the four cases: timer fires, pre-cancelled ctx, cancel mid-wait, and
+  `d ≤ 0`.
+
+### Notes
+- All four fixes are independent (zero file overlap); merge order was
+  immaterial.
+- No `placeOrder` / `cancelOrder` / `modifyOrder` paths introduced —
+  read-only IBKR boundary preserved.
+- Self-review loop: 2 consecutive clean rounds before merge. Each PR's
+  test demonstrably fails on its pre-fix code.
+
 ## [0.4.1] - 2026-05-20
 
 ### Fixed

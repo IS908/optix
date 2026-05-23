@@ -44,9 +44,14 @@ func (svc *MarketDataService) GetQuote(ctx context.Context, symbol string) (*mod
 // Cache is considered stale if the most recent bar is older than 2 calendar days
 // (accounts for weekends: Friday's bar is still valid on Sunday).
 func (svc *MarketDataService) GetHistoricalBars(ctx context.Context, symbol, timeframe string, days int) ([]model.OHLCV, error) {
-	// Try cache first
+	// Try cache first. The old predicate `len(bars) >= days` was structurally
+	// impossible for the canonical 365-day request — US markets only have
+	// ~252 trading days/year, so the cache was permanently bypassed. Now we
+	// gate purely on freshness; the caller's downstream "≥ N bars" check
+	// (e.g. fetchSymbolDataInternal requires 20) handles the
+	// degenerate "cache has very few bars" case. See #39.
 	bars, err := svc.store.GetBars(ctx, symbol, timeframe, days)
-	if err == nil && len(bars) >= days {
+	if err == nil && len(bars) > 0 {
 		// Check freshness: most recent bar should be within last 2 calendar days
 		latest := bars[len(bars)-1].Timestamp
 		if time.Since(latest) < 48*time.Hour {

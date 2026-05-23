@@ -35,15 +35,20 @@ type pendingOI struct {
 }
 
 // pendingBars accumulates historical bars for a single request.
+// `once` guards `done` so the End and Error paths can both attempt to
+// close idempotently — see #28.
 type pendingBars struct {
 	bars []ibapi.Bar
 	done chan struct{}
 	err  error
+	once sync.Once
 }
 
 // pendingOptParams holds option chain parameters returned by IB.
 // IB may call SecurityDefinitionOptionParameter multiple times for different
 // exchanges (and even multiple times for SMART), so we union all results.
+// `once` guards `done` against double-close from concurrent End + Error
+// (#28).
 type pendingOptParams struct {
 	expSet     map[string]struct{}  // deduplicated expirations
 	strikeSet  map[float64]struct{} // deduplicated strikes
@@ -52,12 +57,16 @@ type pendingOptParams struct {
 	multiplier  string
 	done        chan struct{}
 	err         error
+	once        sync.Once
 }
 
 // pendingContractDetails holds the conID returned by ReqContractDetails.
+// `once` guards `done` against double-close from concurrent End + Error
+// (#28).
 type pendingContractDetails struct {
 	conID int64
 	done  chan struct{}
+	once  sync.Once
 }
 
 // pendingPositions accumulates account positions. ReqPositions is
@@ -69,9 +78,12 @@ type pendingPositions struct {
 }
 
 // pendingExecutions accumulates executions for a single ReqExecutions request.
+// `once` guards `done` against double-close from concurrent End + Error
+// (#28).
 type pendingExecutions struct {
 	executions []model.Execution
 	done       chan struct{}
+	once       sync.Once
 }
 
 // IbWrapper implements ibapi.EWrapper and routes callbacks to waiting goroutines
@@ -310,7 +322,7 @@ func (w *IbWrapper) HistoricalDataEnd(reqID int64, _, _ string) {
 	pb, ok := w.bars[reqID]
 	w.mu.Unlock()
 	if ok {
-		close(pb.done)
+		pb.once.Do(func() { close(pb.done) })
 	}
 }
 
@@ -331,7 +343,7 @@ func (w *IbWrapper) ContractDetailsEnd(reqID int64) {
 	pcd, ok := w.contractDetails[reqID]
 	w.mu.Unlock()
 	if ok {
-		close(pcd.done)
+		pcd.once.Do(func() { close(pcd.done) })
 	}
 }
 
@@ -380,7 +392,7 @@ func (w *IbWrapper) SecurityDefinitionOptionParameterEnd(reqID int64) {
 	}
 	w.mu.Unlock()
 	if ok {
-		close(pp.done)
+		pp.once.Do(func() { close(pp.done) })
 	}
 }
 
@@ -420,7 +432,7 @@ func (w *IbWrapper) ExecDetailsEnd(reqID int64) {
 	pe, ok := w.executions[reqID]
 	w.mu.Unlock()
 	if ok {
-		close(pe.done)
+		pe.once.Do(func() { close(pe.done) })
 	}
 }
 
@@ -469,35 +481,19 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 			pq.once.Do(func() { close(pq.done) })
 		}
 		if pb, has := w.bars[reqID]; has {
-			select {
-			case <-pb.done:
-			default:
-				close(pb.done)
-			}
+			pb.once.Do(func() { close(pb.done) })
 		}
 		if pp, has := w.optParams[reqID]; has {
-			select {
-			case <-pp.done:
-			default:
-				close(pp.done)
-			}
+			pp.once.Do(func() { close(pp.done) })
 		}
 		if pcd, has := w.contractDetails[reqID]; has {
-			select {
-			case <-pcd.done:
-			default:
-				close(pcd.done)
-			}
+			pcd.once.Do(func() { close(pcd.done) })
 		}
 		if po, has := w.oi[reqID]; has {
 			po.once.Do(func() { close(po.done) })
 		}
 		if pe, has := w.executions[reqID]; has {
-			select {
-			case <-pe.done:
-			default:
-				close(pe.done)
-			}
+			pe.once.Do(func() { close(pe.done) })
 		}
 		w.mu.Unlock()
 	}

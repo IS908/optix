@@ -434,8 +434,8 @@ func newJournalTripsCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&symbol, "symbol", "", "Filter by symbol")
 	cmd.Flags().StringVar(&status, "status", "", "open | closed | expired")
-	cmd.Flags().StringVar(&since, "since", "", "Earliest open date YYYY-MM-DD")
-	cmd.Flags().StringVar(&until, "until", "", "Latest open date YYYY-MM-DD")
+	cmd.Flags().StringVar(&since, "since", "", "Earliest close date YYYY-MM-DD (filters by trip CloseTime)")
+	cmd.Flags().StringVar(&until, "until", "", "Latest close date YYYY-MM-DD (filters by trip CloseTime)")
 	cmd.Flags().BoolVar(&noSync, "no-sync", false, "Skip Layer-1 auto-sync")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 	return cmd
@@ -508,8 +508,8 @@ func newJournalReviewCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&since, "since", "", "Earliest open date YYYY-MM-DD")
-	cmd.Flags().StringVar(&until, "until", "", "Latest open date YYYY-MM-DD")
+	cmd.Flags().StringVar(&since, "since", "", "Earliest close date YYYY-MM-DD (filters by trip CloseTime)")
+	cmd.Flags().StringVar(&until, "until", "", "Latest close date YYYY-MM-DD (filters by trip CloseTime)")
 	cmd.Flags().BoolVar(&noSync, "no-sync", false, "Skip Layer-1 auto-sync")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 	return cmd

@@ -14,6 +14,55 @@ above it.
 
 _No changes yet._
 
+## [0.4.3] - 2026-05-23
+
+Patch release: three silent-failure bugs caught by the systematic review
+pass that produced v0.4.2. Same shape as that batch — no new functionality,
+no schema changes, fixes are minimal + test-pinned. Two cover broker /
+infra (cancellation + cache), one covers the webui handler error path.
+
+### Fixed
+- **Web UI silently dropped per-symbol `UpdateWatchlistConfig` errors (#37,
+  #38).** `handleWatchlistAdd` had a `_ = err` swallow paired with a comment
+  claiming "log error" — the log was never written. Symbols stayed in the
+  watchlist without their intended auto-refresh setting and nothing
+  surfaced the failure. Extracted `applyWatchlistConfig(store, symbols,
+  autoRefresh, interval) map[string]error` (testable via a 1-method
+  interface), and the handler now `log.Printf`s each per-symbol error. A
+  test pins "does not stop on first error" so a future early-return
+  refactor can't silently regress.
+- **`MarketDataService.GetHistoricalBars` cache predicate never held (#39,
+  #40).** The cache short-circuit was gated on `len(bars) >= days`, but
+  `store.GetBars` is a `LIMIT ?` query and US markets only have ~252
+  trading days per year. The canonical 365-day request could never satisfy
+  the predicate — so every `analyze` / `dashboard` / scheduler call
+  bypassed the cache and fanned out to IBKR / yfinance, masking a
+  silent perf regression. The downstream `>= 20` floor in
+  `fetchSymbolDataInternal` already handled the degenerate "few cached
+  bars" case, so the fix is simply `len(bars) > 0` + keep the 48h
+  freshness check as the meaningful guard. Tests pin fresh-hit /
+  stale-fetch / broker-error-fall-back-to-stale paths with a
+  call-counting fake broker.
+- **`FallbackBroker.Connect` treated `context.Canceled` as "IBKR
+  unreachable" (#41, #42).** Any primary error fell through to the yfinance
+  fallback unconditionally. Since `yfinance.Connect` is a no-op that
+  ignores ctx, a user's Ctrl-C during a slow IBKR dial was silently
+  reinterpreted as "please use delayed data." Add a `ctx.Err()` check
+  between primary failure and fallback `Connect` so both
+  `context.Canceled` and `context.DeadlineExceeded` propagate. First test
+  file in `internal/broker/` — 3 subtests pin the contract, including
+  asserting the fallback is *not* invoked on a pre-cancelled ctx.
+
+### Notes
+- All three fixes are independent (zero file overlap); merge order was
+  immaterial. Continues the silent-failure-audit theme of v0.4.2.
+- Hard scope boundary preserved — no `placeOrder` / `cancelOrder` /
+  `modifyOrder` introduced.
+- Out-of-scope finding from #42 worth a follow-up: two outdated comments
+  in `fallback.go` claim yfinance lacks option-chain / OI support, but
+  yfinance has implemented `OIFetcher` since v0.4.0. Cosmetic but worth
+  a small doc PR.
+
 ## [0.4.2] - 2026-05-23
 
 Patch release: four root-cause fixes for production issues observed against

@@ -66,13 +66,35 @@ func (w *Worker) Run(ctx context.Context) {
 		case task := <-w.queue:
 			w.executeTask(ctx, task)
 
-			// Throttle to avoid IBKR rate limits
-			time.Sleep(w.throttle)
+			// Throttle to avoid IBKR rate limits, but bail out promptly on
+			// graceful shutdown — a bare time.Sleep here was hanging workers
+			// for up to 12s past ctx cancel (#32).
+			if waitOrCancel(ctx, w.throttle) {
+				log.Info().Int("worker_id", w.id).Msg("Worker stopped (throttle interrupted)")
+				return
+			}
 
 		case <-ctx.Done():
 			log.Info().Int("worker_id", w.id).Msg("Worker stopped")
 			return
 		}
+	}
+}
+
+// waitOrCancel blocks for d or until ctx is cancelled. Returns true if
+// the context was cancelled — caller exits instead of continuing. For
+// d <= 0, no wait; the function still reports ctx state.
+func waitOrCancel(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() != nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return true
 	}
 }
 

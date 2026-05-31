@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	AnalysisService_PriceOption_FullMethodName          = "/optix.analysis.v1.AnalysisService/PriceOption"
+	AnalysisService_ImpliedVol_FullMethodName           = "/optix.analysis.v1.AnalysisService/ImpliedVol"
 	AnalysisService_GetMaxPain_FullMethodName           = "/optix.analysis.v1.AnalysisService/GetMaxPain"
 	AnalysisService_AnalyzeStock_FullMethodName         = "/optix.analysis.v1.AnalysisService/AnalyzeStock"
 	AnalysisService_BatchQuickAnalysis_FullMethodName   = "/optix.analysis.v1.AnalysisService/BatchQuickAnalysis"
@@ -36,6 +37,10 @@ const (
 type AnalysisServiceClient interface {
 	// PriceOption computes Black-Scholes price and Greeks for a single option.
 	PriceOption(ctx context.Context, in *PriceOptionRequest, opts ...grpc.CallOption) (*PriceOptionResponse, error)
+	// ImpliedVol inverts an observed option mark into an implied volatility
+	// (Newton-Raphson, Brent fallback). Used by the portfolio Greeks aggregator
+	// as the chain-IV fallback. converged=false when inversion can't be trusted.
+	ImpliedVol(ctx context.Context, in *ImpliedVolRequest, opts ...grpc.CallOption) (*ImpliedVolResponse, error)
 	// GetMaxPain computes the Max Pain strike for the nearest expiry.
 	GetMaxPain(ctx context.Context, in *MaxPainRequest, opts ...grpc.CallOption) (*MaxPainResponse, error)
 	// AnalyzeStock runs the full analysis pipeline for a single stock.
@@ -61,6 +66,16 @@ func (c *analysisServiceClient) PriceOption(ctx context.Context, in *PriceOption
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PriceOptionResponse)
 	err := c.cc.Invoke(ctx, AnalysisService_PriceOption_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *analysisServiceClient) ImpliedVol(ctx context.Context, in *ImpliedVolRequest, opts ...grpc.CallOption) (*ImpliedVolResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImpliedVolResponse)
+	err := c.cc.Invoke(ctx, AnalysisService_ImpliedVol_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +141,10 @@ func (c *analysisServiceClient) GetSupportResistance(ctx context.Context, in *Su
 type AnalysisServiceServer interface {
 	// PriceOption computes Black-Scholes price and Greeks for a single option.
 	PriceOption(context.Context, *PriceOptionRequest) (*PriceOptionResponse, error)
+	// ImpliedVol inverts an observed option mark into an implied volatility
+	// (Newton-Raphson, Brent fallback). Used by the portfolio Greeks aggregator
+	// as the chain-IV fallback. converged=false when inversion can't be trusted.
+	ImpliedVol(context.Context, *ImpliedVolRequest) (*ImpliedVolResponse, error)
 	// GetMaxPain computes the Max Pain strike for the nearest expiry.
 	GetMaxPain(context.Context, *MaxPainRequest) (*MaxPainResponse, error)
 	// AnalyzeStock runs the full analysis pipeline for a single stock.
@@ -149,6 +168,9 @@ type UnimplementedAnalysisServiceServer struct{}
 
 func (UnimplementedAnalysisServiceServer) PriceOption(context.Context, *PriceOptionRequest) (*PriceOptionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PriceOption not implemented")
+}
+func (UnimplementedAnalysisServiceServer) ImpliedVol(context.Context, *ImpliedVolRequest) (*ImpliedVolResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ImpliedVol not implemented")
 }
 func (UnimplementedAnalysisServiceServer) GetMaxPain(context.Context, *MaxPainRequest) (*MaxPainResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMaxPain not implemented")
@@ -200,6 +222,24 @@ func _AnalysisService_PriceOption_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AnalysisServiceServer).PriceOption(ctx, req.(*PriceOptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AnalysisService_ImpliedVol_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImpliedVolRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AnalysisServiceServer).ImpliedVol(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AnalysisService_ImpliedVol_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AnalysisServiceServer).ImpliedVol(ctx, req.(*ImpliedVolRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -304,6 +344,10 @@ var AnalysisService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PriceOption",
 			Handler:    _AnalysisService_PriceOption_Handler,
+		},
+		{
+			MethodName: "ImpliedVol",
+			Handler:    _AnalysisService_ImpliedVol_Handler,
 		},
 		{
 			MethodName: "GetMaxPain",

@@ -13,6 +13,11 @@ service AnalysisService {
   // PriceOption computes Black-Scholes price and Greeks for a single option.
   rpc PriceOption(PriceOptionRequest) returns (PriceOptionResponse);
 
+  // ImpliedVol inverts an observed option mark into an implied volatility
+  // (Newton-Raphson, Brent fallback). Used by the portfolio Greeks aggregator
+  // as the chain-IV fallback. converged=false when inversion can't be trusted.
+  rpc ImpliedVol(ImpliedVolRequest) returns (ImpliedVolResponse);
+
   // GetMaxPain computes the Max Pain strike for the nearest expiry.
   rpc GetMaxPain(MaxPainRequest) returns (MaxPainResponse);
 
@@ -45,6 +50,23 @@ message PriceOptionRequest {
 message PriceOptionResponse {
   double price = 1;
   optix.marketdata.v1.Greeks greeks = 2;
+}
+
+// ── ImpliedVol ────────────────────────────────────────────────────────────────
+
+message ImpliedVolRequest {
+  double market_price = 1;
+  double spot_price = 2;
+  double strike = 3;
+  double time_to_expiry = 4;  // in years
+  double risk_free_rate = 5;
+  double dividend_yield = 6;
+  optix.marketdata.v1.OptionType option_type = 7;
+}
+
+message ImpliedVolResponse {
+  double implied_volatility = 1;
+  bool converged = 2;
 }
 
 // ── GetMaxPain ────────────────────────────────────────────────────────────────

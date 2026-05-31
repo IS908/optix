@@ -88,6 +88,14 @@ func ResolveSectorMap(explicit string) (sm *SectorMap, source string, err error)
 		}
 		loaded, e := LoadSectorMap(candidate)
 		if e == nil {
+			// A valid-but-empty file (e.g. `{}` or a truncated write) would
+			// collapse every ticker to "unclassified" — the issue-#48 failure
+			// mode one tier down. Treat it as "not really a map here" and fall
+			// through to the next tier / embedded default rather than honoring
+			// an empty auto-discovered file.
+			if len(loaded.TickerSectors) == 0 {
+				continue
+			}
 			return loaded, candidate, nil
 		}
 		// File exists but failed to parse — surface that rather than silently

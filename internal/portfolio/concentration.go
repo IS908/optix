@@ -184,9 +184,44 @@ type Report struct {
 	UsedConfig        Config            `json:"used_config"`
 }
 
+// isResidual reports whether a position is a closed-out residual (qty≈0).
+// IBKR keeps zero-quantity rows for ~T+2 after a close; see issue #52.
+func isResidual(p model.Position) bool {
+	return math.Abs(p.Quantity) < 1e-9
+}
+
+// isNonUSD reports whether a position is priced in a currency other than USD.
+// An empty Currency is treated as USD (older data / fixtures predating the
+// field). Non-USD market values can't be mixed into the USD-denominated math
+// without FX conversion; see issue #49.
+func isNonUSD(p model.Position) bool {
+	return p.Currency != "" && !strings.EqualFold(p.Currency, "USD")
+}
+
+// FallbackNLV computes the sum-of-|MarketValue| denominator the CLI uses when
+// the caller can't supply a real net-liq. It applies the SAME inclusion rules
+// as Compute (excludes qty≈0 residuals and non-USD holdings) so the fallback
+// denominator matches Compute's numerator set — otherwise deployed_pct and
+// per-name weights desync whenever a foreign-currency or residual row is
+// present (the v0.5.1 review-pass fix). Non-finite market values are skipped.
+func FallbackNLV(positions []model.Position) float64 {
+	var nlv float64
+	for _, p := range positions {
+		if isResidual(p) || isNonUSD(p) {
+			continue
+		}
+		if math.IsNaN(p.MarketValue) || math.IsInf(p.MarketValue, 0) {
+			continue
+		}
+		nlv += math.Abs(p.MarketValue)
+	}
+	return nlv
+}
+
 // Compute aggregates positions into a Report. netLiqUSD must be > 0; if the
-// caller can't read it from the broker yet, pass the sum of |MV| as a
-// fallback (deployed_pct will then be 100%, which the renderer flags).
+// caller can't read it from the broker yet, pass FallbackNLV(positions) (the
+// sum of |MV| over USD, non-residual legs) — deployed_pct then renders 100%,
+// the visual cue that the denominator is a fallback rather than truth.
 func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *SectorMap) *Report {
 	// Apply per-field defaults so callers using `portfolio.Config{}` zero-init
 	// don't accidentally get red flags on every non-zero position. Each
@@ -215,27 +250,20 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	missingLegsByTicker := map[string]int{}
 	mismatchByTicker := map[string]string{} // ticker → its non-USD currency
 	for _, p := range positions {
-		// Skip closed-out residuals: IBKR's reqPositions keeps zero-quantity
-		// rows for ~T+2 after a close. Including them as 0% entries in the
-		// rendered Top-N table and sector list is pure noise. See issue #52.
-		//
-		// Key on quantity ALONE, not (quantity && marketValue): a closed
-		// position is defined by qty==0 regardless of any stale mark IBKR may
-		// still report for it (the row can briefly carry the last MV before it
-		// drops). Use an epsilon rather than == 0 so a float-represented zero
-		// (e.g. -0.0, or a value computed by subtraction) is caught too. The
-		// 1e-9 threshold is far below any real fractional share, so legitimate
-		// dust holdings are preserved.
-		if math.Abs(p.Quantity) < 1e-9 {
+		// Skip closed-out residuals (qty≈0). IBKR keeps zero-quantity rows for
+		// ~T+2 after a close; including them as 0% entries is pure noise. Keyed
+		// on quantity alone so a stale nonzero mark on a closed row doesn't slip
+		// through, with an epsilon for float-represented zeros. See issue #52.
+		if isResidual(p) {
 			continue
 		}
 		// Skip non-USD legs: every weight here is computed against a USD NLV
 		// denominator, so mixing a raw HKD/SGD MarketValue in silently
 		// mis-weights it (an HKD value is ~8× too large). Until FX conversion
 		// lands (v2.1), elide the leg and surface it as a warning rather than
-		// trust a wrong number. An empty Currency is treated as USD (older
-		// data / test fixtures that predate the field). See issue #49.
-		if p.Currency != "" && !strings.EqualFold(p.Currency, "USD") {
+		// trust a wrong number. See issue #49. (FallbackNLV applies the same
+		// exclusion so the denominator stays consistent with this numerator.)
+		if isNonUSD(p) {
 			mismatchByTicker[strings.ToUpper(p.Symbol)] = strings.ToUpper(p.Currency)
 			continue
 		}
@@ -259,6 +287,16 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		if p.IsOption() && p.MarketValue == 0 && p.Quantity != 0 {
 			g.HasMissingMark = true
 			missingLegsByTicker[t]++
+			continue
+		}
+		// Guard against a non-finite mark (NaN/±Inf from a broker glitch or a
+		// bad FX/division artifact). Letting it through would poison HHI and
+		// every weight, and crucially make the Report fail json.Marshal —
+		// cron consumers would get an error instead of a snapshot. Treat it as
+		// an unusable mark: keep the position visible at 0 MV via
+		// HasMissingMark, but contribute nothing to the math.
+		if math.IsNaN(p.MarketValue) || math.IsInf(p.MarketValue, 0) {
+			g.HasMissingMark = true
 			continue
 		}
 		g.AbsMarketValueUSD += math.Abs(p.MarketValue)

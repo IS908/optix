@@ -605,6 +605,63 @@ func containsTicker(ug []UnderlyingGroup, ticker string) bool {
 	return false
 }
 
+// TestFallbackNLVMatchesComputeInclusion guards the v0.5.1 review-pass fix:
+// FallbackNLV must apply the SAME exclusions as Compute (non-USD + residual),
+// so when --net-liq-usd is omitted the denominator matches the numerator and
+// deployed_pct stays 100%. Pre-fix the CLI summed all |MV| (currency-blind),
+// inflating the denominator and deflating every USD weight.
+func TestFallbackNLVMatchesComputeInclusion(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450), // USD 45,000 — included
+		{Symbol: "0700", SecType: "STK", Quantity: 100, MarketValue: 38_000, Multiplier: 1, Currency: "HKD"}, // excluded
+		{Symbol: "DEAD", SecType: "OPT", Quantity: 0, MarketValue: 1234, Multiplier: 100},                    // residual, excluded
+	}
+	nlv := FallbackNLV(pos)
+	if nlv != 45_000 {
+		t.Fatalf("FallbackNLV = %v, want 45000 (USD MSFT only; HKD and residual excluded)", nlv)
+	}
+	// Feeding that NLV to Compute must yield deployed_pct == 100%.
+	r := Compute(pos, nlv, DefaultConfig(), fakeSectorMap())
+	if math.Abs(r.DeployedPct-100.0) > 0.01 {
+		t.Errorf("DeployedPct = %.2f, want 100.0 (fallback denominator matches numerator)", r.DeployedPct)
+	}
+	if math.Abs(r.CashUSD) > 0.01 {
+		t.Errorf("CashUSD = %.2f, want 0 (no phantom cash from excluded foreign MV)", r.CashUSD)
+	}
+}
+
+// TestComputeNonFiniteMarkDoesNotPoisonReport guards against a NaN/Inf market
+// value breaking json.Marshal or poisoning HHI/weights. The bad-mark position
+// is flagged (HasMissingMark) and contributes 0; the Report stays serializable.
+func TestComputeNonFiniteMarkDoesNotPoisonReport(t *testing.T) {
+	for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		pos := []model.Position{
+			stockPos("MSFT", 100, 450),
+			{Symbol: "GLITCH", SecType: "STK", Quantity: 10, MarketValue: bad, Multiplier: 1},
+		}
+		r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+		if math.IsNaN(r.HHI) || math.IsInf(r.HHI, 0) {
+			t.Errorf("bad MV %v poisoned HHI: %v", bad, r.HHI)
+		}
+		// Report must marshal cleanly — the whole point of the guard.
+		if _, err := json.Marshal(r); err != nil {
+			t.Errorf("Report with bad MV %v failed json.Marshal: %v", bad, err)
+		}
+		// GLITCH is visible but flagged and contributes 0.
+		for _, u := range r.Underlyings {
+			if u.Ticker == "GLITCH" {
+				if !u.HasMissingMark {
+					t.Errorf("GLITCH (MV=%v) should be flagged HasMissingMark", bad)
+				}
+				if u.AbsMarketValueUSD != 0 {
+					t.Errorf("GLITCH AbsMarketValueUSD = %v, want 0", u.AbsMarketValueUSD)
+				}
+			}
+		}
+	}
+}
+
 // TestCompute_NonUSDPositionExcludedWithWarning guards issue #49: a position
 // whose IBKR contract currency isn't USD must NOT be mixed into the USD-NLV
 // weight math (its raw MV is in the wrong unit). It's elided and surfaced via

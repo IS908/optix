@@ -14,6 +14,20 @@ above it.
 
 ### Fixed
 
+- **`portfolio concentration` fallback NLV now matches `Compute`'s
+  inclusion rules (v0.5.1 review pass).** When `--net-liq-usd` was
+  omitted, the CLI summed `|MarketValue|` over *all* positions
+  (currency-blind) for the denominator, but `Compute` excludes non-USD
+  and residual legs from the numerator — so a non-USD holding inflated
+  the denominator, broke the documented `deployed_pct == 100%` fallback
+  cue, and showed phantom "cash". The shared `portfolio.FallbackNLV`
+  helper now applies the same exclusions in both places. Also guards
+  against a non-finite (NaN/±Inf) market value, which would have poisoned
+  HHI/weights and made the JSON snapshot fail `json.Marshal` — such a
+  position is now flagged and contributes 0. `portfolio concentration`
+  also follows the project exit-code convention (2 = IBKR unreachable,
+  3 = SQLite) so cron consumers can distinguish retryable failures.
+
 - **`portfolio concentration` no longer silently mis-weights non-USD
   holdings (#49).** `positionFromIB` dropped the IBKR contract currency, so
   a position priced in HKD/SGD had its raw market value mixed straight into
@@ -661,7 +675,15 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/IS908/optix/releases/tag/v0.2.0
-[0.1.1]: https://github.com/IS908/optix/releases/tag/v0.1.1
+[Unreleased]: https://github.com/IS908/optix/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0
+[0.4.5]: https://github.com/IS908/optix/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/IS908/optix/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/IS908/optix/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/IS908/optix/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/IS908/optix/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/IS908/optix/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/IS908/optix/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/IS908/optix/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/IS908/optix/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

@@ -14,6 +14,15 @@ above it.
 
 _No changes yet._
 
+## [0.6.1] - 2026-05-31
+
+Patch release for portfolio Greeks correctness and latency when IBKR option
+position marks are missing. No CLI/API changes.
+
+### Fixed
+
+- **`portfolio greeks` prices missing-mark option legs from OI-chain IV / MarketValue fallback (#61).** When IBKR position marks were missing (`LastPrice == 0`), Greeks previously skipped otherwise valid option legs. The aggregator now prefers the OI-enriched chain path for missing-mark held options so per-contract IV can be used, preserves MV/weight from `Position.MarketValue`, and can derive a per-share mark from `abs(MarketValue)/(abs(qty)*multiplier)` for mark-IV inversion when OI-chain IV is unavailable. The expensive OI path is avoided for fully marked chains. Option chains now backfill missing underlying spot from quote data (Last → bid/ask midpoint → Close), and the IBKR OI path sets `UnderlyingPrice` from the spot quote it already fetched to avoid an extra quote round trip.
+
 ## [0.6.0] - 2026-05-31
 
 Minor release: v2.0 Phase 2 — portfolio Greeks aggregation. Adds the

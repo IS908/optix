@@ -7,6 +7,42 @@ import (
 	"testing"
 )
 
+func TestFmtSignedMoney2_KeepsCents(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want string
+	}{
+		{-8.20, "-$8.20"},
+		{-24.50, "-$24.50"},
+		{0, "+$0.00"},
+		{1234.5, "+$1,234.50"},
+		{-156.999, "-$157.00"}, // rounds, carries into the next dollar
+	}
+	for _, c := range cases {
+		if got := fmtSignedMoney2(c.in); got != c.want {
+			t.Errorf("fmtSignedMoney2(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestIVLabel_Decorations(t *testing.T) {
+	cases := []struct {
+		g    GreeksGroup
+		want string
+	}{
+		{GreeksGroup{IVSource: "chain", LegCount: 1}, "chain ✓"},
+		{GreeksGroup{IVSource: "mark", LegCount: 1}, "mark ~"},
+		{GreeksGroup{IVSource: "stock", LegCount: 1}, "stock"},
+		{GreeksGroup{IVSource: "mixed", LegCount: 2}, "mixed"},
+		{GreeksGroup{LegCount: 0, SkippedLegCount: 1}, "✗ skipped"},
+	}
+	for _, c := range cases {
+		if got := ivLabel(c.g); got != c.want {
+			t.Errorf("ivLabel(%+v) = %q, want %q", c.g, got, c.want)
+		}
+	}
+}
+
 func TestRenderGreeks_ContainsHeaderAndUnits(t *testing.T) {
 	r := &GreeksReport{
 		GroupBy: "underlying", NetLiqUSD: 1_000_000, RiskFreeRate: 0.043,

@@ -38,6 +38,7 @@ will add Greeks aggregation and stress testing — see
 docs/v2.0-portfolio-risk-layer.md for the roadmap.`,
 	}
 	cmd.AddCommand(newPortfolioConcentrationCmd())
+	cmd.AddCommand(newPortfolioGreeksCmd())
 	return cmd
 }
 

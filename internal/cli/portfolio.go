@@ -34,6 +34,21 @@ docs/v2.0-portfolio-risk-layer.md for the roadmap.`,
 	return cmd
 }
 
+// validateCurrencyFlags enforces the dual-currency display contract: the
+// SGD net-liq and the USD→SGD rate are only meaningful together. Both must be
+// positive, or both omitted. A negative value is rejected explicitly (rather
+// than silently treated as "unset") so the error names the real problem.
+func validateCurrencyFlags(netLiqSGD, fxUSDtoSGD float64) error {
+	if netLiqSGD < 0 || fxUSDtoSGD < 0 {
+		return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be positive (got net-liq-sgd=%g, fx-usd-sgd=%g)",
+			netLiqSGD, fxUSDtoSGD)
+	}
+	if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
+		return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
+	}
+	return nil
+}
+
 func newPortfolioConcentrationCmd() *cobra.Command {
 	var (
 		netLiqUSD     float64
@@ -66,8 +81,8 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			// Flag validation FIRST — before any expensive broker/DB work.
 			// A user with mistyped SGD/FX flags shouldn't pay the IBKR
 			// round-trip cost only to be told their input is bad.
-			if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
-				return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
+			if err := validateCurrencyFlags(netLiqSGD, fxUSDtoSGD); err != nil {
+				return err
 			}
 
 			ctx := context.Background()

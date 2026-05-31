@@ -166,6 +166,150 @@ func (x *PriceOptionResponse) GetGreeks() *v1.Greeks {
 	return nil
 }
 
+type ImpliedVolRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MarketPrice   float64                `protobuf:"fixed64,1,opt,name=market_price,json=marketPrice,proto3" json:"market_price,omitempty"`
+	SpotPrice     float64                `protobuf:"fixed64,2,opt,name=spot_price,json=spotPrice,proto3" json:"spot_price,omitempty"`
+	Strike        float64                `protobuf:"fixed64,3,opt,name=strike,proto3" json:"strike,omitempty"`
+	TimeToExpiry  float64                `protobuf:"fixed64,4,opt,name=time_to_expiry,json=timeToExpiry,proto3" json:"time_to_expiry,omitempty"` // in years
+	RiskFreeRate  float64                `protobuf:"fixed64,5,opt,name=risk_free_rate,json=riskFreeRate,proto3" json:"risk_free_rate,omitempty"`
+	DividendYield float64                `protobuf:"fixed64,6,opt,name=dividend_yield,json=dividendYield,proto3" json:"dividend_yield,omitempty"`
+	OptionType    v1.OptionType          `protobuf:"varint,7,opt,name=option_type,json=optionType,proto3,enum=optix.marketdata.v1.OptionType" json:"option_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImpliedVolRequest) Reset() {
+	*x = ImpliedVolRequest{}
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImpliedVolRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImpliedVolRequest) ProtoMessage() {}
+
+func (x *ImpliedVolRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImpliedVolRequest.ProtoReflect.Descriptor instead.
+func (*ImpliedVolRequest) Descriptor() ([]byte, []int) {
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ImpliedVolRequest) GetMarketPrice() float64 {
+	if x != nil {
+		return x.MarketPrice
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetSpotPrice() float64 {
+	if x != nil {
+		return x.SpotPrice
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetStrike() float64 {
+	if x != nil {
+		return x.Strike
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetTimeToExpiry() float64 {
+	if x != nil {
+		return x.TimeToExpiry
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetRiskFreeRate() float64 {
+	if x != nil {
+		return x.RiskFreeRate
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetDividendYield() float64 {
+	if x != nil {
+		return x.DividendYield
+	}
+	return 0
+}
+
+func (x *ImpliedVolRequest) GetOptionType() v1.OptionType {
+	if x != nil {
+		return x.OptionType
+	}
+	return v1.OptionType(0)
+}
+
+type ImpliedVolResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ImpliedVolatility float64                `protobuf:"fixed64,1,opt,name=implied_volatility,json=impliedVolatility,proto3" json:"implied_volatility,omitempty"`
+	Converged         bool                   `protobuf:"varint,2,opt,name=converged,proto3" json:"converged,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ImpliedVolResponse) Reset() {
+	*x = ImpliedVolResponse{}
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImpliedVolResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImpliedVolResponse) ProtoMessage() {}
+
+func (x *ImpliedVolResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImpliedVolResponse.ProtoReflect.Descriptor instead.
+func (*ImpliedVolResponse) Descriptor() ([]byte, []int) {
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ImpliedVolResponse) GetImpliedVolatility() float64 {
+	if x != nil {
+		return x.ImpliedVolatility
+	}
+	return 0
+}
+
+func (x *ImpliedVolResponse) GetConverged() bool {
+	if x != nil {
+		return x.Converged
+	}
+	return false
+}
+
 type MaxPainRequest struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Underlying    string                  `protobuf:"bytes,1,opt,name=underlying,proto3" json:"underlying,omitempty"`
@@ -176,7 +320,7 @@ type MaxPainRequest struct {
 
 func (x *MaxPainRequest) Reset() {
 	*x = MaxPainRequest{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[2]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -188,7 +332,7 @@ func (x *MaxPainRequest) String() string {
 func (*MaxPainRequest) ProtoMessage() {}
 
 func (x *MaxPainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[2]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -201,7 +345,7 @@ func (x *MaxPainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MaxPainRequest.ProtoReflect.Descriptor instead.
 func (*MaxPainRequest) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{2}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *MaxPainRequest) GetUnderlying() string {
@@ -228,7 +372,7 @@ type MaxPainResponse struct {
 
 func (x *MaxPainResponse) Reset() {
 	*x = MaxPainResponse{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[3]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -240,7 +384,7 @@ func (x *MaxPainResponse) String() string {
 func (*MaxPainResponse) ProtoMessage() {}
 
 func (x *MaxPainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[3]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -253,7 +397,7 @@ func (x *MaxPainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MaxPainResponse.ProtoReflect.Descriptor instead.
 func (*MaxPainResponse) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{3}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MaxPainResponse) GetMaxPainPrice() float64 {
@@ -286,7 +430,7 @@ type AnalyzeStockRequest struct {
 
 func (x *AnalyzeStockRequest) Reset() {
 	*x = AnalyzeStockRequest{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[4]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +442,7 @@ func (x *AnalyzeStockRequest) String() string {
 func (*AnalyzeStockRequest) ProtoMessage() {}
 
 func (x *AnalyzeStockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[4]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,7 +455,7 @@ func (x *AnalyzeStockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnalyzeStockRequest.ProtoReflect.Descriptor instead.
 func (*AnalyzeStockRequest) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{4}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AnalyzeStockRequest) GetSymbol() string {
@@ -383,7 +527,7 @@ type AnalyzeStockResponse struct {
 
 func (x *AnalyzeStockResponse) Reset() {
 	*x = AnalyzeStockResponse{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[5]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +539,7 @@ func (x *AnalyzeStockResponse) String() string {
 func (*AnalyzeStockResponse) ProtoMessage() {}
 
 func (x *AnalyzeStockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[5]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +552,7 @@ func (x *AnalyzeStockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnalyzeStockResponse.ProtoReflect.Descriptor instead.
 func (*AnalyzeStockResponse) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{5}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AnalyzeStockResponse) GetSummary() *StockSummary {
@@ -458,7 +602,7 @@ type BatchQuickAnalysisRequest struct {
 
 func (x *BatchQuickAnalysisRequest) Reset() {
 	*x = BatchQuickAnalysisRequest{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[6]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +614,7 @@ func (x *BatchQuickAnalysisRequest) String() string {
 func (*BatchQuickAnalysisRequest) ProtoMessage() {}
 
 func (x *BatchQuickAnalysisRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[6]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +627,7 @@ func (x *BatchQuickAnalysisRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchQuickAnalysisRequest.ProtoReflect.Descriptor instead.
 func (*BatchQuickAnalysisRequest) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{6}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BatchQuickAnalysisRequest) GetStocks() []*SingleStockData {
@@ -523,7 +667,7 @@ type BatchQuickAnalysisResponse struct {
 
 func (x *BatchQuickAnalysisResponse) Reset() {
 	*x = BatchQuickAnalysisResponse{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[7]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -535,7 +679,7 @@ func (x *BatchQuickAnalysisResponse) String() string {
 func (*BatchQuickAnalysisResponse) ProtoMessage() {}
 
 func (x *BatchQuickAnalysisResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[7]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -548,7 +692,7 @@ func (x *BatchQuickAnalysisResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchQuickAnalysisResponse.ProtoReflect.Descriptor instead.
 func (*BatchQuickAnalysisResponse) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{7}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *BatchQuickAnalysisResponse) GetSummaries() []*StockQuickSummary {
@@ -574,7 +718,7 @@ type RecommendStrategiesRequest struct {
 
 func (x *RecommendStrategiesRequest) Reset() {
 	*x = RecommendStrategiesRequest{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[8]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -586,7 +730,7 @@ func (x *RecommendStrategiesRequest) String() string {
 func (*RecommendStrategiesRequest) ProtoMessage() {}
 
 func (x *RecommendStrategiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[8]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -599,7 +743,7 @@ func (x *RecommendStrategiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecommendStrategiesRequest.ProtoReflect.Descriptor instead.
 func (*RecommendStrategiesRequest) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{8}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RecommendStrategiesRequest) GetSymbol() string {
@@ -667,7 +811,7 @@ type RecommendStrategiesResponse struct {
 
 func (x *RecommendStrategiesResponse) Reset() {
 	*x = RecommendStrategiesResponse{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[9]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -679,7 +823,7 @@ func (x *RecommendStrategiesResponse) String() string {
 func (*RecommendStrategiesResponse) ProtoMessage() {}
 
 func (x *RecommendStrategiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[9]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -692,7 +836,7 @@ func (x *RecommendStrategiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecommendStrategiesResponse.ProtoReflect.Descriptor instead.
 func (*RecommendStrategiesResponse) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{9}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RecommendStrategiesResponse) GetStrategies() []*StrategyRecommendation {
@@ -712,7 +856,7 @@ type SupportResistanceRequest struct {
 
 func (x *SupportResistanceRequest) Reset() {
 	*x = SupportResistanceRequest{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[10]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +868,7 @@ func (x *SupportResistanceRequest) String() string {
 func (*SupportResistanceRequest) ProtoMessage() {}
 
 func (x *SupportResistanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[10]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +881,7 @@ func (x *SupportResistanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SupportResistanceRequest.ProtoReflect.Descriptor instead.
 func (*SupportResistanceRequest) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{10}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SupportResistanceRequest) GetBars() []*v1.OHLCV {
@@ -764,7 +908,7 @@ type SupportResistanceResponse struct {
 
 func (x *SupportResistanceResponse) Reset() {
 	*x = SupportResistanceResponse{}
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[11]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +920,7 @@ func (x *SupportResistanceResponse) String() string {
 func (*SupportResistanceResponse) ProtoMessage() {}
 
 func (x *SupportResistanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[11]
+	mi := &file_optix_analysis_v1_analysis_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +933,7 @@ func (x *SupportResistanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SupportResistanceResponse.ProtoReflect.Descriptor instead.
 func (*SupportResistanceResponse) Descriptor() ([]byte, []int) {
-	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{11}
+	return file_optix_analysis_v1_analysis_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SupportResistanceResponse) GetSupportLevels() []*PriceLevel {
@@ -825,7 +969,20 @@ const file_optix_analysis_v1_analysis_proto_rawDesc = "" +
 	"optionType\"`\n" +
 	"\x13PriceOptionResponse\x12\x14\n" +
 	"\x05price\x18\x01 \x01(\x01R\x05price\x123\n" +
-	"\x06greeks\x18\x02 \x01(\v2\x1b.optix.marketdata.v1.GreeksR\x06greeks\"n\n" +
+	"\x06greeks\x18\x02 \x01(\v2\x1b.optix.marketdata.v1.GreeksR\x06greeks\"\xa2\x02\n" +
+	"\x11ImpliedVolRequest\x12!\n" +
+	"\fmarket_price\x18\x01 \x01(\x01R\vmarketPrice\x12\x1d\n" +
+	"\n" +
+	"spot_price\x18\x02 \x01(\x01R\tspotPrice\x12\x16\n" +
+	"\x06strike\x18\x03 \x01(\x01R\x06strike\x12$\n" +
+	"\x0etime_to_expiry\x18\x04 \x01(\x01R\ftimeToExpiry\x12$\n" +
+	"\x0erisk_free_rate\x18\x05 \x01(\x01R\friskFreeRate\x12%\n" +
+	"\x0edividend_yield\x18\x06 \x01(\x01R\rdividendYield\x12@\n" +
+	"\voption_type\x18\a \x01(\x0e2\x1f.optix.marketdata.v1.OptionTypeR\n" +
+	"optionType\"a\n" +
+	"\x12ImpliedVolResponse\x12-\n" +
+	"\x12implied_volatility\x18\x01 \x01(\x01R\x11impliedVolatility\x12\x1c\n" +
+	"\tconverged\x18\x02 \x01(\bR\tconverged\"n\n" +
 	"\x0eMaxPainRequest\x12\x1e\n" +
 	"\n" +
 	"underlying\x18\x01 \x01(\tR\n" +
@@ -878,9 +1035,11 @@ const file_optix_analysis_v1_analysis_proto_rawDesc = "" +
 	"\rcurrent_price\x18\x02 \x01(\x01R\fcurrentPrice\"\xad\x01\n" +
 	"\x19SupportResistanceResponse\x12D\n" +
 	"\x0esupport_levels\x18\x01 \x03(\v2\x1d.optix.analysis.v1.PriceLevelR\rsupportLevels\x12J\n" +
-	"\x11resistance_levels\x18\x02 \x03(\v2\x1d.optix.analysis.v1.PriceLevelR\x10resistanceLevels2\x81\x05\n" +
+	"\x11resistance_levels\x18\x02 \x03(\v2\x1d.optix.analysis.v1.PriceLevelR\x10resistanceLevels2\xdc\x05\n" +
 	"\x0fAnalysisService\x12\\\n" +
-	"\vPriceOption\x12%.optix.analysis.v1.PriceOptionRequest\x1a&.optix.analysis.v1.PriceOptionResponse\x12S\n" +
+	"\vPriceOption\x12%.optix.analysis.v1.PriceOptionRequest\x1a&.optix.analysis.v1.PriceOptionResponse\x12Y\n" +
+	"\n" +
+	"ImpliedVol\x12$.optix.analysis.v1.ImpliedVolRequest\x1a%.optix.analysis.v1.ImpliedVolResponse\x12S\n" +
 	"\n" +
 	"GetMaxPain\x12!.optix.analysis.v1.MaxPainRequest\x1a\".optix.analysis.v1.MaxPainResponse\x12_\n" +
 	"\fAnalyzeStock\x12&.optix.analysis.v1.AnalyzeStockRequest\x1a'.optix.analysis.v1.AnalyzeStockResponse\x12q\n" +
@@ -900,75 +1059,80 @@ func file_optix_analysis_v1_analysis_proto_rawDescGZIP() []byte {
 	return file_optix_analysis_v1_analysis_proto_rawDescData
 }
 
-var file_optix_analysis_v1_analysis_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_optix_analysis_v1_analysis_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_optix_analysis_v1_analysis_proto_goTypes = []any{
 	(*PriceOptionRequest)(nil),          // 0: optix.analysis.v1.PriceOptionRequest
 	(*PriceOptionResponse)(nil),         // 1: optix.analysis.v1.PriceOptionResponse
-	(*MaxPainRequest)(nil),              // 2: optix.analysis.v1.MaxPainRequest
-	(*MaxPainResponse)(nil),             // 3: optix.analysis.v1.MaxPainResponse
-	(*AnalyzeStockRequest)(nil),         // 4: optix.analysis.v1.AnalyzeStockRequest
-	(*AnalyzeStockResponse)(nil),        // 5: optix.analysis.v1.AnalyzeStockResponse
-	(*BatchQuickAnalysisRequest)(nil),   // 6: optix.analysis.v1.BatchQuickAnalysisRequest
-	(*BatchQuickAnalysisResponse)(nil),  // 7: optix.analysis.v1.BatchQuickAnalysisResponse
-	(*RecommendStrategiesRequest)(nil),  // 8: optix.analysis.v1.RecommendStrategiesRequest
-	(*RecommendStrategiesResponse)(nil), // 9: optix.analysis.v1.RecommendStrategiesResponse
-	(*SupportResistanceRequest)(nil),    // 10: optix.analysis.v1.SupportResistanceRequest
-	(*SupportResistanceResponse)(nil),   // 11: optix.analysis.v1.SupportResistanceResponse
-	(v1.OptionType)(0),                  // 12: optix.marketdata.v1.OptionType
-	(*v1.Greeks)(nil),                   // 13: optix.marketdata.v1.Greeks
-	(*v1.OptionChainExpiry)(nil),        // 14: optix.marketdata.v1.OptionChainExpiry
-	(*v1.OHLCV)(nil),                    // 15: optix.marketdata.v1.OHLCV
-	(*v1.StockQuote)(nil),               // 16: optix.marketdata.v1.StockQuote
-	(v1.MarketSession)(0),               // 17: optix.marketdata.v1.MarketSession
-	(*StockSummary)(nil),                // 18: optix.analysis.v1.StockSummary
-	(*TechnicalAnalysis)(nil),           // 19: optix.analysis.v1.TechnicalAnalysis
-	(*OptionsAnalysis)(nil),             // 20: optix.analysis.v1.OptionsAnalysis
-	(*MarketOutlook)(nil),               // 21: optix.analysis.v1.MarketOutlook
-	(*StrategyRecommendation)(nil),      // 22: optix.analysis.v1.StrategyRecommendation
-	(*SingleStockData)(nil),             // 23: optix.analysis.v1.SingleStockData
-	(*StockQuickSummary)(nil),           // 24: optix.analysis.v1.StockQuickSummary
-	(*PriceLevel)(nil),                  // 25: optix.analysis.v1.PriceLevel
+	(*ImpliedVolRequest)(nil),           // 2: optix.analysis.v1.ImpliedVolRequest
+	(*ImpliedVolResponse)(nil),          // 3: optix.analysis.v1.ImpliedVolResponse
+	(*MaxPainRequest)(nil),              // 4: optix.analysis.v1.MaxPainRequest
+	(*MaxPainResponse)(nil),             // 5: optix.analysis.v1.MaxPainResponse
+	(*AnalyzeStockRequest)(nil),         // 6: optix.analysis.v1.AnalyzeStockRequest
+	(*AnalyzeStockResponse)(nil),        // 7: optix.analysis.v1.AnalyzeStockResponse
+	(*BatchQuickAnalysisRequest)(nil),   // 8: optix.analysis.v1.BatchQuickAnalysisRequest
+	(*BatchQuickAnalysisResponse)(nil),  // 9: optix.analysis.v1.BatchQuickAnalysisResponse
+	(*RecommendStrategiesRequest)(nil),  // 10: optix.analysis.v1.RecommendStrategiesRequest
+	(*RecommendStrategiesResponse)(nil), // 11: optix.analysis.v1.RecommendStrategiesResponse
+	(*SupportResistanceRequest)(nil),    // 12: optix.analysis.v1.SupportResistanceRequest
+	(*SupportResistanceResponse)(nil),   // 13: optix.analysis.v1.SupportResistanceResponse
+	(v1.OptionType)(0),                  // 14: optix.marketdata.v1.OptionType
+	(*v1.Greeks)(nil),                   // 15: optix.marketdata.v1.Greeks
+	(*v1.OptionChainExpiry)(nil),        // 16: optix.marketdata.v1.OptionChainExpiry
+	(*v1.OHLCV)(nil),                    // 17: optix.marketdata.v1.OHLCV
+	(*v1.StockQuote)(nil),               // 18: optix.marketdata.v1.StockQuote
+	(v1.MarketSession)(0),               // 19: optix.marketdata.v1.MarketSession
+	(*StockSummary)(nil),                // 20: optix.analysis.v1.StockSummary
+	(*TechnicalAnalysis)(nil),           // 21: optix.analysis.v1.TechnicalAnalysis
+	(*OptionsAnalysis)(nil),             // 22: optix.analysis.v1.OptionsAnalysis
+	(*MarketOutlook)(nil),               // 23: optix.analysis.v1.MarketOutlook
+	(*StrategyRecommendation)(nil),      // 24: optix.analysis.v1.StrategyRecommendation
+	(*SingleStockData)(nil),             // 25: optix.analysis.v1.SingleStockData
+	(*StockQuickSummary)(nil),           // 26: optix.analysis.v1.StockQuickSummary
+	(*PriceLevel)(nil),                  // 27: optix.analysis.v1.PriceLevel
 }
 var file_optix_analysis_v1_analysis_proto_depIdxs = []int32{
-	12, // 0: optix.analysis.v1.PriceOptionRequest.option_type:type_name -> optix.marketdata.v1.OptionType
-	13, // 1: optix.analysis.v1.PriceOptionResponse.greeks:type_name -> optix.marketdata.v1.Greeks
-	14, // 2: optix.analysis.v1.MaxPainRequest.chain:type_name -> optix.marketdata.v1.OptionChainExpiry
-	15, // 3: optix.analysis.v1.AnalyzeStockRequest.historical_bars:type_name -> optix.marketdata.v1.OHLCV
-	14, // 4: optix.analysis.v1.AnalyzeStockRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
-	16, // 5: optix.analysis.v1.AnalyzeStockRequest.current_quote:type_name -> optix.marketdata.v1.StockQuote
-	17, // 6: optix.analysis.v1.AnalyzeStockRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
-	18, // 7: optix.analysis.v1.AnalyzeStockResponse.summary:type_name -> optix.analysis.v1.StockSummary
-	19, // 8: optix.analysis.v1.AnalyzeStockResponse.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
-	20, // 9: optix.analysis.v1.AnalyzeStockResponse.options:type_name -> optix.analysis.v1.OptionsAnalysis
-	21, // 10: optix.analysis.v1.AnalyzeStockResponse.outlook:type_name -> optix.analysis.v1.MarketOutlook
-	22, // 11: optix.analysis.v1.AnalyzeStockResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
-	23, // 12: optix.analysis.v1.BatchQuickAnalysisRequest.stocks:type_name -> optix.analysis.v1.SingleStockData
-	17, // 13: optix.analysis.v1.BatchQuickAnalysisRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
-	24, // 14: optix.analysis.v1.BatchQuickAnalysisResponse.summaries:type_name -> optix.analysis.v1.StockQuickSummary
-	19, // 15: optix.analysis.v1.RecommendStrategiesRequest.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
-	20, // 16: optix.analysis.v1.RecommendStrategiesRequest.options_analysis:type_name -> optix.analysis.v1.OptionsAnalysis
-	14, // 17: optix.analysis.v1.RecommendStrategiesRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
-	22, // 18: optix.analysis.v1.RecommendStrategiesResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
-	15, // 19: optix.analysis.v1.SupportResistanceRequest.bars:type_name -> optix.marketdata.v1.OHLCV
-	25, // 20: optix.analysis.v1.SupportResistanceResponse.support_levels:type_name -> optix.analysis.v1.PriceLevel
-	25, // 21: optix.analysis.v1.SupportResistanceResponse.resistance_levels:type_name -> optix.analysis.v1.PriceLevel
-	0,  // 22: optix.analysis.v1.AnalysisService.PriceOption:input_type -> optix.analysis.v1.PriceOptionRequest
-	2,  // 23: optix.analysis.v1.AnalysisService.GetMaxPain:input_type -> optix.analysis.v1.MaxPainRequest
-	4,  // 24: optix.analysis.v1.AnalysisService.AnalyzeStock:input_type -> optix.analysis.v1.AnalyzeStockRequest
-	6,  // 25: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:input_type -> optix.analysis.v1.BatchQuickAnalysisRequest
-	8,  // 26: optix.analysis.v1.AnalysisService.RecommendStrategies:input_type -> optix.analysis.v1.RecommendStrategiesRequest
-	10, // 27: optix.analysis.v1.AnalysisService.GetSupportResistance:input_type -> optix.analysis.v1.SupportResistanceRequest
-	1,  // 28: optix.analysis.v1.AnalysisService.PriceOption:output_type -> optix.analysis.v1.PriceOptionResponse
-	3,  // 29: optix.analysis.v1.AnalysisService.GetMaxPain:output_type -> optix.analysis.v1.MaxPainResponse
-	5,  // 30: optix.analysis.v1.AnalysisService.AnalyzeStock:output_type -> optix.analysis.v1.AnalyzeStockResponse
-	7,  // 31: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:output_type -> optix.analysis.v1.BatchQuickAnalysisResponse
-	9,  // 32: optix.analysis.v1.AnalysisService.RecommendStrategies:output_type -> optix.analysis.v1.RecommendStrategiesResponse
-	11, // 33: optix.analysis.v1.AnalysisService.GetSupportResistance:output_type -> optix.analysis.v1.SupportResistanceResponse
-	28, // [28:34] is the sub-list for method output_type
-	22, // [22:28] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	14, // 0: optix.analysis.v1.PriceOptionRequest.option_type:type_name -> optix.marketdata.v1.OptionType
+	15, // 1: optix.analysis.v1.PriceOptionResponse.greeks:type_name -> optix.marketdata.v1.Greeks
+	14, // 2: optix.analysis.v1.ImpliedVolRequest.option_type:type_name -> optix.marketdata.v1.OptionType
+	16, // 3: optix.analysis.v1.MaxPainRequest.chain:type_name -> optix.marketdata.v1.OptionChainExpiry
+	17, // 4: optix.analysis.v1.AnalyzeStockRequest.historical_bars:type_name -> optix.marketdata.v1.OHLCV
+	16, // 5: optix.analysis.v1.AnalyzeStockRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
+	18, // 6: optix.analysis.v1.AnalyzeStockRequest.current_quote:type_name -> optix.marketdata.v1.StockQuote
+	19, // 7: optix.analysis.v1.AnalyzeStockRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
+	20, // 8: optix.analysis.v1.AnalyzeStockResponse.summary:type_name -> optix.analysis.v1.StockSummary
+	21, // 9: optix.analysis.v1.AnalyzeStockResponse.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
+	22, // 10: optix.analysis.v1.AnalyzeStockResponse.options:type_name -> optix.analysis.v1.OptionsAnalysis
+	23, // 11: optix.analysis.v1.AnalyzeStockResponse.outlook:type_name -> optix.analysis.v1.MarketOutlook
+	24, // 12: optix.analysis.v1.AnalyzeStockResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
+	25, // 13: optix.analysis.v1.BatchQuickAnalysisRequest.stocks:type_name -> optix.analysis.v1.SingleStockData
+	19, // 14: optix.analysis.v1.BatchQuickAnalysisRequest.market_session:type_name -> optix.marketdata.v1.MarketSession
+	26, // 15: optix.analysis.v1.BatchQuickAnalysisResponse.summaries:type_name -> optix.analysis.v1.StockQuickSummary
+	21, // 16: optix.analysis.v1.RecommendStrategiesRequest.technical:type_name -> optix.analysis.v1.TechnicalAnalysis
+	22, // 17: optix.analysis.v1.RecommendStrategiesRequest.options_analysis:type_name -> optix.analysis.v1.OptionsAnalysis
+	16, // 18: optix.analysis.v1.RecommendStrategiesRequest.option_chain:type_name -> optix.marketdata.v1.OptionChainExpiry
+	24, // 19: optix.analysis.v1.RecommendStrategiesResponse.strategies:type_name -> optix.analysis.v1.StrategyRecommendation
+	17, // 20: optix.analysis.v1.SupportResistanceRequest.bars:type_name -> optix.marketdata.v1.OHLCV
+	27, // 21: optix.analysis.v1.SupportResistanceResponse.support_levels:type_name -> optix.analysis.v1.PriceLevel
+	27, // 22: optix.analysis.v1.SupportResistanceResponse.resistance_levels:type_name -> optix.analysis.v1.PriceLevel
+	0,  // 23: optix.analysis.v1.AnalysisService.PriceOption:input_type -> optix.analysis.v1.PriceOptionRequest
+	2,  // 24: optix.analysis.v1.AnalysisService.ImpliedVol:input_type -> optix.analysis.v1.ImpliedVolRequest
+	4,  // 25: optix.analysis.v1.AnalysisService.GetMaxPain:input_type -> optix.analysis.v1.MaxPainRequest
+	6,  // 26: optix.analysis.v1.AnalysisService.AnalyzeStock:input_type -> optix.analysis.v1.AnalyzeStockRequest
+	8,  // 27: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:input_type -> optix.analysis.v1.BatchQuickAnalysisRequest
+	10, // 28: optix.analysis.v1.AnalysisService.RecommendStrategies:input_type -> optix.analysis.v1.RecommendStrategiesRequest
+	12, // 29: optix.analysis.v1.AnalysisService.GetSupportResistance:input_type -> optix.analysis.v1.SupportResistanceRequest
+	1,  // 30: optix.analysis.v1.AnalysisService.PriceOption:output_type -> optix.analysis.v1.PriceOptionResponse
+	3,  // 31: optix.analysis.v1.AnalysisService.ImpliedVol:output_type -> optix.analysis.v1.ImpliedVolResponse
+	5,  // 32: optix.analysis.v1.AnalysisService.GetMaxPain:output_type -> optix.analysis.v1.MaxPainResponse
+	7,  // 33: optix.analysis.v1.AnalysisService.AnalyzeStock:output_type -> optix.analysis.v1.AnalyzeStockResponse
+	9,  // 34: optix.analysis.v1.AnalysisService.BatchQuickAnalysis:output_type -> optix.analysis.v1.BatchQuickAnalysisResponse
+	11, // 35: optix.analysis.v1.AnalysisService.RecommendStrategies:output_type -> optix.analysis.v1.RecommendStrategiesResponse
+	13, // 36: optix.analysis.v1.AnalysisService.GetSupportResistance:output_type -> optix.analysis.v1.SupportResistanceResponse
+	30, // [30:37] is the sub-list for method output_type
+	23, // [23:30] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_optix_analysis_v1_analysis_proto_init() }
@@ -983,7 +1147,7 @@ func file_optix_analysis_v1_analysis_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_optix_analysis_v1_analysis_proto_rawDesc), len(file_optix_analysis_v1_analysis_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

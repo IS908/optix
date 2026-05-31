@@ -34,6 +34,32 @@ class PriceOptionResponse(_message.Message):
     greeks: _types_pb2.Greeks
     def __init__(self, price: _Optional[float] = ..., greeks: _Optional[_Union[_types_pb2.Greeks, _Mapping]] = ...) -> None: ...
 
+class ImpliedVolRequest(_message.Message):
+    __slots__ = ("market_price", "spot_price", "strike", "time_to_expiry", "risk_free_rate", "dividend_yield", "option_type")
+    MARKET_PRICE_FIELD_NUMBER: _ClassVar[int]
+    SPOT_PRICE_FIELD_NUMBER: _ClassVar[int]
+    STRIKE_FIELD_NUMBER: _ClassVar[int]
+    TIME_TO_EXPIRY_FIELD_NUMBER: _ClassVar[int]
+    RISK_FREE_RATE_FIELD_NUMBER: _ClassVar[int]
+    DIVIDEND_YIELD_FIELD_NUMBER: _ClassVar[int]
+    OPTION_TYPE_FIELD_NUMBER: _ClassVar[int]
+    market_price: float
+    spot_price: float
+    strike: float
+    time_to_expiry: float
+    risk_free_rate: float
+    dividend_yield: float
+    option_type: _types_pb2.OptionType
+    def __init__(self, market_price: _Optional[float] = ..., spot_price: _Optional[float] = ..., strike: _Optional[float] = ..., time_to_expiry: _Optional[float] = ..., risk_free_rate: _Optional[float] = ..., dividend_yield: _Optional[float] = ..., option_type: _Optional[_Union[_types_pb2.OptionType, str]] = ...) -> None: ...
+
+class ImpliedVolResponse(_message.Message):
+    __slots__ = ("implied_volatility", "converged")
+    IMPLIED_VOLATILITY_FIELD_NUMBER: _ClassVar[int]
+    CONVERGED_FIELD_NUMBER: _ClassVar[int]
+    implied_volatility: float
+    converged: bool
+    def __init__(self, implied_volatility: _Optional[float] = ..., converged: bool = ...) -> None: ...
+
 class MaxPainRequest(_message.Message):
     __slots__ = ("underlying", "chain")
     UNDERLYING_FIELD_NUMBER: _ClassVar[int]

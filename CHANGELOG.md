@@ -14,6 +14,35 @@ above it.
 
 _No changes yet._
 
+## [0.6.0] - 2026-05-31
+
+Minor release: v2.0 Phase 2 — portfolio Greeks aggregation. Adds the
+`optix portfolio greeks` command on top of the v0.5.x concentration layer,
+reusing the existing Black-Scholes engine rather than building a new
+service. No changes to the concentration API.
+
+### Added
+
+- **`optix portfolio greeks` — account-level Greeks aggregation (v2.0 Phase
+  2).** Aggregates per-leg option Greeks across all holdings into per-underlying
+  / per-sector / total **position-level dollar Greeks**: Net Δ (delta-adjusted
+  shares), Dollar Δ (USD per +1% spot), Γ (Δ-shares per +1% spot), Vega (USD per
+  +1% IV), Θ (USD per day). IV is taken from the option chain, falling back to
+  inverting the held mark (new `AnalysisService.ImpliedVol` RPC); Greeks are
+  computed by the Python Black-Scholes engine via the existing `PriceOption`
+  RPC. Legs whose IV can't be resolved are skipped and surfaced rather than
+  silently producing garbage. `--by underlying|sector`, `--net-liq-usd`,
+  `--risk-free-rate`, `--sectors-file`, `--json`. Requires IBKR + the analysis
+  engine; reuses the Phase 1 broker (ClientID 5), sector resolution,
+  FallbackNLV, and exit-code convention.
+
+### Fixed
+
+- **Skill now surfaces the `portfolio` commands.** `concentration` (shipped in
+  v0.5.0) was never listed in SKILL.md, so agents couldn't discover it; added a
+  Portfolio Risk section covering both `concentration` and `greeks` plus trigger
+  words.
+
 ## [0.5.1] - 2026-05-31
 
 Patch release hardening the v0.5.0 portfolio concentration feature: six
@@ -686,7 +715,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/IS908/optix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/IS908/optix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/IS908/optix/compare/v0.4.4...v0.4.5

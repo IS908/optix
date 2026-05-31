@@ -41,6 +41,11 @@ class AnalysisServiceStub(object):
                 request_serializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionRequest.SerializeToString,
                 response_deserializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionResponse.FromString,
                 _registered_method=True)
+        self.ImpliedVol = channel.unary_unary(
+                '/optix.analysis.v1.AnalysisService/ImpliedVol',
+                request_serializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolRequest.SerializeToString,
+                response_deserializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolResponse.FromString,
+                _registered_method=True)
         self.GetMaxPain = channel.unary_unary(
                 '/optix.analysis.v1.AnalysisService/GetMaxPain',
                 request_serializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.MaxPainRequest.SerializeToString,
@@ -75,6 +80,15 @@ class AnalysisServiceServicer(object):
 
     def PriceOption(self, request, context):
         """PriceOption computes Black-Scholes price and Greeks for a single option.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ImpliedVol(self, request, context):
+        """ImpliedVol inverts an observed option mark into an implied volatility
+        (Newton-Raphson, Brent fallback). Used by the portfolio Greeks aggregator
+        as the chain-IV fallback. converged=false when inversion can't be trusted.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -123,6 +137,11 @@ def add_AnalysisServiceServicer_to_server(servicer, server):
                     servicer.PriceOption,
                     request_deserializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionRequest.FromString,
                     response_serializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionResponse.SerializeToString,
+            ),
+            'ImpliedVol': grpc.unary_unary_rpc_method_handler(
+                    servicer.ImpliedVol,
+                    request_deserializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolRequest.FromString,
+                    response_serializer=optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolResponse.SerializeToString,
             ),
             'GetMaxPain': grpc.unary_unary_rpc_method_handler(
                     servicer.GetMaxPain,
@@ -179,6 +198,33 @@ class AnalysisService(object):
             '/optix.analysis.v1.AnalysisService/PriceOption',
             optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionRequest.SerializeToString,
             optix_dot_analysis_dot_v1_dot_analysis__pb2.PriceOptionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ImpliedVol(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/optix.analysis.v1.AnalysisService/ImpliedVol',
+            optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolRequest.SerializeToString,
+            optix_dot_analysis_dot_v1_dot_analysis__pb2.ImpliedVolResponse.FromString,
             options,
             channel_credentials,
             insecure,

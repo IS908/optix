@@ -32,6 +32,16 @@ above it.
   silently falling back. The resolved source is printed to stderr when it
   isn't the most-expected location.
 
+- **`portfolio concentration` no longer surfaces IBKR's closed-out
+  zero-quantity residual rows.** Positions IBKR keeps for ~T+2 after a
+  close were rendered as `0.0%` ghost entries in the Top-N table and
+  added to sector ticker lists. They're now skipped at the position-loop
+  entry, keyed on quantity alone (`abs(qty) < 1e-9`) — a closed position
+  is defined by zero quantity regardless of any stale mark IBKR may still
+  report for the row, and the epsilon catches float-represented zeros
+  without over-filtering legitimate fractional holdings. Short positions
+  (negative quantity) are preserved. (#52)
+
 ## [0.5.0] - 2026-05-31
 
 ### Added

@@ -204,6 +204,20 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	byTicker := map[string]*UnderlyingGroup{}
 	missingLegsByTicker := map[string]int{}
 	for _, p := range positions {
+		// Skip closed-out residuals: IBKR's reqPositions keeps zero-quantity
+		// rows for ~T+2 after a close. Including them as 0% entries in the
+		// rendered Top-N table and sector list is pure noise. See issue #52.
+		//
+		// Key on quantity ALONE, not (quantity && marketValue): a closed
+		// position is defined by qty==0 regardless of any stale mark IBKR may
+		// still report for it (the row can briefly carry the last MV before it
+		// drops). Use an epsilon rather than == 0 so a float-represented zero
+		// (e.g. -0.0, or a value computed by subtraction) is caught too. The
+		// 1e-9 threshold is far below any real fractional share, so legitimate
+		// dust holdings are preserved.
+		if math.Abs(p.Quantity) < 1e-9 {
+			continue
+		}
 		t := strings.ToUpper(p.Symbol)
 		g, ok := byTicker[t]
 		if !ok {
@@ -217,7 +231,10 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		}
 		// Only treat option legs with MV==0 as "missing mark" — stock quotes
 		// from yfinance fallback are reliable, so MV==0 on a stock leg almost
-		// certainly means qty==0 (a flat residual contract row).
+		// certainly means qty==0 (a flat residual contract row). Note: rows
+		// with near-zero quantity were already skipped by the residual filter
+		// above, so any row reaching here has a live position; the explicit
+		// Quantity!=0 guard is belt-and-suspenders against future reordering.
 		if p.IsOption() && p.MarketValue == 0 && p.Quantity != 0 {
 			g.HasMissingMark = true
 			missingLegsByTicker[t]++

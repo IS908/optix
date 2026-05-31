@@ -14,6 +14,18 @@ above it.
 
 ### Fixed
 
+- **`portfolio concentration` no longer silently mis-weights non-USD
+  holdings (#49).** `positionFromIB` dropped the IBKR contract currency, so
+  a position priced in HKD/SGD had its raw market value mixed straight into
+  the USD-NLV denominator — wrong by ~8× for an HK name, with no warning.
+  `model.Position` now carries `Currency` (populated from `c.Currency`), and
+  `Compute` excludes any leg whose currency isn't USD, surfacing them via a
+  new `CurrencyMismatchTickers` field and a loud render warning ("Non-USD
+  holdings excluded from concentration: 0700 (HKD)") rather than trusting a
+  wrong number. An empty currency is treated as USD (older data / fixtures).
+  FX conversion is deferred to v2.1; until then exclusion + warning is the
+  safe behavior.
+
 - **Cancelled position fetches no longer masquerade as OPRA gaps (#50).**
   When `ctx` was cancelled mid-`enrich`, in-flight goroutines exited without
   populating `MarketValue` but `GetPositions` still returned `(positions,

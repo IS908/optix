@@ -605,6 +605,69 @@ func containsTicker(ug []UnderlyingGroup, ticker string) bool {
 	return false
 }
 
+// TestCompute_NonUSDPositionExcludedWithWarning guards issue #49: a position
+// whose IBKR contract currency isn't USD must NOT be mixed into the USD-NLV
+// weight math (its raw MV is in the wrong unit). It's elided and surfaced via
+// CurrencyMismatchTickers instead of silently mis-weighted.
+func TestCompute_NonUSDPositionExcludedWithWarning(t *testing.T) {
+	hkd := model.Position{
+		Symbol: "0700", SecType: "STK", Quantity: 100,
+		MarketValue: 38_000, Multiplier: 1, Currency: "HKD",
+	}
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450), // USD, kept
+		hkd,                        // HKD, excluded
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	if containsTicker(r.Underlyings, "0700") {
+		t.Errorf("non-USD 0700 should be excluded from Underlyings, got %v", tickers(r.Underlyings))
+	}
+	if len(r.CurrencyMismatchTickers) != 1 || r.CurrencyMismatchTickers[0] != "0700" {
+		t.Errorf("CurrencyMismatchTickers = %v, want [0700]", r.CurrencyMismatchTickers)
+	}
+	if r.CurrencyMismatchByTicker["0700"] != "HKD" {
+		t.Errorf("CurrencyMismatchByTicker[0700] = %q, want HKD", r.CurrencyMismatchByTicker["0700"])
+	}
+	if !containsTicker(r.Underlyings, "MSFT") {
+		t.Errorf("MSFT should remain, got %v", tickers(r.Underlyings))
+	}
+	var buf bytes.Buffer
+	r.Render(&buf)
+	if !strings.Contains(buf.String(), "Non-USD holdings excluded") {
+		t.Errorf("render should warn about non-USD exclusion; got:\n%s", buf.String())
+	}
+}
+
+// TestCompute_EmptyCurrencyTreatedAsUSD ensures positions without a Currency
+// (older data / pre-#49 fixtures) are NOT excluded — empty means USD.
+func TestCompute_EmptyCurrencyTreatedAsUSD(t *testing.T) {
+	pos := []model.Position{stockPos("MSFT", 100, 450)} // Currency unset
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+	if !containsTicker(r.Underlyings, "MSFT") {
+		t.Errorf("empty-currency position should be treated as USD and kept, got %v",
+			tickers(r.Underlyings))
+	}
+	if len(r.CurrencyMismatchTickers) != 0 {
+		t.Errorf("no mismatch expected for empty currency, got %v", r.CurrencyMismatchTickers)
+	}
+}
+
+// TestCompute_USDCurrencyExplicitKept ensures an explicit "USD" (any case) is
+// kept normally.
+func TestCompute_USDCurrencyExplicitKept(t *testing.T) {
+	pos := []model.Position{
+		{Symbol: "AAPL", SecType: "STK", Quantity: 100, MarketValue: 20_000, Multiplier: 1, Currency: "usd"},
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+	if !containsTicker(r.Underlyings, "AAPL") {
+		t.Errorf(`Currency "usd" should be treated as USD and kept, got %v`, tickers(r.Underlyings))
+	}
+	if len(r.CurrencyMismatchTickers) != 0 {
+		t.Errorf("explicit USD should not be a mismatch, got %v", r.CurrencyMismatchTickers)
+	}
+}
+
 // TestFmtMoney_EdgeCases covers thousand-separator formatting under zero,
 // negative, and large values.
 func TestFmtMoney_EdgeCases(t *testing.T) {

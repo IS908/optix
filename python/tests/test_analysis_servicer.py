@@ -1,4 +1,3 @@
-import grpc
 from optix_engine.grpc_server.analysis_servicer import AnalysisServicer
 from optix_engine.gen.optix.analysis.v1 import analysis_pb2
 from optix_engine.gen.optix.marketdata.v1 import types_pb2 as md_types

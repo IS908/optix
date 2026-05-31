@@ -82,6 +82,38 @@ func (c *Client) PriceOption(ctx context.Context,
 	return result, nil
 }
 
+// ImpliedVolResult is the outcome of inverting an option mark to an IV.
+type ImpliedVolResult struct {
+	IV        float64
+	Converged bool
+}
+
+// ImpliedVol inverts an observed option mark into an implied volatility via the
+// Python engine. Converged=false means the inversion can't be trusted (e.g.
+// price below intrinsic, or no convergence) — callers should skip the leg.
+func (c *Client) ImpliedVol(ctx context.Context,
+	marketPrice, spotPrice, strike, timeToExpiry, riskFreeRate, dividendYield float64,
+	optionType string,
+) (*ImpliedVolResult, error) {
+	ot := marketdatav1.OptionType_OPTION_TYPE_CALL
+	if optionType == "put" {
+		ot = marketdatav1.OptionType_OPTION_TYPE_PUT
+	}
+	resp, err := c.svc.ImpliedVol(ctx, &analysisv1.ImpliedVolRequest{
+		MarketPrice:   marketPrice,
+		SpotPrice:     spotPrice,
+		Strike:        strike,
+		TimeToExpiry:  timeToExpiry,
+		RiskFreeRate:  riskFreeRate,
+		DividendYield: dividendYield,
+		OptionType:    ot,
+	}, defaultCallOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("ImpliedVol: %w", err)
+	}
+	return &ImpliedVolResult{IV: resp.ImpliedVolatility, Converged: resp.Converged}, nil
+}
+
 // GetMaxPain calls the Python Max Pain calculation.
 func (c *Client) GetMaxPain(ctx context.Context, underlying string, chain []*marketdatav1.OptionChainExpiry) (float64, string, error) {
 	resp, err := c.svc.GetMaxPain(ctx, &analysisv1.MaxPainRequest{

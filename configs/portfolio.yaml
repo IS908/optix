@@ -32,3 +32,41 @@ iv_staleness:
 
 # Sector mapping file (ticker -> sector id, plus id -> label).
 sectors_file: "./configs/sectors.json"
+
+# Portfolio stress scenarios (v2.0 Phase 3). The first implementation applies
+# shocks to the aggregated Greeks snapshot: price shocks use Dollar Δ + dollar Γ,
+# IV shocks are explicit volatility points consumed by Vega(/1%).
+stress:
+  scenarios:
+    - id: spy-down-3
+      label: "SPY -3%"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.03
+    - id: spy-down-5
+      label: "SPY -5%"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.05
+    - id: spy-down-10
+      label: "SPY -10%"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.10
+    - id: iv-up-5
+      label: "IV +5 pts"
+      shocks:
+        - axis: iv_points
+          magnitude: 5.0
+    - id: qqq-down-5
+      label: "QQQ -5%"
+      shocks:
+        - axis: qqq_pct
+          magnitude: -0.05
+    - id: tech-correlated-5
+      label: "Tech correlated -5%"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.03
+        - axis: iv_points
+          magnitude: 3.0

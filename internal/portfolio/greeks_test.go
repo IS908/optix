@@ -195,6 +195,10 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	if math.Abs(g.Gamma-3.6) > 1e-6 {
 		t.Errorf("Gamma = %v, want 3.6", g.Gamma)
 	}
+	// DollarGamma coefficient = per-share gamma * scale * spot^2 * 0.0001 = 0.01*200*180^2*0.0001 = 6.48
+	if math.Abs(g.DollarGamma-6.48) > 1e-6 {
+		t.Errorf("DollarGamma = %v, want 6.48", g.DollarGamma)
+	}
 	// Vega display = (0.2*2*100) / 100 = 0.4
 	if math.Abs(g.Vega-0.4) > 1e-6 {
 		t.Errorf("Vega = %v, want 0.4", g.Vega)

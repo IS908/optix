@@ -17,6 +17,12 @@ concentration:
   hhi_diversified_max: 1500   # < 1500: 分散 (diversified)
   hhi_concentrated_min: 2500  # > 2500: 集中 (concentrated)
 
+# Portfolio greeks (v2.0 Phase 2).
+greeks:
+  # Black-Scholes risk-free rate for portfolio greeks. Greeks are insensitive to
+  # r; this is the current US short-end T-bill. Override with --risk-free-rate.
+  risk_free_rate: 0.043
+
 # IV cache staleness windows (consumed by Phase 2 greeks/stress).
 # Phase 1 doesn't use these but the schema is forward-compatible.
 iv_staleness:

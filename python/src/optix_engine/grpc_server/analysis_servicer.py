@@ -66,6 +66,26 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
             ),
         )
 
+    # ─── ImpliedVol ───────────────────────────────────────────────────────────
+
+    def ImpliedVol(self, request, context):
+        S = request.spot_price
+        K = request.strike
+        T = request.time_to_expiry
+        r = request.risk_free_rate
+        q = request.dividend_yield
+        price = request.market_price
+        opt_type = "call" if request.option_type == md_types.OPTION_TYPE_CALL else "put"
+
+        # implied_volatility already guards T<=0 / price<=0 and returns
+        # (0.0, False) — surface that as a non-converged response rather than
+        # erroring, so the aggregator can fall through to skipping the leg.
+        iv, converged = implied_volatility(price, S, K, T, r, opt_type, q)
+        return analysis_pb2.ImpliedVolResponse(
+            implied_volatility=iv,
+            converged=converged,
+        )
+
     # ─── GetMaxPain ───────────────────────────────────────────────────────────
 
     def GetMaxPain(self, request, context):

@@ -1,0 +1,108 @@
+{
+  "_comment": "Static ticker -> sector mapping for portfolio concentration analysis. Tickers not listed fall back to 'Unclassified'. Keep entries in kebab-case sector ids; the CLI maps ids to display labels via sector_labels below.",
+  "sector_labels": {
+    "mega-cap-tech": "Mega-cap Tech",
+    "ai-chips": "AI Chips & Semis",
+    "memory-storage": "Memory & Storage",
+    "software-cloud": "Software & Cloud",
+    "ai-auto-mobility": "AI Auto & Mobility",
+    "aerospace-space": "Aerospace & Space",
+    "clean-nuclear-energy": "Clean & Nuclear Energy",
+    "fintech-brokers": "Fintech & Brokers",
+    "ai-interconnect": "AI Interconnect & Networking",
+    "hk-brokers": "HK Brokerages",
+    "etf-broad-index": "Broad-Market Index ETF",
+    "etf-sector": "Sector ETF",
+    "biotech-pharma": "Biotech & Pharma",
+    "ecommerce-consumer": "E-commerce & Consumer",
+    "payments": "Payments & Cards",
+    "media-entertainment": "Media & Entertainment",
+    "energy-traditional": "Traditional Energy"
+  },
+  "ticker_sectors": {
+    "AAPL": "mega-cap-tech",
+    "GOOGL": "mega-cap-tech",
+    "GOOG": "mega-cap-tech",
+    "MSFT": "mega-cap-tech",
+    "META": "mega-cap-tech",
+
+    "NVDA": "ai-chips",
+    "AMD": "ai-chips",
+    "INTC": "ai-chips",
+    "MRVL": "ai-chips",
+    "AVGO": "ai-chips",
+    "TSM": "ai-chips",
+    "ASML": "ai-chips",
+    "QCOM": "ai-chips",
+
+    "MU": "memory-storage",
+    "SNDK": "memory-storage",
+    "DRAM": "memory-storage",
+    "WDC": "memory-storage",
+    "STX": "memory-storage",
+
+    "ORCL": "software-cloud",
+    "ADBE": "software-cloud",
+    "CRM": "software-cloud",
+    "NOW": "software-cloud",
+    "SNOW": "software-cloud",
+    "DDOG": "software-cloud",
+    "MDB": "software-cloud",
+    "PLTR": "software-cloud",
+
+    "TSLA": "ai-auto-mobility",
+    "RIVN": "ai-auto-mobility",
+    "LCID": "ai-auto-mobility",
+
+    "RKLB": "aerospace-space",
+    "RDW": "aerospace-space",
+    "LUNR": "aerospace-space",
+    "IRDM": "aerospace-space",
+    "ASTS": "aerospace-space",
+
+    "BE": "clean-nuclear-energy",
+    "OKLO": "clean-nuclear-energy",
+    "CEG": "clean-nuclear-energy",
+    "VST": "clean-nuclear-energy",
+    "SMR": "clean-nuclear-energy",
+
+    "HOOD": "fintech-brokers",
+    "IBKR": "fintech-brokers",
+    "SCHW": "fintech-brokers",
+    "COIN": "fintech-brokers",
+
+    "CRDO": "ai-interconnect",
+    "ANET": "ai-interconnect",
+    "CIEN": "ai-interconnect",
+
+    "FUTU": "hk-brokers",
+    "TIGR": "hk-brokers",
+
+    "QQQ": "etf-broad-index",
+    "SPY": "etf-broad-index",
+    "VOO": "etf-broad-index",
+    "IWM": "etf-broad-index",
+    "DIA": "etf-broad-index",
+
+    "XLK": "etf-sector",
+    "SMH": "etf-sector",
+    "ARKK": "etf-sector",
+
+    "AMZN": "ecommerce-consumer",
+    "WMT": "ecommerce-consumer",
+    "COST": "ecommerce-consumer",
+    "SHOP": "ecommerce-consumer",
+
+    "V": "payments",
+    "MA": "payments",
+    "PYPL": "payments",
+    "SQ": "payments",
+
+    "NFLX": "media-entertainment",
+    "DIS": "media-entertainment",
+    "SPOT": "media-entertainment",
+
+    "XOM": "energy-traditional",
+    "CVX": "energy-traditional"
+  }
+}

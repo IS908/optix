@@ -1,0 +1,28 @@
+# Portfolio Risk Layer configuration (v2.0).
+# Loaded by `optix portfolio ...` commands; absent file falls back to defaults.
+
+concentration:
+  # Single-name weight thresholds (percent of net_liq).
+  warn_pct: 10.0    # yellow flag: position > 10% of NLV
+  red_pct:  20.0    # red flag:    position > 20% of NLV
+
+  # Top-N rollup display (also feeds JSON export).
+  top_n:    10
+
+  # Combined-top-K warnings.
+  top2_warn_pct: 30.0   # warn if Top 2 > 30%
+  top5_warn_pct: 60.0   # warn if Top 5 > 60%
+
+  # HHI buckets (× 10000). Standard antitrust bands.
+  hhi_diversified_max: 1500   # < 1500: 分散 (diversified)
+  hhi_concentrated_min: 2500  # > 2500: 集中 (concentrated)
+
+# IV cache staleness windows (consumed by Phase 2 greeks/stress).
+# Phase 1 doesn't use these but the schema is forward-compatible.
+iv_staleness:
+  fresh_max:      "4h"    # ✓
+  acceptable_max: "24h"   # ⚠️
+  stale_max:      "168h"  # ⚠️⚠️  (= 7d); beyond this -> ✗ skipped
+
+# Sector mapping file (ticker -> sector id, plus id -> label).
+sectors_file: "./configs/sectors.json"

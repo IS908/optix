@@ -12,7 +12,44 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **`optix portfolio concentration` — account-level concentration analysis
+  (v2.0 Phase 1).** New `portfolio` parent command and `concentration`
+  subcommand that aggregates per-underlying exposure (stock + option legs by
+  |market value|), groups by sector via static map, and flags positions
+  exceeding configurable thresholds (default 10% yellow, 20% red). Reports
+  Top-2 / Top-5 / Top-N rollups and HHI with diversified/moderate/concentrated
+  buckets. Optional `--json` writes the full snapshot for cron consumers.
+
+  Phase 1 caveat: optix does not yet read NLV from IBKR account summary; pass
+  `--net-liq-usd` to anchor weights, or omit to fall back to sum(|MV|). True
+  NLV integration lands in v2.1 alongside the Greeks aggregation layer.
+
+  See `docs/v2.0-portfolio-risk-layer.md` for the full design rationale and
+  Phase 2/3 roadmap (Greeks aggregation + stress test).
+
+- **`configs/sectors.json`** — static ticker → sector mapping covering ~60
+  commonly traded US tickers. Unlisted tickers fall back to "unclassified"
+  rather than crashing the report.
+
+- **`configs/portfolio.yaml`** — declarative thresholds reference for the
+  portfolio subsystem. Phase 1 reads defaults from code; YAML loading lands
+  in a follow-up.
+
+- **`AGENTS.md`** — Codex counterpart to `CLAUDE.md`, mirroring the same
+  architecture / command / convention guidance for repo-aware agents.
+
+### Internal
+
+- `internal/portfolio/` — new package for account-level risk views. Phase 1
+  ships `concentration.go` + tests; Phase 2/3 will add `aggregator.go` /
+  `staleness.go` / `stress.go` per the design doc.
+
+- `.gitignore` now excludes `.superpowers/` scratch dir (same rationale as
+  the existing `docs/superpowers/{plans,specs}/` ignores — working artifacts,
+  not source).
+
 
 ## [0.4.5] - 2026-05-23
 

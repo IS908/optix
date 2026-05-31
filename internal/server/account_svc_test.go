@@ -207,3 +207,32 @@ func TestAccountServiceErrAccountNotSupported(t *testing.T) {
 		t.Errorf("GetExecutions: got %v, want broker.ErrAccountNotSupported", execErr)
 	}
 }
+
+// TestAccountServiceGetPositionsCtxCancelled guards issue #50: when ctx is
+// already cancelled, enrich leaves marks unpopulated. GetPositions must
+// surface the cancellation rather than returning a misleading partial
+// snapshot (which downstream would misread as an OPRA-subscription gap).
+func TestAccountServiceGetPositionsCtxCancelled(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	fake := &fakeAccountBroker{
+		positions: []model.Position{
+			{Symbol: "AAPL", SecType: "STK", Quantity: 100, AvgCost: 245.30, Multiplier: 1},
+		},
+		quotes: map[string]float64{"AAPL": 293.32},
+	}
+	market := NewMarketDataService(fake, store)
+	acct := NewAccountService(fake, market)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before the call so enrich's goroutines hit ctx.Done()
+
+	_, err = acct.GetPositions(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("GetPositions on cancelled ctx: got %v, want context.Canceled", err)
+	}
+}

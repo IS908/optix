@@ -14,6 +14,17 @@ above it.
 
 ### Fixed
 
+- **Cancelled position fetches no longer masquerade as OPRA gaps (#50).**
+  When `ctx` was cancelled mid-`enrich`, in-flight goroutines exited without
+  populating `MarketValue` but `GetPositions` still returned `(positions,
+  nil)` — so a cancelled run rendered as "Option mark missing — needs OPRA"
+  instead of surfacing the cancellation. `enrich` now returns `ctx.Err()`
+  and `GetPositions` propagates it, so callers exit with a clear
+  `context.Canceled` / `deadline exceeded` rather than a misleading partial
+  report. (Latent today — no shipped CLI path wraps the context in a
+  timeout — but this hardens the account-read path against any future caller
+  that does.)
+
 - **`portfolio concentration` uses a distinct IBKR ClientID (#47).** v0.5.0
   reused ClientID 4, which collides with `optix positions` — running the
   two concurrently silently failed the second connection. The command now

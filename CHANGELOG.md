@@ -12,6 +12,15 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.7.0] - 2026-06-01
+
+Minor release: v2.0 Phase 3 — config-driven portfolio stress scenarios on top
+of the v0.6.x portfolio Greeks layer. Adds `optix portfolio stress`, explicit
+IV-point shocks, stricter portfolio config validation, and stress docs aligned
+with the shipped CLI/config contract.
+
 ### Added
 
 - **`optix portfolio stress` — config-driven portfolio stress scenarios (#63).**
@@ -735,7 +744,9 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/IS908/optix/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/IS908/optix/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/IS908/optix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/IS908/optix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0

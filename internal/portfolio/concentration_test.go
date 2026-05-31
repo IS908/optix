@@ -524,6 +524,87 @@ func TestCompute_ClosedOutResidualSkipped(t *testing.T) {
 	}
 }
 
+// TestCompute_ClosedOutResidualWithStaleMark guards the stale-mark variant of
+// issue #52: a closed position (qty=0) can briefly still carry the last
+// MarketValue IBKR reported before the row drops. The filter must key on
+// quantity alone — a qty=0 row is closed regardless of any lingering MV — so
+// these don't leak in as phantom weighted entries.
+func TestCompute_ClosedOutResidualWithStaleMark(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450), // real position
+		// Closed-out option residual still carrying a stale nonzero MV.
+		// Pre-fix (Quantity==0 && MarketValue==0) this slipped through as a
+		// weighted phantom; quantity-only filtering catches it.
+		{Symbol: "STALE", SecType: "OPT", Quantity: 0, MarketValue: 1234, Multiplier: 100},
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	for _, u := range r.Underlyings {
+		if u.Ticker == "STALE" {
+			t.Errorf("closed-out residual with stale MV should not appear, got %+v", u)
+		}
+	}
+	if !containsTicker(r.Underlyings, "MSFT") {
+		t.Errorf("MSFT should still be present, got %v", tickers(r.Underlyings))
+	}
+}
+
+// TestCompute_NegativeQuantityShortKept ensures the residual filter does NOT
+// remove legitimate short positions (negative quantity is a real exposure,
+// not a closed-out residual).
+func TestCompute_NegativeQuantityShortKept(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450),
+		// Short 5 puts — negative quantity, real directional/vol exposure.
+		optPos("SHORTY", "P", -5, 100, 2.50, nil),
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	if !containsTicker(r.Underlyings, "SHORTY") {
+		t.Errorf("short position SHORTY must be kept, got %v", tickers(r.Underlyings))
+	}
+}
+
+// TestCompute_FractionalDustKept ensures the 1e-9 epsilon does not over-filter
+// a legitimate (if tiny) fractional holding — only positions at essentially
+// exact zero are residuals.
+func TestCompute_FractionalDustKept(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450),
+		stockPos("DUST", 0.0001, 450), // tiny but real holding
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	if !containsTicker(r.Underlyings, "DUST") {
+		t.Errorf("fractional dust holding should be preserved, got %v", tickers(r.Underlyings))
+	}
+}
+
+// TestCompute_AllClosedDegradesGracefully ensures a fully closed-out account
+// (every row a residual) produces empty output, not a divide-by-zero panic.
+func TestCompute_AllClosedDegradesGracefully(t *testing.T) {
+	pos := []model.Position{
+		{Symbol: "AAAA", SecType: "STK", Quantity: 0, MarketValue: 0, Multiplier: 1},
+		{Symbol: "BBBB", SecType: "OPT", Quantity: 0, MarketValue: 0, Multiplier: 100},
+	}
+	// netLiqUSD=0 exercises every divide-by-zero guard at once.
+	r := Compute(pos, 0, DefaultConfig(), fakeSectorMap())
+
+	if len(r.Underlyings) != 0 {
+		t.Errorf("fully closed account should yield no underlyings, got %v", tickers(r.Underlyings))
+	}
+}
+
+// containsTicker reports whether any underlying group has the given ticker.
+func containsTicker(ug []UnderlyingGroup, ticker string) bool {
+	for _, u := range ug {
+		if u.Ticker == ticker {
+			return true
+		}
+	}
+	return false
+}
+
 // TestFmtMoney_EdgeCases covers thousand-separator formatting under zero,
 // negative, and large values.
 func TestFmtMoney_EdgeCases(t *testing.T) {

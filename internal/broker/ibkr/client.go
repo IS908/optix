@@ -181,14 +181,14 @@ func stockContract(symbol string) *ibapi.Contract {
 // expiration is "YYYYMMDD", strike is the option strike price.
 func optionContract(symbol, expiration, right string, strike float64) *ibapi.Contract {
 	return &ibapi.Contract{
-		Symbol:        symbol,
-		SecType:       "OPT",
-		Exchange:      "SMART",
-		Currency:      "USD",
+		Symbol:                       symbol,
+		SecType:                      "OPT",
+		Exchange:                     "SMART",
+		Currency:                     "USD",
 		LastTradeDateOrContractMonth: expiration,
-		Strike:        strike,
-		Right:         right,
-		Multiplier:    "100",
+		Strike:                       strike,
+		Right:                        right,
+		Multiplier:                   "100",
 	}
 }
 
@@ -470,10 +470,10 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 // Open Interest values. To bound network round-trips and respect IB pacing
 // limits (50 msg/sec), it limits the request scope:
 //
-//   1. Only the nearest expiration is fetched (or `expiration` if specified)
-//   2. Only strikes within ±oiStrikeWindowPct of the current spot price
-//   3. Concurrent reqMktData calls are bounded by oiMaxConcurrent
-//   4. Each per-contract request times out after oiPerContractTimeout
+//  1. Only the nearest expiration is fetched (or `expiration` if specified)
+//  2. Only strikes within ±oiStrikeWindowPct of the current spot price
+//  3. Concurrent reqMktData calls are bounded by oiMaxConcurrent
+//  4. Each per-contract request times out after oiPerContractTimeout
 //
 // Implementation note: IB delivers Open Interest only via streaming market data
 // with generic-tick-list "101" (snapshots don't include generic ticks). We start
@@ -504,6 +504,9 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	}
 
 	spot := quote.Last
+	if spot > 0 {
+		chain.UnderlyingPrice = spot
+	}
 	low := spot * (1 - oiStrikeWindowPct)
 	high := spot * (1 + oiStrikeWindowPct)
 
@@ -811,4 +814,3 @@ func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, rig
 	}
 	return mark, nil
 }
-

@@ -15,12 +15,14 @@ type fakePricer struct {
 	perShare model.Greeks
 	ivOK     bool
 	iv       float64
+	lastMark float64
 }
 
 func (f *fakePricer) PriceOption(_ context.Context, _, _, _, _, _ float64, _ model.OptionType) (model.Greeks, error) {
 	return f.perShare, nil
 }
-func (f *fakePricer) ImpliedVol(_ context.Context, _, _, _, _, _ float64, _ model.OptionType) (float64, bool, error) {
+func (f *fakePricer) ImpliedVol(_ context.Context, mark, _, _, _, _ float64, _ model.OptionType) (float64, bool, error) {
+	f.lastMark = mark
 	return f.iv, f.ivOK, nil
 }
 
@@ -29,6 +31,21 @@ type fakeChains map[string]*model.OptionChain
 
 func (f fakeChains) GetOptionChain(_ context.Context, underlying, _ string) (*model.OptionChain, error) {
 	return f[underlying], nil // nil chain → aggregator falls back to mark IV
+}
+
+type fakeChainsWithOI struct {
+	plain  *model.OptionChain
+	withOI *model.OptionChain
+	called bool
+}
+
+func (f *fakeChainsWithOI) GetOptionChain(context.Context, string, string) (*model.OptionChain, error) {
+	return f.plain, nil
+}
+
+func (f *fakeChainsWithOI) GetOptionChainWithOI(context.Context, string, string) (*model.OptionChain, error) {
+	f.called = true
+	return f.withOI, nil
 }
 
 func TestRightToOptionType(t *testing.T) {
@@ -83,6 +100,28 @@ func TestResolveIV_SkipWhenNoIVAndNoMark(t *testing.T) {
 		nil, 180, 0.043, &fakePricer{ivOK: false})
 	if ok {
 		t.Fatalf("expected skip (ok=false) when chain nil and mark 0")
+	}
+}
+
+func TestResolveIV_DerivesMarkFromMarketValue(t *testing.T) {
+	pricer := &fakePricer{iv: 0.27, ivOK: true}
+	iv, src, ok := resolveIV(context.Background(),
+		heldLeg{Strike: 185, OptionType: model.OptionTypeCall, Mark: 0, MarketValue: -650, SignedQty: -2, Multiplier: 100, TYears: 0.05},
+		nil, 180, 0.043, pricer)
+	if !ok || src != "mark" || math.Abs(iv-0.27) > 1e-9 {
+		t.Fatalf("got iv=%v src=%q ok=%v, want 0.27/mark/true", iv, src, ok)
+	}
+	if math.Abs(pricer.lastMark-3.25) > 1e-9 {
+		t.Fatalf("ImpliedVol mark = %v, want MarketValue-derived 3.25", pricer.lastMark)
+	}
+}
+
+func TestResolveIV_SkipWhenMarketValueCannotDeriveMark(t *testing.T) {
+	_, _, ok := resolveIV(context.Background(),
+		heldLeg{Strike: 185, OptionType: model.OptionTypeCall, Mark: 0, MarketValue: 650, SignedQty: 0, Multiplier: 100, TYears: 0.05},
+		nil, 180, 0.043, &fakePricer{iv: 0.27, ivOK: true})
+	if ok {
+		t.Fatalf("expected skip when quantity is zero and no per-share mark is available")
 	}
 }
 
@@ -166,6 +205,67 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	}
 	if g.IVSource != "chain" {
 		t.Errorf("IVSource = %q, want chain", g.IVSource)
+	}
+}
+
+func TestAggregate_OptionLegUsesOIChainIVWhenPositionMarkMissing(t *testing.T) {
+	pos := []model.Position{optionPos("GOOGL", "C", 2, 185, 0)} // missing IBKR position mark
+	pos[0].MarketValue = 650
+	plain := mkChain("GOOGL", 0, model.OptionQuote{ // structure-only chain has no usable spot/IV
+		Strike: 185, OptionType: model.OptionTypeCall,
+	})
+	withOI := mkChain("GOOGL", 180, model.OptionQuote{
+		Strike: 185, OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
+	})
+	chains := &fakeChainsWithOI{plain: plain, withOI: withOI}
+	pricer := &fakePricer{perShare: model.Greeks{Delta: 0.5, Gamma: 0.01, Vega: 0.2, Theta: -0.05}}
+
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		pricer, chains, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !chains.called {
+		t.Fatalf("AggregateGreeks should prefer GetOptionChainWithOI when available so IV can be priced without a position mark")
+	}
+	if len(r.SkippedLegs) != 0 {
+		t.Fatalf("SkippedLegs = %+v, want none when OI chain supplies spot+IV", r.SkippedLegs)
+	}
+	if len(r.Groups) != 1 || r.Groups[0].IVSource != "chain" {
+		t.Fatalf("groups = %+v, want one chain-priced option group", r.Groups)
+	}
+	if math.Abs(r.Groups[0].NetDelta-100) > 1e-9 {
+		t.Errorf("NetDelta = %v, want 100", r.Groups[0].NetDelta)
+	}
+	if math.Abs(r.Groups[0].MVUsd-650) > 1e-9 {
+		t.Errorf("MVUsd = %v, want MarketValue-backed 650", r.Groups[0].MVUsd)
+	}
+	if math.Abs(r.Groups[0].WeightPct-0.065) > 1e-9 {
+		t.Errorf("WeightPct = %v, want 0.065", r.Groups[0].WeightPct)
+	}
+}
+
+func TestAggregate_MarkedOptionDoesNotFetchOIChain(t *testing.T) {
+	pos := []model.Position{optionPos("GOOGL", "C", 2, 185, 4.0)}
+	plain := mkChain("GOOGL", 180, model.OptionQuote{ // no IV: should invert mark instead of fetching OI
+		Strike: 185, OptionType: model.OptionTypeCall,
+	})
+	withOI := mkChain("GOOGL", 180, model.OptionQuote{
+		Strike: 185, OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
+	})
+	chains := &fakeChainsWithOI{plain: plain, withOI: withOI}
+	pricer := &fakePricer{iv: 0.27, ivOK: true, perShare: model.Greeks{Delta: 0.5}}
+
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		pricer, chains, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chains.called {
+		t.Fatalf("AggregateGreeks should not fetch OI chain when all held legs for the chain have marks")
+	}
+	if len(r.Groups) != 1 || r.Groups[0].IVSource != "mark" {
+		t.Fatalf("groups = %+v, want mark-priced option group", r.Groups)
 	}
 }
 

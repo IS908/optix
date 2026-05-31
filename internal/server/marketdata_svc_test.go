@@ -19,6 +19,12 @@ type fakeBarsBroker struct {
 	barsToReturn []model.OHLCV
 	barsCalled   bool
 	barsErr      error
+	quoteCalls   int
+	quoteLast    float64
+	quoteBid     float64
+	quoteAsk     float64
+	quoteClose   float64
+	oiChain      *model.OptionChain
 }
 
 func (f *fakeBarsBroker) Connect(context.Context) error { return nil }
@@ -26,7 +32,12 @@ func (f *fakeBarsBroker) Disconnect() error             { return nil }
 func (f *fakeBarsBroker) IsConnected() bool             { return true }
 
 func (f *fakeBarsBroker) GetQuote(_ context.Context, sym string) (*model.StockQuote, error) {
-	return &model.StockQuote{Symbol: sym, Last: 100}, nil
+	f.quoteCalls++
+	last := f.quoteLast
+	if last <= 0 && f.quoteBid <= 0 && f.quoteAsk <= 0 && f.quoteClose <= 0 {
+		last = 100
+	}
+	return &model.StockQuote{Symbol: sym, Last: last, Bid: f.quoteBid, Ask: f.quoteAsk, Close: f.quoteClose}, nil
 }
 
 func (f *fakeBarsBroker) GetHistoricalBars(_ context.Context, _, _, _, _ string) ([]model.OHLCV, error) {
@@ -39,6 +50,97 @@ func (f *fakeBarsBroker) GetHistoricalBars(_ context.Context, _, _, _, _ string)
 
 func (f *fakeBarsBroker) GetOptionChain(context.Context, string, string) (*model.OptionChain, error) {
 	return nil, nil
+}
+
+func (f *fakeBarsBroker) GetOptionChainWithOI(context.Context, string, string) (*model.OptionChain, error) {
+	return f.oiChain, nil
+}
+
+func TestGetOptionChainWithOIBackfillsUnderlyingPriceFromQuote(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	fake := &fakeBarsBroker{
+		quoteLast: 180,
+		oiChain: &model.OptionChain{
+			Underlying: "GOOGL",
+			Expirations: []model.OptionChainExpiry{{
+				Expiration: "20260515",
+				Calls: []model.OptionQuote{{
+					Underlying: "GOOGL", Expiration: "20260515", Strike: 185,
+					OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
+				}},
+			}},
+		},
+	}
+	svc := NewMarketDataService(fake, store)
+
+	chain, err := svc.GetOptionChainWithOI(context.Background(), "GOOGL", "20260515")
+	if err != nil {
+		t.Fatalf("GetOptionChainWithOI: %v", err)
+	}
+	if chain.UnderlyingPrice != 180 {
+		t.Fatalf("UnderlyingPrice = %v, want quote-backed 180", chain.UnderlyingPrice)
+	}
+}
+
+func TestGetOptionChainWithOIBackfillsUnderlyingPriceFromBidAskWhenLastMissing(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	fake := &fakeBarsBroker{
+		quoteBid:   179,
+		quoteAsk:   181,
+		quoteClose: 175,
+		oiChain: &model.OptionChain{
+			Underlying:  "GOOGL",
+			Expirations: []model.OptionChainExpiry{{Expiration: "20260515"}},
+		},
+	}
+	svc := NewMarketDataService(fake, store)
+
+	chain, err := svc.GetOptionChainWithOI(context.Background(), "GOOGL", "20260515")
+	if err != nil {
+		t.Fatalf("GetOptionChainWithOI: %v", err)
+	}
+	if chain.UnderlyingPrice != 180 {
+		t.Fatalf("UnderlyingPrice = %v, want bid/ask midpoint 180", chain.UnderlyingPrice)
+	}
+}
+
+func TestGetOptionChainWithOIDoesNotBackfillWhenBrokerAlreadySetSpot(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	fake := &fakeBarsBroker{
+		quoteLast: 999,
+		oiChain: &model.OptionChain{
+			Underlying:      "GOOGL",
+			UnderlyingPrice: 180,
+			Expirations:     []model.OptionChainExpiry{{Expiration: "20260515"}},
+		},
+	}
+	svc := NewMarketDataService(fake, store)
+
+	chain, err := svc.GetOptionChainWithOI(context.Background(), "GOOGL", "20260515")
+	if err != nil {
+		t.Fatalf("GetOptionChainWithOI: %v", err)
+	}
+	if chain.UnderlyingPrice != 180 {
+		t.Fatalf("UnderlyingPrice = %v, want broker-provided 180", chain.UnderlyingPrice)
+	}
+	if fake.quoteCalls != 0 {
+		t.Fatalf("quote calls = %d, want 0 when chain already has spot", fake.quoteCalls)
+	}
 }
 
 // freshBars returns n synthetic daily bars whose latest timestamp is `now`.

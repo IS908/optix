@@ -86,6 +86,10 @@ func (svc *MarketDataService) GetOptionChain(ctx context.Context, underlying, ex
 		return nil, fmt.Errorf("get option chain for %s: %w", underlying, err)
 	}
 
+	if err := svc.backfillOptionChainUnderlyingPrice(ctx, underlying, chain); err != nil {
+		fmt.Printf("warning: failed to backfill option chain underlying price: %v\n", err)
+	}
+
 	// Cache to option_quotes so freshness tracking picks it up
 	if err := svc.store.UpsertOptionChain(ctx, chain); err != nil {
 		fmt.Printf("warning: failed to cache option chain: %v\n", err)
@@ -107,8 +111,35 @@ func (svc *MarketDataService) GetOptionChainWithOI(ctx context.Context, underlyi
 	if err != nil {
 		return nil, fmt.Errorf("get option chain with OI for %s: %w", underlying, err)
 	}
+	if err := svc.backfillOptionChainUnderlyingPrice(ctx, underlying, chain); err != nil {
+		fmt.Printf("warning: failed to backfill option chain underlying price: %v\n", err)
+	}
 	if err := svc.store.UpsertOptionChain(ctx, chain); err != nil {
 		fmt.Printf("warning: failed to cache option chain: %v\n", err)
 	}
 	return chain, nil
+}
+
+func (svc *MarketDataService) backfillOptionChainUnderlyingPrice(ctx context.Context, underlying string, chain *model.OptionChain) error {
+	if chain == nil || chain.UnderlyingPrice > 0 {
+		return nil
+	}
+	q, err := svc.broker.GetQuote(ctx, underlying)
+	if err != nil {
+		return err
+	}
+	if q == nil {
+		return nil
+	}
+	spot := q.Last
+	if spot <= 0 && q.Bid > 0 && q.Ask > 0 {
+		spot = (q.Bid + q.Ask) / 2
+	}
+	if spot <= 0 {
+		spot = q.Close
+	}
+	if spot > 0 {
+		chain.UnderlyingPrice = spot
+	}
+	return nil
 }

@@ -26,6 +26,14 @@ type ChainProvider interface {
 	GetOptionChain(ctx context.Context, underlying, expiration string) (*model.OptionChain, error)
 }
 
+// OIChainProvider is the richer optional chain path. IBKR's structure-only
+// GetOptionChain does not carry per-contract IV; GetOptionChainWithOI streams
+// market-data ticks and can populate IV, which is exactly what portfolio Greeks
+// need when account position marks are missing.
+type OIChainProvider interface {
+	GetOptionChainWithOI(ctx context.Context, underlying, expiration string) (*model.OptionChain, error)
+}
+
 // GreeksGroup is per-underlying or per-sector aggregated, position-level dollar
 // Greeks. All fields are in display units (see the design spec §4.3) so JSON
 // and the rendered table never diverge.
@@ -76,27 +84,28 @@ const minTYears = 1.0 / 365.0
 
 // heldLeg is a normalized option holding fed to pricing.
 type heldLeg struct {
-	Symbol     string
-	Underlying string
-	Expiration string // YYYYMMDD
-	Strike     float64
-	OptionType model.OptionType
-	Right      string
-	SignedQty  float64
-	Multiplier float64
-	Mark       float64 // per-share mark (Position.LastPrice)
-	TYears     float64
+	Symbol      string
+	Underlying  string
+	Expiration  string // YYYYMMDD
+	Strike      float64
+	OptionType  model.OptionType
+	Right       string
+	SignedQty   float64
+	Multiplier  float64
+	Mark        float64 // per-share mark (Position.LastPrice)
+	MarketValue float64 // position-level MV from AccountService; can exist when LastPrice is missing
+	TYears      float64
 }
 
 // chainIV looks up a contract's implied volatility in a chain by strike+type.
 // Returns (iv, true) only when a matching contract carries a positive IV.
 //
 // Precondition: chain is single-expiration. AggregateGreeks fetches the chain
-// via GetOptionChain(underlying, leg.Expiration), which returns only the
-// requested expiry, so matching on strike+type alone is unambiguous. If a
-// future ChainProvider ever returns a multi-expiration chain, this would need
-// an expiration filter to avoid picking a same-strike contract from the wrong
-// expiry.
+// via GetOptionChain/GetOptionChainWithOI(underlying, leg.Expiration), which
+// should return only the requested expiry, so matching on strike+type alone is
+// unambiguous. If a future ChainProvider ever returns a multi-expiration chain,
+// this would need an expiration filter to avoid picking a same-strike contract
+// from the wrong expiry.
 func chainIV(chain *model.OptionChain, strike float64, ot model.OptionType) (float64, bool) {
 	if chain == nil {
 		return 0, false
@@ -118,9 +127,22 @@ func chainIV(chain *model.OptionChain, strike float64, ot model.OptionType) (flo
 	return 0, false
 }
 
+func effectiveOptionMark(leg heldLeg) float64 {
+	if leg.Mark > 0 {
+		return leg.Mark
+	}
+	notionalContracts := math.Abs(leg.SignedQty) * leg.Multiplier
+	if leg.MarketValue == 0 || notionalContracts <= 0 {
+		return 0
+	}
+	return math.Abs(leg.MarketValue) / notionalContracts
+}
+
 // resolveIV returns (iv, source, ok). source ∈ {"chain","mark"}.
 //  1. chain contract IV (>0) → "chain"
-//  2. else invert the held mark via pricer.ImpliedVol → "mark"
+//  2. else invert the held mark via pricer.ImpliedVol → "mark". When the
+//     per-share position mark is missing but account MarketValue is present,
+//     derive an equivalent mark from abs(MV)/(abs(qty)*multiplier).
 //  3. else ok=false → caller skips the leg
 //
 // Near-expiry (T <= minTYears) always skips.
@@ -131,10 +153,11 @@ func resolveIV(ctx context.Context, leg heldLeg, chain *model.OptionChain, spot,
 	if iv, ok := chainIV(chain, leg.Strike, leg.OptionType); ok {
 		return iv, "chain", true
 	}
-	if leg.Mark <= 0 {
+	mark := effectiveOptionMark(leg)
+	if mark <= 0 {
 		return 0, "", false
 	}
-	iv, ok, err := pricer.ImpliedVol(ctx, leg.Mark, spot, leg.Strike, leg.TYears, r, leg.OptionType)
+	iv, ok, err := pricer.ImpliedVol(ctx, mark, spot, leg.Strike, leg.TYears, r, leg.OptionType)
 	if err != nil || !ok || iv <= 0 {
 		return 0, "", false
 	}
@@ -196,17 +219,34 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 			Expiration: p.Expiration, Strike: p.Strike,
 			OptionType: rightToOptionType(p.Right), Right: p.Right,
 			SignedQty: p.Quantity, Multiplier: p.Multiplier,
-			Mark: p.LastPrice, TYears: yearsToExpiry(p.Expiration, opts.AsOf),
+			Mark: p.LastPrice, MarketValue: p.MarketValue,
+			TYears: yearsToExpiry(p.Expiration, opts.AsOf),
 		})
 	}
 
-	// 2) Fetch chains for distinct (underlying, expiration); cache spot.
+	// 2) Fetch chains for distinct (underlying, expiration); cache spot. Prefer
+	// GetOptionChainWithOI only when at least one held leg for that chain lacks a
+	// mark; otherwise the cheaper plain chain plus mark-derived IV is sufficient.
+	needsOI := map[chainKey]bool{}
+	for _, leg := range legs {
+		if leg.Mark <= 0 {
+			needsOI[chainKey{leg.Underlying, leg.Expiration}] = true
+		}
+	}
+	oiChains, hasOIChains := chains.(OIChainProvider)
 	for _, leg := range legs {
 		k := chainKey{leg.Underlying, leg.Expiration}
 		if _, ok := chainCache[k]; ok {
 			continue
 		}
-		ch, err := chains.GetOptionChain(ctx, leg.Underlying, leg.Expiration)
+		var ch *model.OptionChain
+		var err error
+		if hasOIChains && needsOI[k] {
+			ch, err = oiChains.GetOptionChainWithOI(ctx, leg.Underlying, leg.Expiration)
+		}
+		if err != nil || ch == nil {
+			ch, err = chains.GetOptionChain(ctx, leg.Underlying, leg.Expiration)
+		}
 		if err != nil {
 			ch = nil // fall through to mark-derived IV
 		}
@@ -365,9 +405,13 @@ func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spo
 	}
 	scale := leg.SignedQty * leg.Multiplier
 	netDelta := g.Delta * scale
+	mvUsd := math.Abs(leg.MarketValue)
+	if mvUsd <= 0 {
+		mvUsd = math.Abs(effectiveOptionMark(leg) * scale)
+	}
 	return pricedLeg{
 		underlying:  leg.Underlying,
-		mvUsd:       math.Abs(leg.Mark * scale),
+		mvUsd:       mvUsd,
 		netDelta:    netDelta,
 		dollarDelta: netDelta * spot * 0.01, // USD per +1% spot (not full notional)
 		gamma:       g.Gamma * scale * spot * 0.01,

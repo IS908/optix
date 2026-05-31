@@ -12,6 +12,15 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.6.0] - 2026-05-31
+
+Minor release: v2.0 Phase 2 — portfolio Greeks aggregation. Adds the
+`optix portfolio greeks` command on top of the v0.5.x concentration layer,
+reusing the existing Black-Scholes engine rather than building a new
+service. No changes to the concentration API.
+
 ### Added
 
 - **`optix portfolio greeks` — account-level Greeks aggregation (v2.0 Phase
@@ -706,7 +715,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/IS908/optix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/IS908/optix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/IS908/optix/compare/v0.4.4...v0.4.5

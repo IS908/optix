@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "美股期权分析工具 / US stock & options analysis: 查看股价行情、期权分析、策略推荐、自选股管理、看板总览、IBKR 账户持仓与交易记录。Use when user asks about stock prices, quotes, options strategies, market analysis, watchlist, dashboard, IBKR positions, or trade history."
+description: "美股期权分析工具 / US stock & options analysis: 查看股价行情、期权分析、策略推荐、自选股管理、看板总览、IBKR 账户持仓与交易记录、持仓集中度、组合 Greeks、Delta/Gamma/Vega/Theta、风险敞口 / position concentration, portfolio greeks, delta exposure。Use when user asks about stock prices, quotes, options strategies, market analysis, watchlist, dashboard, IBKR positions, or trade history."
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -148,6 +148,24 @@ JSON includes a `max_pain_offset_pct` field = `(max_pain - spot) / spot × 100`
 decide directional bias at a glance.
 
 Exit codes: `0` · `1` bad flags · `2` broker unreachable · `3` analysis engine unreachable.
+
+### Portfolio Risk (持仓风险 / 组合 Greeks)
+
+Account-level risk views across all holdings. **Requires IBKR** (no Yahoo Finance fallback).
+
+#### Concentration (集中度：单名/板块权重 + 阈值旗标)
+```bash
+bash bin/optix.sh portfolio concentration --net-liq-usd <NLV>
+bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --json /tmp/conc.json
+```
+Per-underlying and per-sector weights, Top-N, HHI diversification bucket, and threshold flags (default 10% yellow, 20% red). Non-USD holdings and closed-out residuals are excluded with a warning.
+
+#### Greeks (组合 Δ/Γ/Vega/Θ 聚合)
+```bash
+bash bin/optix.sh portfolio greeks --by underlying --net-liq-usd <NLV>
+bash bin/optix.sh portfolio greeks --by sector --json /tmp/greeks.json
+```
+Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%) and Θ/day in USD. IV comes from the option chain (falls back to inverting the mark). Legs with no resolvable IV are skipped and listed. Needs the Python analysis engine (auto-started by the skill).
 
 ## Notes
 - Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)

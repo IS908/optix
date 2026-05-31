@@ -41,9 +41,26 @@ docs/v2.0-portfolio-risk-layer.md for the roadmap.`,
 	return cmd
 }
 
+// validateCurrencyFlags enforces the dual-currency display contract: the
+// SGD net-liq and the USD→SGD rate are only meaningful together. Both must be
+// positive, or both omitted. A negative value is rejected explicitly (rather
+// than silently treated as "unset") so the error names the real problem.
+func validateCurrencyFlags(netLiqSGD, fxUSDtoSGD float64) error {
+	if netLiqSGD < 0 || fxUSDtoSGD < 0 {
+		return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be positive (got net-liq-sgd=%g, fx-usd-sgd=%g)",
+			netLiqSGD, fxUSDtoSGD)
+	}
+	if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
+		return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
+	}
+	return nil
+}
+
 func newPortfolioConcentrationCmd() *cobra.Command {
 	var (
 		netLiqUSD     float64
+		netLiqSGD     float64
+		fxUSDtoSGD    float64
 		thresholdWarn float64
 		thresholdRed  float64
 		topN          int
@@ -68,6 +85,13 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
   optix portfolio concentration --net-liq-usd 354477 --threshold-red 25 --top-n 15
   optix portfolio concentration --net-liq-usd 354477 --json /tmp/snap.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Flag validation FIRST — before any expensive broker/DB work.
+			// A user with mistyped SGD/FX flags shouldn't pay the IBKR
+			// round-trip cost only to be told their input is bad.
+			if err := validateCurrencyFlags(netLiqSGD, fxUSDtoSGD); err != nil {
+				return err
+			}
+
 			ctx := context.Background()
 
 			store, err := sqlite.New(dbPath)
@@ -144,6 +168,14 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			}
 
 			report := portfolio.Compute(positions, anchorNLV, cfg, sm)
+
+			// Wire up the SGD/FX display block (the XOR check at the top of
+			// RunE has already validated they're both set or both unset).
+			if netLiqSGD > 0 && fxUSDtoSGD > 0 {
+				report.NetLiqSGD = netLiqSGD
+				report.FXUSDtoSGD = fxUSDtoSGD
+			}
+
 			report.Render(os.Stdout)
 
 			if jsonOut != "" {
@@ -162,6 +194,8 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	}
 
 	cmd.Flags().Float64Var(&netLiqUSD, "net-liq-usd", 0, "Net Liq value in USD (anchors weight calc). Omit to use sum(|MV|) fallback.")
+	cmd.Flags().Float64Var(&netLiqSGD, "net-liq-sgd", 0, "Net Liq value in SGD, for dual-currency display (must be passed with --fx-usd-sgd). Manual until IBKR account-summary integration ships.")
+	cmd.Flags().Float64Var(&fxUSDtoSGD, "fx-usd-sgd", 0, "USD→SGD exchange rate, for dual-currency display (must be passed with --net-liq-sgd).")
 	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); default 10")
 	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); default 20")
 	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; default 10")

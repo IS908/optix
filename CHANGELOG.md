@@ -32,6 +32,17 @@ above it.
   silently falling back. The resolved source is printed to stderr when it
   isn't the most-expected location.
 
+- **`portfolio concentration` now populates the dual-currency display
+  block.** New `--net-liq-sgd` and `--fx-usd-sgd` flags wire data into the
+  `NetLiqSGD` / `FXUSDtoSGD` fields that the v0.5.0 JSON schema exposed
+  but the CLI never set. Validation (`validateCurrencyFlags`) runs up-front
+  before any broker work: the two flags must be passed together or neither
+  (so partial input doesn't render misleading `USD $X (SGD $0)` output),
+  and a negative value is rejected with a sign-specific message rather than
+  the confusing "must be passed together". Table-tested across both-set,
+  neither, each-alone, and negative inputs. Will become automatic once the
+  IBKR account-summary integration ships. (#51)
+
 - **`portfolio concentration` no longer surfaces IBKR's closed-out
   zero-quantity residual rows.** Positions IBKR keeps for ~T+2 after a
   close were rendered as `0.0%` ghost entries in the Top-N table and

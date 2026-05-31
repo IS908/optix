@@ -130,7 +130,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

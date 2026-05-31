@@ -96,7 +96,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -107,7 +107,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				ClientID: portfolioClientID,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to broker: %w", err)
+				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Println(b.SourceBanner())
@@ -118,9 +118,9 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			positions, err := acct.GetPositions(ctx)
 			if err != nil {
 				if errors.Is(err, broker.ErrAccountNotSupported) {
-					return fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行")
+					return cliExit(fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行"), exitIBKRUnreachable)
 				}
-				return fmt.Errorf("get positions: %w", err)
+				return cliExit(fmt.Errorf("get positions: %w", err), exitIBKRUnreachable)
 			}
 
 			// Resolve sector map via the search chain: explicit flag → env →
@@ -134,10 +134,11 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				// embedded fallback always succeeds.
 				return fmt.Errorf("resolve sector map: %w", err)
 			}
-			if source == "<embedded>" || sectorsFile != "" {
-				// Tell the user where the map came from when it isn't the
-				// most-expected location (an explicit flag, or the silent
-				// embedded fallback).
+			// Tell the user where the map came from whenever it isn't the
+			// default auto-discovered location: an explicit --sectors-file, the
+			// $OPTIX_SECTORS_FILE override, or the embedded fallback. All three
+			// are cases where the user benefits from confirmation of the source.
+			if source == "<embedded>" || sectorsFile != "" || os.Getenv("OPTIX_SECTORS_FILE") != "" {
 				fmt.Fprintf(os.Stderr, "info: sector map source: %s\n", source)
 			}
 
@@ -153,17 +154,13 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			}
 
 			// Phase 1 NLV fallback: if the user didn't pass --net-liq-usd, anchor
-			// against the sum of |MV|. The report renders deployed=100%, which is
-			// the visual cue that the denominator is a fallback rather than truth.
+			// against FallbackNLV (sum of |MV| over USD, non-residual legs). It
+			// applies the same exclusions as Compute, so deployed_pct renders
+			// 100% — the visual cue that the denominator is a fallback rather
+			// than truth — even when a non-USD or residual holding is present.
 			anchorNLV := netLiqUSD
 			if anchorNLV <= 0 {
-				for _, p := range positions {
-					if p.MarketValue >= 0 {
-						anchorNLV += p.MarketValue
-					} else {
-						anchorNLV -= p.MarketValue
-					}
-				}
+				anchorNLV = portfolio.FallbackNLV(positions)
 				fmt.Fprintln(os.Stderr, "warn: --net-liq-usd not provided; using sum(|MV|) as fallback NLV (cash + non-MV-bearing holdings will be missing)")
 			}
 

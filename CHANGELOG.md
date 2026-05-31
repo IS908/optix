@@ -12,7 +12,13 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+
+- **`portfolio concentration` no longer surfaces IBKR's closed-out
+  zero-quantity residual rows.** Positions with both `Quantity == 0` and
+  `MarketValue == 0` (typical for ~T+2 after a close) were rendered as
+  `0.0%` ghost entries in the Top-N table and added to sector ticker lists.
+  They're now skipped at the position-loop entry. (#52)
 
 ## [0.5.0] - 2026-05-31
 

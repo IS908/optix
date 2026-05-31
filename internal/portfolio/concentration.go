@@ -161,9 +161,15 @@ type Report struct {
 
 	Flags             []Flag            `json:"flags"`
 
-	// MissingMarkTickers lists tickers whose mark price was unavailable,
-	// causing their weight to be under-reported. Surfaces the OPRA gap.
-	MissingMarkTickers []string         `json:"missing_mark_tickers,omitempty"`
+	// MissingMarkTickers lists tickers with at least one option leg whose
+	// mark price was unavailable (typically the OPRA-subscription gap on the
+	// local TWS). Stock legs always have marks via the yfinance fallback, so
+	// this field flags only option-leg gaps; the ticker may still have a
+	// fully-priced stock position contributing to AbsMarketValueUSD.
+	MissingMarkTickers   []string       `json:"missing_mark_tickers,omitempty"`
+	// MissingMarkLegCounts is ticker → number of option legs missing a mark,
+	// used by the renderer to disambiguate "1 leg" from "5 legs missing".
+	MissingMarkLegCounts map[string]int `json:"missing_mark_leg_counts,omitempty"`
 
 	UsedConfig        Config            `json:"used_config"`
 }
@@ -172,23 +178,31 @@ type Report struct {
 // caller can't read it from the broker yet, pass the sum of |MV| as a
 // fallback (deployed_pct will then be 100%, which the renderer flags).
 func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *SectorMap) *Report {
+	// Apply per-field defaults so callers using `portfolio.Config{}` zero-init
+	// don't accidentally get red flags on every non-zero position. Each
+	// threshold falls back to DefaultConfig independently so callers can
+	// override only the field(s) they care about.
+	cfg = applyConfigDefaults(cfg)
+
 	r := &Report{
 		SnapshotAt: time.Now(),
 		NetLiqUSD:  netLiqUSD,
 		TopN:       cfg.TopN,
 		UsedConfig: cfg,
 	}
-	if cfg.TopN <= 0 {
-		r.TopN = DefaultConfig().TopN
-	}
 
 	// 1) Aggregate per underlying. The underlying ticker is model.Position.Symbol
 	// for both stocks and options (IBKR convention). Options are summed by abs MV
 	// to capture risk exposure (a short call's negative MV still represents real
 	// directional/vol exposure).
+	//
+	// TODO(v2.1): broker.AccountReader currently signals "mark unfetched" by
+	// returning MarketValue==0, which is indistinguishable from a legitimately
+	// worthless option (e.g. deep-OTM call expiring today). Add an explicit
+	// "mark_unfetched" bool on model.Position when reworking the broker layer
+	// for AccountSummary so this branch can stop overloading MV==0.
 	byTicker := map[string]*UnderlyingGroup{}
-	var missing []string
-	missingSet := map[string]struct{}{}
+	missingLegsByTicker := map[string]int{}
 	for _, p := range positions {
 		t := strings.ToUpper(p.Symbol)
 		g, ok := byTicker[t]
@@ -201,21 +215,26 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		} else {
 			g.StockLegCount++
 		}
-		// MarketValue is 0 when the mark is unavailable (option without OPRA).
-		// Surface the gap rather than silently under-weight the position.
-		if p.MarketValue == 0 && p.Quantity != 0 {
+		// Only treat option legs with MV==0 as "missing mark" — stock quotes
+		// from yfinance fallback are reliable, so MV==0 on a stock leg almost
+		// certainly means qty==0 (a flat residual contract row).
+		if p.IsOption() && p.MarketValue == 0 && p.Quantity != 0 {
 			g.HasMissingMark = true
-			if _, seen := missingSet[t]; !seen {
-				missingSet[t] = struct{}{}
-				missing = append(missing, t)
-			}
+			missingLegsByTicker[t]++
 			continue
 		}
 		g.AbsMarketValueUSD += math.Abs(p.MarketValue)
 		g.NetMarketValueUSD += p.MarketValue
 	}
+	// Build a deterministically-sorted list of tickers with at least one
+	// missing-mark leg, for stable JSON output.
+	missing := make([]string, 0, len(missingLegsByTicker))
+	for t := range missingLegsByTicker {
+		missing = append(missing, t)
+	}
 	sort.Strings(missing)
 	r.MissingMarkTickers = missing
+	r.MissingMarkLegCounts = missingLegsByTicker
 
 	// 2) Weights against NLV. Guard against zero/negative NLV.
 	if netLiqUSD > 0 {
@@ -224,12 +243,17 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		}
 	}
 
-	// 3) Sort and emit ordered slice.
+	// 3) Sort and emit ordered slice. Alphabetical tiebreaker on ticker keeps
+	// the JSON snapshot deterministic across runs when two underlyings have
+	// identical MV (downstream cron diffing depends on this).
 	underlyings := make([]UnderlyingGroup, 0, len(byTicker))
 	for _, g := range byTicker {
 		underlyings = append(underlyings, *g)
 	}
 	sort.Slice(underlyings, func(i, j int) bool {
+		if underlyings[i].AbsMarketValueUSD == underlyings[j].AbsMarketValueUSD {
+			return underlyings[i].Ticker < underlyings[j].Ticker
+		}
 		return underlyings[i].AbsMarketValueUSD > underlyings[j].AbsMarketValueUSD
 	})
 	r.Underlyings = underlyings
@@ -289,6 +313,9 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		sectors = append(sectors, *sg)
 	}
 	sort.Slice(sectors, func(i, j int) bool {
+		if sectors[i].AbsMarketValueUSD == sectors[j].AbsMarketValueUSD {
+			return sectors[i].SectorID < sectors[j].SectorID
+		}
 		return sectors[i].AbsMarketValueUSD > sectors[j].AbsMarketValueUSD
 	})
 	r.Sectors = sectors
@@ -297,6 +324,35 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	r.Flags = flagAll(r, cfg)
 
 	return r
+}
+
+// applyConfigDefaults fills any zero-valued field on cfg with the
+// DefaultConfig value for that field. Each field defaults independently so a
+// caller can override `WarnPct` without resetting `TopN`.
+func applyConfigDefaults(cfg Config) Config {
+	d := DefaultConfig()
+	if cfg.WarnPct == 0 {
+		cfg.WarnPct = d.WarnPct
+	}
+	if cfg.RedPct == 0 {
+		cfg.RedPct = d.RedPct
+	}
+	if cfg.TopN <= 0 {
+		cfg.TopN = d.TopN
+	}
+	if cfg.Top2WarnPct == 0 {
+		cfg.Top2WarnPct = d.Top2WarnPct
+	}
+	if cfg.Top5WarnPct == 0 {
+		cfg.Top5WarnPct = d.Top5WarnPct
+	}
+	if cfg.HHIDiversifiedMax == 0 {
+		cfg.HHIDiversifiedMax = d.HHIDiversifiedMax
+	}
+	if cfg.HHIConcentratedMin == 0 {
+		cfg.HHIConcentratedMin = d.HHIConcentratedMin
+	}
+	return cfg
 }
 
 func sumTopK(ug []UnderlyingGroup, k int) float64 {
@@ -352,6 +408,10 @@ func (r *Report) Render(w io.Writer) {
 	} else {
 		fmt.Fprintf(w, "Net Liq:  USD $%s\n", fmtMoney(r.NetLiqUSD))
 	}
+	// TODO(v2.0.1): when Deployed > NLV (real leverage or stale NLV) the cash
+	// row clamps to 0 and the two percentages no longer sum to 100, which is
+	// visually confusing. Replace the clamp with an explicit "(margin used)"
+	// label so users can distinguish leverage from stale data.
 	if r.NetLiqUSD > 0 {
 		fmt.Fprintf(w, "Deployed: $%s  (%.1f%%)  |  Cash: $%s (%.1f%%)\n\n",
 			fmtMoney(r.DeployedUSD), r.DeployedPct,
@@ -389,10 +449,22 @@ func (r *Report) Render(w io.Writer) {
 		fmt.Fprintln(w)
 	}
 
-	// Missing-mark warning (OPRA gap)
+	// Missing-mark warning (OPRA gap). Attribute to specific option legs so a
+	// ticker with a good stock mark plus a mark-less option leg doesn't look
+	// like the stock position itself is unpriced.
 	if len(r.MissingMarkTickers) > 0 {
-		fmt.Fprintf(w, "⚠️  Mark price missing for: %s\n", strings.Join(r.MissingMarkTickers, ", "))
-		fmt.Fprintln(w, "   (weights for these tickers under-reported; needs OPRA subscription or IBKR MCP path)")
+		parts := make([]string, 0, len(r.MissingMarkTickers))
+		for _, t := range r.MissingMarkTickers {
+			n := r.MissingMarkLegCounts[t]
+			if n > 1 {
+				parts = append(parts, fmt.Sprintf("%s (%d option legs)", t, n))
+			} else {
+				parts = append(parts, fmt.Sprintf("%s (1 option leg)", t))
+			}
+		}
+		fmt.Fprintf(w, "⚠️  Option mark missing on: %s\n", strings.Join(parts, ", "))
+		fmt.Fprintln(w, "   (those leg(s) contribute 0 to the ticker's weight; stock legs still counted)")
+		fmt.Fprintln(w, "   (needs OPRA subscription or IBKR MCP path)")
 		fmt.Fprintln(w)
 	}
 

@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.5.0] - 2026-05-31
+
 ### Added
 
 - **`optix portfolio concentration` — account-level concentration analysis
@@ -49,6 +53,39 @@ above it.
 - `.gitignore` now excludes `.superpowers/` scratch dir (same rationale as
   the existing `docs/superpowers/{plans,specs}/` ignores — working artifacts,
   not source).
+
+### Fixed
+
+Pre-release review pass on the concentration code surfaced four real defects;
+all fixed before tagging v0.5.0:
+
+- **Missing-mark warning now attributes to specific option legs**, not the
+  whole ticker. Previously a GOOGL holding with a fully-priced stock leg plus
+  one OPRA-less option leg rendered "Mark price missing for: GOOGL", which
+  misdirected the user toward the stock. Output now reads "Option mark
+  missing on: GOOGL (1 option leg)" and the ticker's stock-leg MV is preserved
+  in the weight calc rather than zeroed out.
+
+- **`Compute` with zero-init `Config` no longer red-flags every position.**
+  The prior partial-guard only filled `TopN`, so callers passing
+  `portfolio.Config{}` got `RedPct=0` and any non-zero weight tripped the red
+  threshold. `applyConfigDefaults` now fills each threshold field
+  independently from `DefaultConfig`.
+
+- **Deterministic ordering when two underlyings have identical |MV|.** Sort
+  comparators (both per-underlying and per-sector) now use an alphabetical
+  tiebreaker, so the JSON snapshot is stable across runs and downstream cron
+  diffing doesn't flap.
+
+- **Stock legs with `MarketValue == 0` no longer mis-flagged as missing-mark**
+  (they're almost always zero-qty residuals). Missing-mark detection is now
+  scoped to option legs only, where the OPRA-subscription gap is the actual
+  pathology.
+
+Two deeper issues are tracked as TODOs in code and deferred to v2.1 / v2.0.1:
+distinguishing legitimate `mark == 0` options from unfetched marks (needs a
+broker.AccountReader API change), and explicit "(margin used)" leverage labels
+when `DeployedUSD > NLV`.
 
 
 ## [0.4.5] - 2026-05-23

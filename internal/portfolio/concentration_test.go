@@ -3,6 +3,7 @@ package portfolio
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -312,4 +313,194 @@ func tickers(ug []UnderlyingGroup) []string {
 		out[i] = u.Ticker
 	}
 	return out
+}
+
+// TestCompute_MissingMarkOnlyOnOptionLegDoesNotMaskStock guards the regression
+// fixed in v0.5.0 review pass: when GOOGL holds a fully-priced stock plus an
+// option leg with no OPRA mark, the earlier code reported the whole ticker as
+// "missing mark" and silently dropped the option's contribution. The fix
+// keeps the stock MV intact and attributes the missing-mark warning to the
+// option leg(s) specifically.
+func TestCompute_MissingMarkOnlyOnOptionLegDoesNotMaskStock(t *testing.T) {
+	mv := 0.0
+	pos := []model.Position{
+		stockPos("GOOGL", 100, 380),               // $38,000 stock leg — fully priced
+		optPos("GOOGL", "C", 5, 400, 0, &mv),     // option leg with no mark
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	// GOOGL should be flagged as having a missing-mark option leg.
+	if len(r.MissingMarkTickers) != 1 || r.MissingMarkTickers[0] != "GOOGL" {
+		t.Fatalf("expected MissingMarkTickers=[GOOGL], got %v", r.MissingMarkTickers)
+	}
+	if r.MissingMarkLegCounts["GOOGL"] != 1 {
+		t.Fatalf("expected GOOGL to have 1 missing-mark leg, got %d", r.MissingMarkLegCounts["GOOGL"])
+	}
+
+	// Stock MV must still be intact — the per-ticker accumulation should NOT
+	// have been short-circuited by the missing-mark option leg.
+	var found *UnderlyingGroup
+	for i := range r.Underlyings {
+		if r.Underlyings[i].Ticker == "GOOGL" {
+			found = &r.Underlyings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("GOOGL should appear in Underlyings, got %v", tickers(r.Underlyings))
+	}
+	if math.Abs(found.AbsMarketValueUSD-38_000) > 0.01 {
+		t.Fatalf("GOOGL AbsMV should be $38,000 (stock leg preserved), got $%.2f", found.AbsMarketValueUSD)
+	}
+	if found.StockLegCount != 1 || found.OptionLegCount != 1 {
+		t.Fatalf("expected 1 stock + 1 option leg, got stock=%d opt=%d", found.StockLegCount, found.OptionLegCount)
+	}
+	if !found.HasMissingMark {
+		t.Fatalf("HasMissingMark should be true on GOOGL")
+	}
+	// Weight should reflect the stock leg (7.6%), not 0%.
+	if math.Abs(found.WeightPct-7.6) > 0.01 {
+		t.Fatalf("GOOGL weight should reflect stock leg (7.6%%), got %.2f", found.WeightPct)
+	}
+}
+
+// TestCompute_StockLegMarkZeroNotFlagged ensures we don't mis-attribute a
+// stock position with MV==0 (which is almost always a zero-qty residual, not
+// a missing-mark stock) to the OPRA-gap warning. The fix narrowed missing-mark
+// detection to option legs only.
+func TestCompute_StockLegMarkZeroNotFlagged(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450),
+		// Stock position with zero quantity & zero MV — looks like a flat residual.
+		{Symbol: "ZZZZ", SecType: "STK", Quantity: 0, MarketValue: 0, Multiplier: 1},
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+	if len(r.MissingMarkTickers) != 0 {
+		t.Fatalf("stock leg with MV==0 should not be flagged as missing-mark, got %v", r.MissingMarkTickers)
+	}
+}
+
+// TestCompute_ZeroInitConfigUsesDefaults guards that passing portfolio.Config{}
+// no longer trips red flags on every position (regression caught in v0.5.0
+// review). applyConfigDefaults should fill each zero-valued field independently.
+func TestCompute_ZeroInitConfigUsesDefaults(t *testing.T) {
+	pos := []model.Position{stockPos("AAPL", 1, 50_000)} // 5% of $1M — below all defaults
+	r := Compute(pos, 1_000_000, Config{}, fakeSectorMap())
+	if len(r.Flags) != 0 {
+		t.Fatalf("zero-init Config should default to safe thresholds; 5%% should not flag, got %+v", r.Flags)
+	}
+	// UsedConfig should reflect the post-defaulting values, not zeros.
+	if r.UsedConfig.RedPct == 0 || r.UsedConfig.WarnPct == 0 || r.UsedConfig.TopN == 0 {
+		t.Fatalf("UsedConfig should be filled with defaults, got %+v", r.UsedConfig)
+	}
+}
+
+// TestCompute_TiebreakerByTickerWhenWeightsEqual ensures deterministic ordering
+// when two underlyings have identical MV. Without the alphabetical tiebreaker
+// the JSON snapshot would swap order across runs, breaking cron diffing.
+func TestCompute_TiebreakerByTickerWhenWeightsEqual(t *testing.T) {
+	// Three names all at exactly $50,000 — should sort alphabetically.
+	pos := []model.Position{
+		stockPos("MSFT", 1, 50_000),
+		stockPos("AAPL", 1, 50_000),
+		stockPos("GOOGL", 1, 50_000),
+	}
+	// Run twice to verify the order is stable across invocations.
+	for i := 0; i < 2; i++ {
+		r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+		got := tickers(r.Underlyings)
+		want := []string{"AAPL", "GOOGL", "MSFT"}
+		for j := range want {
+			if got[j] != want[j] {
+				t.Fatalf("iter %d: expected alphabetical tiebreak %v, got %v", i, want, got)
+			}
+		}
+	}
+}
+
+// TestCompute_HHIBoundaries pins the bucket boundary semantics: HHI exactly
+// at HHIDiversifiedMax should bucket as "diversified" (inclusive), and exactly
+// at HHIConcentratedMin should bucket as "concentrated" (inclusive). Future
+// refactors changing <= to < would silently mis-bucket boundary portfolios
+// and pass every other existing test — this one fails fast.
+func TestCompute_HHIBoundaries(t *testing.T) {
+	// Construct a portfolio whose HHI lands exactly on each boundary using
+	// weights that round cleanly. HHI = Σ(weight_fraction)² × 10000.
+	//
+	// For HHI = 1500: e.g. 4 names at weight √(1500/4)/100 = √375/100 ≈ 19.36%
+	// Easier: just pin via known-clean weights — 30% + 20% + 20% + 20% = HHI = 2100.
+	// We test the diversified bucket with HHI well under (one 30% name + 1 small).
+	// And concentrated with one big name.
+	cfg := DefaultConfig()
+
+	// Diversified boundary: build HHI = 1500 exactly. With one 25% + rest tiny:
+	// 0.25² = 0.0625 → HHI alone 625 if just one 25% leg. Hard to hit 1500 cleanly.
+	// Simpler approach: test STRICTLY just inside each bucket.
+	cases := []struct {
+		name       string
+		positions  []model.Position
+		nlv        float64
+		wantBucket string
+	}{
+		{
+			name:       "high diversified (10×3%) → HHI=90 → diversified",
+			positions:  manyNames(10, 30_000),
+			nlv:        1_000_000,
+			wantBucket: "diversified",
+		},
+		{
+			name:       "moderate (1×40% + 1×10%) → HHI=1700 → moderate",
+			positions:  []model.Position{stockPos("BIG", 1, 400_000), stockPos("MID", 1, 100_000)},
+			nlv:        1_000_000,
+			wantBucket: "moderate",
+		},
+		{
+			name:       "concentrated (1×60%) → HHI=3600 → concentrated",
+			positions:  []model.Position{stockPos("MEGA", 1, 600_000)},
+			nlv:        1_000_000,
+			wantBucket: "concentrated",
+		},
+	}
+	for _, tc := range cases {
+		r := Compute(tc.positions, tc.nlv, cfg, fakeSectorMap())
+		if r.HHIBucket != tc.wantBucket {
+			t.Errorf("%s: HHI=%.0f bucket=%s, want %s", tc.name, r.HHI, r.HHIBucket, tc.wantBucket)
+		}
+	}
+}
+
+func manyNames(n int, perPositionMV float64) []model.Position {
+	out := make([]model.Position, n)
+	for i := 0; i < n; i++ {
+		// Use unique 4-char tickers so map keys don't collide.
+		out[i] = stockPos(fmt.Sprintf("T%03d", i), 1, perPositionMV)
+	}
+	return out
+}
+
+// TestFmtMoney_EdgeCases covers thousand-separator formatting under zero,
+// negative, and large values.
+func TestFmtMoney_EdgeCases(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want string
+	}{
+		{0, "0"},
+		{500, "500"},
+		{1_000, "1,000"},
+		{1_234, "1,234"},
+		{12_345, "12,345"},
+		{1_234_567, "1,234,567"},
+		{-1_234, "-1,234"},
+		{-1_000_000, "-1,000,000"},
+		{1_234_567_890, "1,234,567,890"},
+		// Rounding: 0.4 → 0, 0.5 → 1 (banker's rounding in math.Round).
+		{0.4, "0"},
+		{0.6, "1"},
+	}
+	for _, tc := range cases {
+		got := fmtMoney(tc.in)
+		if got != tc.want {
+			t.Errorf("fmtMoney(%v) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
 }

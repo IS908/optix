@@ -14,6 +14,24 @@ above it.
 
 ### Fixed
 
+- **`portfolio concentration` uses a distinct IBKR ClientID (#47).** v0.5.0
+  reused ClientID 4, which collides with `optix positions` — running the
+  two concurrently silently failed the second connection. The command now
+  uses a dedicated `portfolioClientID = 5` (the free slot in the matrix),
+  pinned by `TestPortfolioClientIDDistinct` so a future subcommand can't
+  silently reuse it.
+
+- **`--sectors-file` no longer breaks when run outside the repo (#48).**
+  The v0.5.0 default was the repo-relative `./configs/sectors.json`, so
+  running the installed binary from any other cwd silently produced an
+  all-"unclassified" sector view. Resolution now follows a search chain —
+  explicit `--sectors-file` → `$OPTIX_SECTORS_FILE` → `<bin-dir>/../configs/`
+  → `./configs/` → an **embedded** default (compiled into the binary via
+  `go:embed`, so the sector map is never silently empty). An explicit flag
+  or env path that's missing/malformed now fails loudly rather than
+  silently falling back. The resolved source is printed to stderr when it
+  isn't the most-expected location.
+
 - **`portfolio concentration` now populates the dual-currency display
   block.** New `--net-liq-sgd` and `--fx-usd-sgd` flags wire data into the
   `NetLiqSGD` / `FXUSDtoSGD` fields that the v0.5.0 JSON schema exposed
@@ -24,6 +42,16 @@ above it.
   the confusing "must be passed together". Table-tested across both-set,
   neither, each-alone, and negative inputs. Will become automatic once the
   IBKR account-summary integration ships. (#51)
+
+- **`portfolio concentration` no longer surfaces IBKR's closed-out
+  zero-quantity residual rows.** Positions IBKR keeps for ~T+2 after a
+  close were rendered as `0.0%` ghost entries in the Top-N table and
+  added to sector ticker lists. They're now skipped at the position-loop
+  entry, keyed on quantity alone (`abs(qty) < 1e-9`) — a closed position
+  is defined by zero quantity regardless of any stale mark IBKR may still
+  report for the row, and the epsilon catches float-represented zeros
+  without over-filtering legitimate fractional holdings. Short positions
+  (negative quantity) are preserved. (#52)
 
 ## [0.5.0] - 2026-05-31
 

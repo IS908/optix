@@ -16,6 +16,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// portfolioClientID is the IBKR ClientID used by `optix portfolio …`.
+// Picked from the free slots in the matrix to avoid collision with positions
+// (4), max-pain (8), or the analyze (2 / 6) and dashboard (3) paths. See
+// issue #47 — the original v0.5.0 release used 4, which silently failed when
+// run concurrently with `optix positions`.
+const portfolioClientID = 5
+
 // newPortfolioCmd is the parent command for account-level (vs single-name)
 // risk views. v2.0 Phase 1 ships `concentration`; `greeks` and `stress` land
 // in Phase 2/3.
@@ -97,7 +104,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			b := factory.NewWithFallback(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
-				ClientID: 4,
+				ClientID: portfolioClientID,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
 				return fmt.Errorf("connect to broker: %w", err)
@@ -116,15 +123,22 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				return fmt.Errorf("get positions: %w", err)
 			}
 
-			// Load sector map. Empty/missing file → all tickers map to "unclassified".
-			sm, err := portfolio.LoadSectorMap(sectorsFile)
+			// Resolve sector map via the search chain: explicit flag → env →
+			// release-bundle configs → repo-relative configs → embedded
+			// default. The embedded fallback guarantees the sector view is
+			// never silently empty just because the cwd lacks ./configs/
+			// (the v0.5.0 regression — see issue #48).
+			sm, source, err := portfolio.ResolveSectorMap(sectorsFile)
 			if err != nil {
-				// Non-fatal: continue with empty mapping rather than fail the whole report.
-				fmt.Fprintf(os.Stderr, "warn: %v (continuing with unclassified sector)\n", err)
-				sm = &portfolio.SectorMap{
-					SectorLabels:  map[string]string{},
-					TickerSectors: map[string]string{},
-				}
+				// Only an explicit override path can fail loudly here; the
+				// embedded fallback always succeeds.
+				return fmt.Errorf("resolve sector map: %w", err)
+			}
+			if source == "<embedded>" || sectorsFile != "" {
+				// Tell the user where the map came from when it isn't the
+				// most-expected location (an explicit flag, or the silent
+				// embedded fallback).
+				fmt.Fprintf(os.Stderr, "info: sector map source: %s\n", source)
 			}
 
 			cfg := portfolio.DefaultConfig()
@@ -186,7 +200,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); default 20")
 	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; default 10")
 	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path (for cron consumers)")
-	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "./configs/sectors.json", "Path to sector mapping JSON")
+	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON. Default search: $OPTIX_SECTORS_FILE → <bin-dir>/../configs/sectors.json → ./configs/sectors.json → embedded fallback (binary always has a copy).")
 
 	return cmd
 }

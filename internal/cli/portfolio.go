@@ -37,6 +37,8 @@ docs/v2.0-portfolio-risk-layer.md for the roadmap.`,
 func newPortfolioConcentrationCmd() *cobra.Command {
 	var (
 		netLiqUSD     float64
+		netLiqSGD     float64
+		fxUSDtoSGD    float64
 		thresholdWarn float64
 		thresholdRed  float64
 		topN          int
@@ -130,6 +132,18 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 			}
 
 			report := portfolio.Compute(positions, anchorNLV, cfg, sm)
+
+			// Wire up the SGD/FX display block. Both flags are optional and
+			// independent: passing only one is a config error rather than
+			// silently rendering "USD $X (SGD $0)". See issue #51.
+			if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
+				return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
+			}
+			if netLiqSGD > 0 && fxUSDtoSGD > 0 {
+				report.NetLiqSGD = netLiqSGD
+				report.FXUSDtoSGD = fxUSDtoSGD
+			}
+
 			report.Render(os.Stdout)
 
 			if jsonOut != "" {
@@ -148,6 +162,8 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	}
 
 	cmd.Flags().Float64Var(&netLiqUSD, "net-liq-usd", 0, "Net Liq value in USD (anchors weight calc). Omit to use sum(|MV|) fallback.")
+	cmd.Flags().Float64Var(&netLiqSGD, "net-liq-sgd", 0, "Net Liq value in SGD, for dual-currency display (must be passed with --fx-usd-sgd). v2.1 will read this from IBKR account summary automatically.")
+	cmd.Flags().Float64Var(&fxUSDtoSGD, "fx-usd-sgd", 0, "USD→SGD exchange rate, for dual-currency display (must be passed with --net-liq-sgd).")
 	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); default 10")
 	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); default 20")
 	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; default 10")

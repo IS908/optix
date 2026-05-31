@@ -477,6 +477,53 @@ func manyNames(n int, perPositionMV float64) []model.Position {
 	return out
 }
 
+// TestCompute_ClosedOutResidualSkipped guards issue #52: IBKR keeps
+// zero-quantity rows in reqPositions output for ~T+2 after a close. Those
+// rows must not appear in the rendered Top-N, the sector ticker list, or
+// the JSON snapshot — they're pure noise, and they polluted v0.5.0 output
+// for users with recently-closed positions (the kk account had 4 such
+// CRDO option contracts after the iron-condor close-out).
+func TestCompute_ClosedOutResidualSkipped(t *testing.T) {
+	pos := []model.Position{
+		stockPos("MSFT", 100, 450), // real position
+		// Closed-out residual: option, qty=0, MV=0. Pre-fix this surfaced
+		// as a 0.0% Top-N row and got listed in the sector tickers.
+		{Symbol: "ZZZZ", SecType: "OPT", Quantity: 0, MarketValue: 0, Multiplier: 100},
+		// Closed-out stock residual: also skipped.
+		{Symbol: "WWWW", SecType: "STK", Quantity: 0, MarketValue: 0, Multiplier: 1},
+	}
+	r := Compute(pos, 500_000, DefaultConfig(), fakeSectorMap())
+
+	// ZZZZ and WWWW must NOT appear in Underlyings.
+	for _, u := range r.Underlyings {
+		if u.Ticker == "ZZZZ" || u.Ticker == "WWWW" {
+			t.Errorf("closed-out residual %s should not appear in Underlyings, got %+v",
+				u.Ticker, u)
+		}
+	}
+
+	// They must NOT pollute any sector's ticker list.
+	for _, s := range r.Sectors {
+		for _, ticker := range s.Tickers {
+			if ticker == "ZZZZ" || ticker == "WWWW" {
+				t.Errorf("closed-out residual %s should not appear in sector %s, got %v",
+					ticker, s.SectorID, s.Tickers)
+			}
+		}
+	}
+
+	// Real position is still there.
+	var foundMSFT bool
+	for _, u := range r.Underlyings {
+		if u.Ticker == "MSFT" {
+			foundMSFT = true
+		}
+	}
+	if !foundMSFT {
+		t.Errorf("MSFT should still be in Underlyings, got tickers %v", tickers(r.Underlyings))
+	}
+}
+
 // TestFmtMoney_EdgeCases covers thousand-separator formatting under zero,
 // negative, and large values.
 func TestFmtMoney_EdgeCases(t *testing.T) {

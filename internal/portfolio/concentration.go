@@ -204,6 +204,12 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	byTicker := map[string]*UnderlyingGroup{}
 	missingLegsByTicker := map[string]int{}
 	for _, p := range positions {
+		// Skip closed-out residuals: IBKR's reqPositions keeps zero-quantity
+		// rows for ~T+2 after a close. Including them as 0% entries in the
+		// rendered Top-N table and sector list is pure noise. See issue #52.
+		if p.Quantity == 0 && p.MarketValue == 0 {
+			continue
+		}
 		t := strings.ToUpper(p.Symbol)
 		g, ok := byTicker[t]
 		if !ok {

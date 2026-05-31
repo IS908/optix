@@ -12,7 +12,18 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **`optix portfolio stress` — config-driven portfolio stress scenarios (#63).**
+  Adds the Phase 3 stress command, reusing the `portfolio greeks` snapshot path
+  and applying YAML-configured SPY/QQQ/VIX shocks to estimate scenario P&L,
+  % NLV, and worst position. Supports `--portfolio-config`, `--net-liq-usd`,
+  `--risk-free-rate`, `--sectors-file`, and `--json`.
+
+- **`configs/portfolio.yaml` now carries stress scenarios.** Defaults include
+  SPY -3/-5/-10%, VIX +50%, QQQ -5%, and a tech-correlated SPY/VIX shock;
+  missing/partial config still falls back to built-in defaults.
+
 
 ## [0.6.1] - 2026-05-31
 

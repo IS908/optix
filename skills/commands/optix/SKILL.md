@@ -167,6 +167,13 @@ bash bin/optix.sh portfolio greeks --by sector --json /tmp/greeks.json
 ```
 Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%) and Θ/day in USD. IV comes from the option chain (falls back to inverting the mark). Legs with no resolvable IV are skipped and listed. Needs the Python analysis engine (auto-started by the skill).
 
+#### Stress test (场景压力测试)
+```bash
+bash bin/optix.sh portfolio stress --net-liq-usd <NLV>
+bash bin/optix.sh portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json
+```
+Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scenarios are config-driven: SPY -3/-5/-10%, VIX +50%, QQQ -5%, and a tech-correlated SPY/VIX shock. Text output shows total P&L, % NLV, and worst position per scenario; JSON is stable for cron/agent consumers.
+
 ## Notes
 - Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
 - IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance (delayed quotes, no options chain) if IBKR is unreachable

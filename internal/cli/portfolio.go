@@ -34,12 +34,13 @@ func newPortfolioCmd() *cobra.Command {
 
   concentration  per-underlying / per-sector weights, Top-N, HHI, threshold flags
   greeks         aggregated Δ/Γ/Vega/Θ (position-level dollar Greeks)
+  stress         scenario P&L using the Greeks snapshot
 
-Stress testing lands in Phase 3 — see docs/v2.0-portfolio-risk-layer.md
-for the roadmap.`,
+Stress testing is the Phase 3 portfolio-risk view from docs/v2.0-portfolio-risk-layer.md.`,
 	}
 	cmd.AddCommand(newPortfolioConcentrationCmd())
 	cmd.AddCommand(newPortfolioGreeksCmd())
+	cmd.AddCommand(newPortfolioStressCmd())
 	return cmd
 }
 

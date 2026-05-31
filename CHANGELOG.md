@@ -12,7 +12,15 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+
+- **`portfolio concentration` now populates the dual-currency display
+  block.** New `--net-liq-sgd` and `--fx-usd-sgd` flags wire data into the
+  `NetLiqSGD` / `FXUSDtoSGD` fields that the v0.5.0 JSON schema exposed
+  but the CLI never set. Both flags are XOR-validated up-front (passing
+  one without the other errors before any broker work) so partial input
+  doesn't render misleading `USD $X (SGD $0)` output. Will become
+  automatic once the IBKR account-summary integration ships. (#51)
 
 ## [0.5.0] - 2026-05-31
 

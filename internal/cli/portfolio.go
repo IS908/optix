@@ -63,6 +63,13 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
   optix portfolio concentration --net-liq-usd 354477 --threshold-red 25 --top-n 15
   optix portfolio concentration --net-liq-usd 354477 --json /tmp/snap.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Flag validation FIRST — before any expensive broker/DB work.
+			// A user with mistyped SGD/FX flags shouldn't pay the IBKR
+			// round-trip cost only to be told their input is bad.
+			if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
+				return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
+			}
+
 			ctx := context.Background()
 
 			store, err := sqlite.New(dbPath)
@@ -133,12 +140,8 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 
 			report := portfolio.Compute(positions, anchorNLV, cfg, sm)
 
-			// Wire up the SGD/FX display block. Both flags are optional and
-			// independent: passing only one is a config error rather than
-			// silently rendering "USD $X (SGD $0)". See issue #51.
-			if (netLiqSGD > 0) != (fxUSDtoSGD > 0) {
-				return fmt.Errorf("--net-liq-sgd and --fx-usd-sgd must be passed together (or neither)")
-			}
+			// Wire up the SGD/FX display block (the XOR check at the top of
+			// RunE has already validated they're both set or both unset).
 			if netLiqSGD > 0 && fxUSDtoSGD > 0 {
 				report.NetLiqSGD = netLiqSGD
 				report.FXUSDtoSGD = fxUSDtoSGD
@@ -162,7 +165,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	}
 
 	cmd.Flags().Float64Var(&netLiqUSD, "net-liq-usd", 0, "Net Liq value in USD (anchors weight calc). Omit to use sum(|MV|) fallback.")
-	cmd.Flags().Float64Var(&netLiqSGD, "net-liq-sgd", 0, "Net Liq value in SGD, for dual-currency display (must be passed with --fx-usd-sgd). v2.1 will read this from IBKR account summary automatically.")
+	cmd.Flags().Float64Var(&netLiqSGD, "net-liq-sgd", 0, "Net Liq value in SGD, for dual-currency display (must be passed with --fx-usd-sgd). Manual until IBKR account-summary integration ships.")
 	cmd.Flags().Float64Var(&fxUSDtoSGD, "fx-usd-sgd", 0, "USD→SGD exchange rate, for dual-currency display (must be passed with --net-liq-sgd).")
 	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); default 10")
 	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); default 20")

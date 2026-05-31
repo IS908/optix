@@ -70,13 +70,6 @@ func rightToOptionType(right string) model.OptionType {
 	return model.OptionTypeCall
 }
 
-func optionTypeToString(ot model.OptionType) string {
-	if ot == model.OptionTypePut {
-		return "put"
-	}
-	return "call"
-}
-
 // minTYears is the near-expiry floor. Below ~1 day, BS Greeks and mark→IV
 // inversion are numerically unstable, so we skip rather than emit garbage.
 const minTYears = 1.0 / 365.0
@@ -263,13 +256,11 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 	for _, p := range stockLegs {
 		g := addGroup(keyOf(strings.ToUpper(p.Symbol)))
 		g.NetDelta += p.Quantity
-		// Stock dollar-delta per +1% spot = NetDelta(shares) × stock price. For a
-		// stock leg the price is MarketValue/Quantity, so the product is exactly
-		// the (signed) MarketValue. Guard qty≠0.
-		if p.Quantity != 0 {
-			stockPrice := p.MarketValue / p.Quantity
-			g.DollarDelta += p.Quantity * stockPrice // = MarketValue
-		}
+		// Stock dollar-delta per +1% spot = NetDelta(shares) × price × 1%. For a
+		// stock leg price = MarketValue/Quantity, so this is MarketValue × 0.01
+		// — what the position gains on a +1% move. (Matches the option leg's
+		// netDelta × spot × 0.01 so the column is consistent.)
+		g.DollarDelta += p.MarketValue * 0.01
 		g.MVUsd += math.Abs(p.MarketValue)
 		g.LegCount++
 		mergeIVSource(g, "stock")
@@ -378,7 +369,7 @@ func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spo
 		underlying:  leg.Underlying,
 		mvUsd:       math.Abs(leg.Mark * scale),
 		netDelta:    netDelta,
-		dollarDelta: netDelta * spot,
+		dollarDelta: netDelta * spot * 0.01, // USD per +1% spot (not full notional)
 		gamma:       g.Gamma * scale * spot * 0.01,
 		vega:        g.Vega * scale / 100.0,
 		theta:       g.Theta * scale,

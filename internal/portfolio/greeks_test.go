@@ -40,15 +40,6 @@ func TestRightToOptionType(t *testing.T) {
 	}
 }
 
-func TestOptionTypeToPricerString(t *testing.T) {
-	if optionTypeToString(model.OptionTypeCall) != "call" {
-		t.Errorf("Call → call")
-	}
-	if optionTypeToString(model.OptionTypePut) != "put" {
-		t.Errorf("Put → put")
-	}
-}
-
 var _ = math.Abs // keep import for later tests in this file
 
 func mkChain(underlying string, spot float64, q model.OptionQuote) *model.OptionChain {
@@ -135,6 +126,10 @@ func TestAggregate_StockLegDeltaIsShares(t *testing.T) {
 		t.Errorf("stock leg: NetDelta=%v Gamma=%v Theta=%v, want 100/0/0",
 			r.Groups[0].NetDelta, r.Groups[0].Gamma, r.Groups[0].Theta)
 	}
+	// DollarDelta = MarketValue * 0.01 = (100*450) * 0.01 = 450 (USD per +1% spot)
+	if math.Abs(r.Groups[0].DollarDelta-450) > 1e-6 {
+		t.Errorf("stock DollarDelta = %v, want 450 (1%% of $45,000 MV)", r.Groups[0].DollarDelta)
+	}
 }
 
 func TestAggregate_OptionLegFromChainIV(t *testing.T) {
@@ -153,9 +148,9 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	if math.Abs(g.NetDelta-100) > 1e-9 {
 		t.Errorf("NetDelta = %v, want 100", g.NetDelta)
 	}
-	// DollarDelta = NetDelta * spot = 100 * 180 = 18000
-	if math.Abs(g.DollarDelta-18000) > 1e-6 {
-		t.Errorf("DollarDelta = %v, want 18000", g.DollarDelta)
+	// DollarDelta = NetDelta * spot * 0.01 = 100 * 180 * 0.01 = 180 (USD per +1% spot)
+	if math.Abs(g.DollarDelta-180) > 1e-6 {
+		t.Errorf("DollarDelta = %v, want 180 (USD per +1%% spot)", g.DollarDelta)
 	}
 	// Gamma display = (0.01*2*100) * spot * 0.01 = 2 * 180 * 0.01 = 3.6
 	if math.Abs(g.Gamma-3.6) > 1e-6 {

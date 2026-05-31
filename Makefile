@@ -46,6 +46,13 @@ clean:
 proto:
 	./scripts/proto-gen.sh
 
+# Sync the embedded sectors fallback after editing configs/sectors.json.
+# A drift-detection test (internal/portfolio/embed_test.go) will catch any
+# divergence before release.
+sync-sectors:
+	cp configs/sectors.json internal/portfolio/default_sectors.json
+	@echo "✓ internal/portfolio/default_sectors.json synced from configs/sectors.json"
+
 # Run CLI
 run-cli:
 	go run ./cmd/optix-cli $(ARGS)

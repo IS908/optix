@@ -34,7 +34,7 @@ func newPortfolioStressCmd() *cobra.Command {
 
 This first Phase 3 slice uses the same IBKR positions, option-chain IV, and
 Black-Scholes Greeks path as 'portfolio greeks', then applies config-driven
-SPY/QQQ/VIX shocks to estimate per-scenario P&L.`,
+SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 		Example: `  optix portfolio stress --net-liq-usd 354477
   optix portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json`,
 		RunE: func(_ *cobra.Command, _ []string) error {

@@ -44,6 +44,7 @@ type GreeksGroup struct {
 	NetDelta        float64 `json:"net_delta"`    // delta-adjusted shares
 	DollarDelta     float64 `json:"dollar_delta"` // USD per +1% spot
 	Gamma           float64 `json:"gamma"`        // Δ-shares change per +1% spot
+	DollarGamma     float64 `json:"dollar_gamma"` // USD second-order P&L coefficient per (+1% spot)^2
 	Vega            float64 `json:"vega"`         // USD per +1% IV
 	Theta           float64 `json:"theta"`        // USD per day
 	LegCount        int     `json:"leg_count"`
@@ -183,6 +184,7 @@ type pricedLeg struct {
 	dollarDelta float64
 	gamma       float64 // display: Δ-shares per +1% spot
 	vega        float64 // display: USD per +1% IV
+	dollarGamma float64 // USD second-order P&L coefficient per (+1% spot)^2
 	theta       float64 // display: USD per day
 	ivSource    string  // chain|mark|stock
 	skipped     *SkippedLeg
@@ -316,6 +318,7 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		g.NetDelta += pl.netDelta
 		g.DollarDelta += pl.dollarDelta
 		g.Gamma += pl.gamma
+		g.DollarGamma += pl.dollarGamma
 		g.Vega += pl.vega
 		g.Theta += pl.theta
 		g.MVUsd += pl.mvUsd
@@ -364,6 +367,7 @@ func addToTotal(t *GreeksGroup, g GreeksGroup) {
 	t.NetDelta += g.NetDelta
 	t.DollarDelta += g.DollarDelta
 	t.Gamma += g.Gamma
+	t.DollarGamma += g.DollarGamma
 	t.Vega += g.Vega
 	t.Theta += g.Theta
 	t.MVUsd += g.MVUsd
@@ -415,6 +419,7 @@ func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spo
 		netDelta:    netDelta,
 		dollarDelta: netDelta * spot * 0.01, // USD per +1% spot (not full notional)
 		gamma:       g.Gamma * scale * spot * 0.01,
+		dollarGamma: g.Gamma * scale * spot * spot * 0.0001,
 		vega:        g.Vega * scale / 100.0,
 		theta:       g.Theta * scale,
 		ivSource:    src,

@@ -34,8 +34,8 @@ stress:
       shocks:
         - axis: spy_pct
           magnitude: -0.05
-        - axis: vix_pct
-          magnitude: 0.30
+        - axis: iv_points
+          magnitude: 3.0
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -59,8 +59,71 @@ stress:
 	if len(cfg.Stress.Scenarios) != 2 {
 		t.Fatalf("scenarios = %+v", cfg.Stress.Scenarios)
 	}
-	if cfg.Stress.Scenarios[1].Shocks[1].Axis != "vix_pct" || cfg.Stress.Scenarios[1].Shocks[1].Magnitude != 0.30 {
+	if cfg.Stress.Scenarios[1].Shocks[1].Axis != "iv_points" || cfg.Stress.Scenarios[1].Shocks[1].Magnitude != 3.0 {
 		t.Fatalf("second scenario shocks = %+v", cfg.Stress.Scenarios[1].Shocks)
+	}
+}
+
+func TestLoadConfigRejectsUnknownStressAxis(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte(`
+stress:
+  scenarios:
+    - id: typo
+      label: "Typo"
+      shocks:
+        - axis: spy_percent
+          magnitude: -0.03
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected unsupported axis error")
+	}
+}
+
+func TestLoadConfigRejectsUnknownTopLevelSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte(`
+stres:
+  scenarios:
+    - id: typo
+      label: "Typo"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.03
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected unknown top-level section error")
+	}
+}
+
+func TestLoadConfigRejectsUnknownStressKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte(`
+stress:
+  scenarioz:
+    - id: typo
+      label: "Typo"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.03
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected unknown stress key error")
 	}
 }
 

@@ -46,15 +46,15 @@ func DefaultStressScenarios() []StressScenario {
 		{ID: "spy-down-3", Label: "SPY -3%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.03}}},
 		{ID: "spy-down-5", Label: "SPY -5%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.05}}},
 		{ID: "spy-down-10", Label: "SPY -10%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.10}}},
-		{ID: "vix-up-50", Label: "VIX +50%", Shocks: []StressShock{{Axis: "vix_pct", Magnitude: 0.50}}},
+		{ID: "iv-up-5", Label: "IV +5 pts", Shocks: []StressShock{{Axis: "iv_points", Magnitude: 5.0}}},
 		{ID: "qqq-down-5", Label: "QQQ -5%", Shocks: []StressShock{{Axis: "qqq_pct", Magnitude: -0.05}}},
-		{ID: "tech-correlated-5", Label: "Tech correlated -5%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.03}, {Axis: "vix_pct", Magnitude: 0.30}}},
+		{ID: "tech-correlated-5", Label: "Tech correlated -5%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.03}, {Axis: "iv_points", Magnitude: 3.0}}},
 	}
 }
 
 // RunStress applies scenario shocks to an existing Greeks snapshot. It is a
-// deterministic first-order risk view: DollarDelta and Gamma model price shock;
-// Vega models VIX/IV shock. A later version can swap in full per-leg repricing
+// deterministic first-order risk view: DollarDelta and DollarGamma model price
+// shock; Vega models explicit IV-point shocks. A later version can swap in full per-leg repricing
 // while preserving this report shape and CLI contract.
 func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	if len(scenarios) == 0 {
@@ -63,9 +63,9 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	r := &StressReport{SnapshotAt: g.SnapshotAt, NetLiqUSD: g.NetLiqUSD}
 	for _, sc := range scenarios {
 		res := StressScenarioResult{ID: sc.ID, Label: sc.Label, Shocks: append([]StressShock(nil), sc.Shocks...)}
-		pricePct, ivPctPoints := stressAxes(sc.Shocks)
+		pricePct, ivPoints := stressAxes(sc.Shocks)
 		for _, grp := range g.Groups {
-			pnl := grp.DollarDelta*(pricePct*100) + 0.5*grp.Gamma*math.Pow(pricePct*100, 2) + grp.Vega*(ivPctPoints*100)
+			pnl := grp.DollarDelta*(pricePct*100) + 0.5*grp.DollarGamma*math.Pow(pricePct*100, 2) + grp.Vega*ivPoints
 			pos := StressPositionPnL{Key: grp.Key, PnLUSD: pnl}
 			res.Positions = append(res.Positions, pos)
 			res.TotalPnLUSD += pnl
@@ -88,16 +88,16 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	return r
 }
 
-func stressAxes(shocks []StressShock) (pricePct float64, ivPct float64) {
+func stressAxes(shocks []StressShock) (pricePct float64, ivPoints float64) {
 	for _, sh := range shocks {
 		switch sh.Axis {
 		case "spy_pct", "qqq_pct", "underlying_pct":
 			pricePct += sh.Magnitude
-		case "vix_pct", "iv_pct":
-			ivPct += sh.Magnitude
+		case "iv_points":
+			ivPoints += sh.Magnitude
 		}
 	}
-	return pricePct, ivPct
+	return pricePct, ivPoints
 }
 
 func RenderStress(r *StressReport, w io.Writer) {
@@ -116,6 +116,13 @@ func RenderStress(r *StressReport, w io.Writer) {
 	fmt.Fprintln(w, strings.Repeat("─", 62))
 	if len(r.Scenarios) > 0 {
 		worst := r.Scenarios[0]
-		fmt.Fprintf(w, "\n⚠️ Worst tail: %s costs %.1f%% of NLV\n", worst.Label, math.Abs(worst.PctNLV))
+		switch {
+		case worst.TotalPnLUSD < 0:
+			fmt.Fprintf(w, "\n⚠️ Worst tail: %s costs %.1f%% of NLV\n", worst.Label, math.Abs(worst.PctNLV))
+		case worst.TotalPnLUSD > 0:
+			fmt.Fprintf(w, "\nLeast favorable: %s gains %.1f%% of NLV\n", worst.Label, worst.PctNLV)
+		default:
+			fmt.Fprintf(w, "\nLeast favorable: %s is flat vs NLV\n", worst.Label)
+		}
 	}
 }

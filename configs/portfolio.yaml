@@ -34,8 +34,8 @@ iv_staleness:
 sectors_file: "./configs/sectors.json"
 
 # Portfolio stress scenarios (v2.0 Phase 3). The first implementation applies
-# shocks to the aggregated Greeks snapshot: price shocks use Dollar Δ + Γ, VIX
-# shocks use Vega(/1%).
+# shocks to the aggregated Greeks snapshot: price shocks use Dollar Δ + dollar Γ,
+# IV shocks are explicit volatility points consumed by Vega(/1%).
 stress:
   scenarios:
     - id: spy-down-3
@@ -53,11 +53,11 @@ stress:
       shocks:
         - axis: spy_pct
           magnitude: -0.10
-    - id: vix-up-50
-      label: "VIX +50%"
+    - id: iv-up-5
+      label: "IV +5 pts"
       shocks:
-        - axis: vix_pct
-          magnitude: 0.50
+        - axis: iv_points
+          magnitude: 5.0
     - id: qqq-down-5
       label: "QQQ -5%"
       shocks:
@@ -68,5 +68,5 @@ stress:
       shocks:
         - axis: spy_pct
           magnitude: -0.03
-        - axis: vix_pct
-          magnitude: 0.30
+        - axis: iv_points
+          magnitude: 3.0

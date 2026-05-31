@@ -3,6 +3,7 @@ package portfolio
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -77,15 +78,29 @@ func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 		}
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 		trim := strings.TrimSpace(line)
-		if indent == 0 && strings.HasSuffix(trim, ":") {
-			section = strings.TrimSuffix(trim, ":")
-			inScenarios = false
-			current = nil
-			continue
-		}
-		if indent == 0 && strings.HasPrefix(trim, "sectors_file:") {
-			cfg.SectorsFile = parseYAMLString(valueAfterColon(trim))
-			continue
+		if indent == 0 {
+			if strings.HasPrefix(trim, "sectors_file:") {
+				cfg.SectorsFile = parseYAMLString(valueAfterColon(trim))
+				section = ""
+				inScenarios = false
+				current = nil
+				continue
+			}
+			if strings.HasSuffix(trim, ":") {
+				section = strings.TrimSuffix(trim, ":")
+				switch section {
+				case "concentration", "greeks", "iv_staleness", "stress":
+				default:
+					return fmt.Errorf("unknown top-level portfolio config key %q", section)
+				}
+				inScenarios = false
+				current = nil
+				continue
+			}
+			if strings.Contains(trim, ":") {
+				key, _ := splitKV(trim)
+				return fmt.Errorf("unknown top-level portfolio config key %q", key)
+			}
 		}
 		if section == "stress" && indent == 2 && trim == "scenarios:" {
 			cfg.Stress.Scenarios = nil
@@ -150,6 +165,8 @@ func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 					return err
 				}
 				cfg.Greeks.RiskFreeRate = f
+			} else {
+				return fmt.Errorf("unknown greeks key %q", key)
 			}
 		case "iv_staleness":
 			d, err := time.ParseDuration(parseYAMLString(val))
@@ -163,13 +180,17 @@ func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 				cfg.IVStaleness.AcceptableMax = d
 			case "stale_max":
 				cfg.IVStaleness.StaleMax = d
+			default:
+				return fmt.Errorf("unknown iv_staleness key %q", key)
 			}
+		case "stress":
+			return fmt.Errorf("unknown stress key %q", key)
 		}
 	}
 	if len(cfg.Stress.Scenarios) == 0 {
 		cfg.Stress.Scenarios = DefaultStressScenarios()
 	}
-	return nil
+	return validatePortfolioConfig(*cfg)
 }
 
 func stripYAMLComment(s string) string {
@@ -219,6 +240,8 @@ func applyConcentrationKV(c *Config, key, val string) error {
 		case "hhi_concentrated_min":
 			c.HHIConcentratedMin = f
 		}
+	default:
+		return fmt.Errorf("unknown concentration key %q", key)
 	}
 	return nil
 }
@@ -230,6 +253,8 @@ func applyScenarioKV(sc *StressScenario, kv string) error {
 		sc.ID = parseYAMLString(val)
 	case "label":
 		sc.Label = parseYAMLString(val)
+	default:
+		return fmt.Errorf("unknown stress scenario key %q", key)
 	}
 	return nil
 }
@@ -245,6 +270,32 @@ func applyShockKV(sh *StressShock, kv string) error {
 			return err
 		}
 		sh.Magnitude = f
+	default:
+		return fmt.Errorf("unknown stress shock key %q", key)
+	}
+	return nil
+}
+
+func validatePortfolioConfig(cfg PortfolioConfig) error {
+	allowedAxes := map[string]bool{"spy_pct": true, "qqq_pct": true, "underlying_pct": true, "iv_points": true}
+	for i, sc := range cfg.Stress.Scenarios {
+		if sc.ID == "" {
+			return fmt.Errorf("stress scenario %d missing id", i)
+		}
+		if sc.Label == "" {
+			return fmt.Errorf("stress scenario %q missing label", sc.ID)
+		}
+		if len(sc.Shocks) == 0 {
+			return fmt.Errorf("stress scenario %q has no shocks", sc.ID)
+		}
+		for j, sh := range sc.Shocks {
+			if !allowedAxes[sh.Axis] {
+				return fmt.Errorf("stress scenario %q shock %d has unsupported axis %q", sc.ID, j, sh.Axis)
+			}
+			if sh.Magnitude == 0 || math.IsNaN(sh.Magnitude) || math.IsInf(sh.Magnitude, 0) {
+				return fmt.Errorf("stress scenario %q shock %d has invalid magnitude %v", sc.ID, j, sh.Magnitude)
+			}
+		}
 	}
 	return nil
 }

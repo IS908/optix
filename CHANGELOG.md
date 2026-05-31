@@ -12,6 +12,17 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.5.1] - 2026-05-31
+
+Patch release hardening the v0.5.0 portfolio concentration feature: six
+post-release bug fixes (#47–#52) plus a whole-branch review pass. None
+change the v0.5.0 API; all make the concentration report correct and
+trustworthy in edge cases (non-USD holdings, closed-out residuals,
+cancelled fetches, cwd-independent sector resolution, ClientID isolation,
+and the dual-currency display).
+
 ### Fixed
 
 - **`portfolio concentration` fallback NLV now matches `Compute`'s
@@ -675,7 +686,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/IS908/optix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/IS908/optix/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/IS908/optix/compare/v0.4.3...v0.4.4

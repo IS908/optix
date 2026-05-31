@@ -24,18 +24,19 @@ import (
 const portfolioClientID = 5
 
 // newPortfolioCmd is the parent command for account-level (vs single-name)
-// risk views. v2.0 Phase 1 ships `concentration`; `greeks` and `stress` land
-// in Phase 2/3.
+// risk views. v2.0 Phase 1 ships `concentration`; Phase 2 adds `greeks`;
+// `stress` lands in Phase 3.
 func newPortfolioCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "portfolio",
 		Short: "Account-level risk views (concentration, greeks, stress)",
 		Long: `Account-level (vs single-name) risk views.
 
-Phase 1 ships concentration analysis: per-underlying weight rollup, sector
-grouping, Top-N exposure, HHI, and threshold-based flagging. Future phases
-will add Greeks aggregation and stress testing — see
-docs/v2.0-portfolio-risk-layer.md for the roadmap.`,
+  concentration  per-underlying / per-sector weights, Top-N, HHI, threshold flags
+  greeks         aggregated Δ/Γ/Vega/Θ (position-level dollar Greeks)
+
+Stress testing lands in Phase 3 — see docs/v2.0-portfolio-risk-layer.md
+for the roadmap.`,
 	}
 	cmd.AddCommand(newPortfolioConcentrationCmd())
 	cmd.AddCommand(newPortfolioGreeksCmd())

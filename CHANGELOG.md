@@ -12,7 +12,27 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **`optix portfolio greeks` — account-level Greeks aggregation (v2.0 Phase
+  2).** Aggregates per-leg option Greeks across all holdings into per-underlying
+  / per-sector / total **position-level dollar Greeks**: Net Δ (delta-adjusted
+  shares), Dollar Δ (USD per +1% spot), Γ (Δ-shares per +1% spot), Vega (USD per
+  +1% IV), Θ (USD per day). IV is taken from the option chain, falling back to
+  inverting the held mark (new `AnalysisService.ImpliedVol` RPC); Greeks are
+  computed by the Python Black-Scholes engine via the existing `PriceOption`
+  RPC. Legs whose IV can't be resolved are skipped and surfaced rather than
+  silently producing garbage. `--by underlying|sector`, `--net-liq-usd`,
+  `--risk-free-rate`, `--sectors-file`, `--json`. Requires IBKR + the analysis
+  engine; reuses the Phase 1 broker (ClientID 5), sector resolution,
+  FallbackNLV, and exit-code convention.
+
+### Fixed
+
+- **Skill now surfaces the `portfolio` commands.** `concentration` (shipped in
+  v0.5.0) was never listed in SKILL.md, so agents couldn't discover it; added a
+  Portfolio Risk section covering both `concentration` and `greeks` plus trigger
+  words.
 
 ## [0.5.1] - 2026-05-31
 

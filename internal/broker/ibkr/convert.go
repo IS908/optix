@@ -36,6 +36,7 @@ func positionFromIB(account string, c *ibapi.Contract, qty ibapi.Decimal, avgCos
 		Quantity:   qty.Float(),
 		AvgCost:    avgCost,
 		Multiplier: parseMultiplier(c.Multiplier, c.SecType),
+		Currency:   c.Currency,
 	}
 	if c.SecType == "OPT" {
 		p.Expiration = c.LastTradeDateOrContractMonth

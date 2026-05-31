@@ -171,6 +171,16 @@ type Report struct {
 	// used by the renderer to disambiguate "1 leg" from "5 legs missing".
 	MissingMarkLegCounts map[string]int `json:"missing_mark_leg_counts,omitempty"`
 
+	// CurrencyMismatchTickers lists tickers excluded from the concentration
+	// math because their IBKR contract currency isn't USD. Their market value
+	// can't be mixed into the USD NLV denominator without FX conversion (v2.1),
+	// so they're elided and surfaced here rather than silently mis-weighted.
+	// See issue #49.
+	CurrencyMismatchTickers  []string          `json:"currency_mismatch_tickers,omitempty"`
+	// CurrencyMismatchByTicker maps each elided ticker to its non-USD currency
+	// (e.g. "FUTU" → "HKD") so the renderer can name the currency.
+	CurrencyMismatchByTicker map[string]string `json:"currency_mismatch_by_ticker,omitempty"`
+
 	UsedConfig        Config            `json:"used_config"`
 }
 
@@ -203,6 +213,7 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	// for AccountSummary so this branch can stop overloading MV==0.
 	byTicker := map[string]*UnderlyingGroup{}
 	missingLegsByTicker := map[string]int{}
+	mismatchByTicker := map[string]string{} // ticker → its non-USD currency
 	for _, p := range positions {
 		// Skip closed-out residuals: IBKR's reqPositions keeps zero-quantity
 		// rows for ~T+2 after a close. Including them as 0% entries in the
@@ -216,6 +227,16 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 		// 1e-9 threshold is far below any real fractional share, so legitimate
 		// dust holdings are preserved.
 		if math.Abs(p.Quantity) < 1e-9 {
+			continue
+		}
+		// Skip non-USD legs: every weight here is computed against a USD NLV
+		// denominator, so mixing a raw HKD/SGD MarketValue in silently
+		// mis-weights it (an HKD value is ~8× too large). Until FX conversion
+		// lands (v2.1), elide the leg and surface it as a warning rather than
+		// trust a wrong number. An empty Currency is treated as USD (older
+		// data / test fixtures that predate the field). See issue #49.
+		if p.Currency != "" && !strings.EqualFold(p.Currency, "USD") {
+			mismatchByTicker[strings.ToUpper(p.Symbol)] = strings.ToUpper(p.Currency)
 			continue
 		}
 		t := strings.ToUpper(p.Symbol)
@@ -252,6 +273,15 @@ func Compute(positions []model.Position, netLiqUSD float64, cfg Config, sm *Sect
 	sort.Strings(missing)
 	r.MissingMarkTickers = missing
 	r.MissingMarkLegCounts = missingLegsByTicker
+
+	// Deterministically-sorted list of tickers elided for non-USD currency.
+	mismatch := make([]string, 0, len(mismatchByTicker))
+	for t := range mismatchByTicker {
+		mismatch = append(mismatch, t)
+	}
+	sort.Strings(mismatch)
+	r.CurrencyMismatchTickers = mismatch
+	r.CurrencyMismatchByTicker = mismatchByTicker
 
 	// 2) Weights against NLV. Guard against zero/negative NLV.
 	if netLiqUSD > 0 {
@@ -482,6 +512,24 @@ func (r *Report) Render(w io.Writer) {
 		fmt.Fprintf(w, "⚠️  Option mark missing on: %s\n", strings.Join(parts, ", "))
 		fmt.Fprintln(w, "   (those leg(s) contribute 0 to the ticker's weight; stock legs still counted)")
 		fmt.Fprintln(w, "   (needs OPRA subscription or IBKR MCP path)")
+		fmt.Fprintln(w)
+	}
+
+	// Non-USD holdings elided from the math (see issue #49). Surface them
+	// loudly so the user knows their weights exclude these names, rather than
+	// silently trusting a USD-only picture.
+	if len(r.CurrencyMismatchTickers) > 0 {
+		parts := make([]string, 0, len(r.CurrencyMismatchTickers))
+		for _, t := range r.CurrencyMismatchTickers {
+			if ccy := r.CurrencyMismatchByTicker[t]; ccy != "" {
+				parts = append(parts, fmt.Sprintf("%s (%s)", t, ccy))
+			} else {
+				parts = append(parts, t)
+			}
+		}
+		fmt.Fprintf(w, "⚠️  Non-USD holdings excluded from concentration: %s\n", strings.Join(parts, ", "))
+		fmt.Fprintln(w, "   (their market value isn't FX-converted yet, so they're left out of the")
+		fmt.Fprintln(w, "    USD-denominated weights rather than silently mis-counted — FX lands in v2.1)")
 		fmt.Fprintln(w)
 	}
 

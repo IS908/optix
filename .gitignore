@@ -39,3 +39,6 @@ Thumbs.db
 # its commit messages and PR description.
 docs/superpowers/plans/
 docs/superpowers/specs/
+
+# Local superpowers scratch space (skill state, runtime overrides).
+.superpowers/

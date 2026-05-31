@@ -14,6 +14,167 @@ above it.
 
 _No changes yet._
 
+## [0.5.1] - 2026-05-31
+
+Patch release hardening the v0.5.0 portfolio concentration feature: six
+post-release bug fixes (#47–#52) plus a whole-branch review pass. None
+change the v0.5.0 API; all make the concentration report correct and
+trustworthy in edge cases (non-USD holdings, closed-out residuals,
+cancelled fetches, cwd-independent sector resolution, ClientID isolation,
+and the dual-currency display).
+
+### Fixed
+
+- **`portfolio concentration` fallback NLV now matches `Compute`'s
+  inclusion rules (v0.5.1 review pass).** When `--net-liq-usd` was
+  omitted, the CLI summed `|MarketValue|` over *all* positions
+  (currency-blind) for the denominator, but `Compute` excludes non-USD
+  and residual legs from the numerator — so a non-USD holding inflated
+  the denominator, broke the documented `deployed_pct == 100%` fallback
+  cue, and showed phantom "cash". The shared `portfolio.FallbackNLV`
+  helper now applies the same exclusions in both places. Also guards
+  against a non-finite (NaN/±Inf) market value, which would have poisoned
+  HHI/weights and made the JSON snapshot fail `json.Marshal` — such a
+  position is now flagged and contributes 0. `portfolio concentration`
+  also follows the project exit-code convention (2 = IBKR unreachable,
+  3 = SQLite) so cron consumers can distinguish retryable failures.
+
+- **`portfolio concentration` no longer silently mis-weights non-USD
+  holdings (#49).** `positionFromIB` dropped the IBKR contract currency, so
+  a position priced in HKD/SGD had its raw market value mixed straight into
+  the USD-NLV denominator — wrong by ~8× for an HK name, with no warning.
+  `model.Position` now carries `Currency` (populated from `c.Currency`), and
+  `Compute` excludes any leg whose currency isn't USD, surfacing them via a
+  new `CurrencyMismatchTickers` field and a loud render warning ("Non-USD
+  holdings excluded from concentration: 0700 (HKD)") rather than trusting a
+  wrong number. An empty currency is treated as USD (older data / fixtures).
+  FX conversion is deferred to v2.1; until then exclusion + warning is the
+  safe behavior.
+
+- **Cancelled position fetches no longer masquerade as OPRA gaps (#50).**
+  When `ctx` was cancelled mid-`enrich`, in-flight goroutines exited without
+  populating `MarketValue` but `GetPositions` still returned `(positions,
+  nil)` — so a cancelled run rendered as "Option mark missing — needs OPRA"
+  instead of surfacing the cancellation. `enrich` now returns `ctx.Err()`
+  and `GetPositions` propagates it, so callers exit with a clear
+  `context.Canceled` / `deadline exceeded` rather than a misleading partial
+  report. (Latent today — no shipped CLI path wraps the context in a
+  timeout — but this hardens the account-read path against any future caller
+  that does.)
+
+- **`portfolio concentration` uses a distinct IBKR ClientID (#47).** v0.5.0
+  reused ClientID 4, which collides with `optix positions` — running the
+  two concurrently silently failed the second connection. The command now
+  uses a dedicated `portfolioClientID = 5` (the free slot in the matrix),
+  pinned by `TestPortfolioClientIDDistinct` so a future subcommand can't
+  silently reuse it.
+
+- **`--sectors-file` no longer breaks when run outside the repo (#48).**
+  The v0.5.0 default was the repo-relative `./configs/sectors.json`, so
+  running the installed binary from any other cwd silently produced an
+  all-"unclassified" sector view. Resolution now follows a search chain —
+  explicit `--sectors-file` → `$OPTIX_SECTORS_FILE` → `<bin-dir>/../configs/`
+  → `./configs/` → an **embedded** default (compiled into the binary via
+  `go:embed`, so the sector map is never silently empty). An explicit flag
+  or env path that's missing/malformed now fails loudly rather than
+  silently falling back. The resolved source is printed to stderr when it
+  isn't the most-expected location.
+
+- **`portfolio concentration` now populates the dual-currency display
+  block.** New `--net-liq-sgd` and `--fx-usd-sgd` flags wire data into the
+  `NetLiqSGD` / `FXUSDtoSGD` fields that the v0.5.0 JSON schema exposed
+  but the CLI never set. Validation (`validateCurrencyFlags`) runs up-front
+  before any broker work: the two flags must be passed together or neither
+  (so partial input doesn't render misleading `USD $X (SGD $0)` output),
+  and a negative value is rejected with a sign-specific message rather than
+  the confusing "must be passed together". Table-tested across both-set,
+  neither, each-alone, and negative inputs. Will become automatic once the
+  IBKR account-summary integration ships. (#51)
+
+- **`portfolio concentration` no longer surfaces IBKR's closed-out
+  zero-quantity residual rows.** Positions IBKR keeps for ~T+2 after a
+  close were rendered as `0.0%` ghost entries in the Top-N table and
+  added to sector ticker lists. They're now skipped at the position-loop
+  entry, keyed on quantity alone (`abs(qty) < 1e-9`) — a closed position
+  is defined by zero quantity regardless of any stale mark IBKR may still
+  report for the row, and the epsilon catches float-represented zeros
+  without over-filtering legitimate fractional holdings. Short positions
+  (negative quantity) are preserved. (#52)
+
+## [0.5.0] - 2026-05-31
+
+### Added
+
+- **`optix portfolio concentration` — account-level concentration analysis
+  (v2.0 Phase 1).** New `portfolio` parent command and `concentration`
+  subcommand that aggregates per-underlying exposure (stock + option legs by
+  |market value|), groups by sector via static map, and flags positions
+  exceeding configurable thresholds (default 10% yellow, 20% red). Reports
+  Top-2 / Top-5 / Top-N rollups and HHI with diversified/moderate/concentrated
+  buckets. Optional `--json` writes the full snapshot for cron consumers.
+
+  Phase 1 caveat: optix does not yet read NLV from IBKR account summary; pass
+  `--net-liq-usd` to anchor weights, or omit to fall back to sum(|MV|). True
+  NLV integration lands in v2.1 alongside the Greeks aggregation layer.
+
+  See `docs/v2.0-portfolio-risk-layer.md` for the full design rationale and
+  Phase 2/3 roadmap (Greeks aggregation + stress test).
+
+- **`configs/sectors.json`** — static ticker → sector mapping covering ~60
+  commonly traded US tickers. Unlisted tickers fall back to "unclassified"
+  rather than crashing the report.
+
+- **`configs/portfolio.yaml`** — declarative thresholds reference for the
+  portfolio subsystem. Phase 1 reads defaults from code; YAML loading lands
+  in a follow-up.
+
+- **`AGENTS.md`** — Codex counterpart to `CLAUDE.md`, mirroring the same
+  architecture / command / convention guidance for repo-aware agents.
+
+### Internal
+
+- `internal/portfolio/` — new package for account-level risk views. Phase 1
+  ships `concentration.go` + tests; Phase 2/3 will add `aggregator.go` /
+  `staleness.go` / `stress.go` per the design doc.
+
+- `.gitignore` now excludes `.superpowers/` scratch dir (same rationale as
+  the existing `docs/superpowers/{plans,specs}/` ignores — working artifacts,
+  not source).
+
+### Fixed
+
+Pre-release review pass on the concentration code surfaced four real defects;
+all fixed before tagging v0.5.0:
+
+- **Missing-mark warning now attributes to specific option legs**, not the
+  whole ticker. Previously a GOOGL holding with a fully-priced stock leg plus
+  one OPRA-less option leg rendered "Mark price missing for: GOOGL", which
+  misdirected the user toward the stock. Output now reads "Option mark
+  missing on: GOOGL (1 option leg)" and the ticker's stock-leg MV is preserved
+  in the weight calc rather than zeroed out.
+
+- **`Compute` with zero-init `Config` no longer red-flags every position.**
+  The prior partial-guard only filled `TopN`, so callers passing
+  `portfolio.Config{}` got `RedPct=0` and any non-zero weight tripped the red
+  threshold. `applyConfigDefaults` now fills each threshold field
+  independently from `DefaultConfig`.
+
+- **Deterministic ordering when two underlyings have identical |MV|.** Sort
+  comparators (both per-underlying and per-sector) now use an alphabetical
+  tiebreaker, so the JSON snapshot is stable across runs and downstream cron
+  diffing doesn't flap.
+
+- **Stock legs with `MarketValue == 0` no longer mis-flagged as missing-mark**
+  (they're almost always zero-qty residuals). Missing-mark detection is now
+  scoped to option legs only, where the OPRA-subscription gap is the actual
+  pathology.
+
+Two deeper issues are tracked as TODOs in code and deferred to v2.1 / v2.0.1:
+distinguishing legitimate `mark == 0` options from unfetched marks (needs a
+broker.AccountReader API change), and explicit "(margin used)" leverage labels
+when `DeployedUSD > NLV`.
+
+
 ## [0.4.5] - 2026-05-23
 
 Patch release: two related correctness bugs in the trade journal subsystem
@@ -525,7 +686,16 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/IS908/optix/releases/tag/v0.2.0
-[0.1.1]: https://github.com/IS908/optix/releases/tag/v0.1.1
+[Unreleased]: https://github.com/IS908/optix/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/IS908/optix/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/IS908/optix/compare/v0.4.5...v0.5.0
+[0.4.5]: https://github.com/IS908/optix/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/IS908/optix/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/IS908/optix/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/IS908/optix/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/IS908/optix/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/IS908/optix/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/IS908/optix/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/IS908/optix/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/IS908/optix/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/IS908/optix/releases/tag/v0.1.0

@@ -15,6 +15,9 @@ type Position struct {
 	AvgCost    float64 // IBKR convention: per-share for STK, per-contract
 	                   // (multiplier already baked in) for OPT
 	Multiplier float64 // 1 for STK, usually 100 for OPT
+	Currency   string  // IBKR contract currency, e.g. "USD" | "HKD" | "SGD".
+	                   // Empty when the source didn't provide it (treated as
+	                   // USD by USD-only consumers like portfolio concentration).
 
 	// Filled by AccountService from a mark price. Left zero (CLI shows "—")
 	// when the mark is unavailable, e.g. an option with no OPRA subscription.

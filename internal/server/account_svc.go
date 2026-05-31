@@ -40,7 +40,13 @@ func (s *AccountService) GetPositions(ctx context.Context) ([]model.Position, er
 	if err != nil {
 		return nil, err
 	}
-	s.enrich(ctx, positions)
+	if err := s.enrich(ctx, positions); err != nil {
+		// A cancelled enrich leaves some positions with zero marks, which
+		// downstream (portfolio concentration) would misread as an
+		// OPRA-subscription gap. Surface the cancellation instead of
+		// returning a misleading partial snapshot. See issue #50.
+		return positions, err
+	}
 	return positions, nil
 }
 
@@ -58,7 +64,11 @@ func (s *AccountService) GetExecutions(ctx context.Context, filter model.Executi
 // each position in place, bounded to accountEnrichConcurrency concurrent mark
 // fetches. Any individual mark failure is non-fatal: that position's P&L
 // fields are left zero and the others are unaffected.
-func (s *AccountService) enrich(ctx context.Context, positions []model.Position) {
+//
+// Returns ctx.Err() if the context was cancelled while enriching (nil
+// otherwise). A cancelled enrich produces a partially-marked slice that the
+// caller must not present as complete — see GetPositions. See issue #50.
+func (s *AccountService) enrich(ctx context.Context, positions []model.Position) error {
 	oq, hasOptionQuoter := s.broker.(broker.OptionQuoter)
 
 	sem := make(chan struct{}, accountEnrichConcurrency)
@@ -121,4 +131,5 @@ func (s *AccountService) enrich(ctx context.Context, positions []model.Position)
 		}(i)
 	}
 	wg.Wait()
+	return ctx.Err()
 }

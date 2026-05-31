@@ -32,12 +32,20 @@ func TestParseMultiplier(t *testing.T) {
 
 func TestPositionFromIB(t *testing.T) {
 	stk := positionFromIB("U1",
-		&ibapi.Contract{Symbol: "AAPL", SecType: "STK"},
+		&ibapi.Contract{Symbol: "AAPL", SecType: "STK", Currency: "USD"},
 		ibapi.StringToDecimal("100"), 245.30)
 	if stk.Symbol != "AAPL" || stk.SecType != "STK" || stk.Quantity != 100 ||
-		stk.AvgCost != 245.30 || stk.Multiplier != 1 ||
+		stk.AvgCost != 245.30 || stk.Multiplier != 1 || stk.Currency != "USD" ||
 		stk.Expiration != "" || stk.Strike != 0 || stk.Right != "" {
 		t.Errorf("stock conversion mismatch: %+v", stk)
+	}
+
+	// Non-USD contract currency must be carried through (issue #49).
+	hk := positionFromIB("U1",
+		&ibapi.Contract{Symbol: "0700", SecType: "STK", Currency: "HKD"},
+		ibapi.StringToDecimal("100"), 380.00)
+	if hk.Currency != "HKD" {
+		t.Errorf("Currency not carried through: got %q, want HKD", hk.Currency)
 	}
 
 	opt := positionFromIB("U1",

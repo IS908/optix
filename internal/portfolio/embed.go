@@ -41,17 +41,24 @@ func LoadDefaultSectorMap() (*SectorMap, error) {
 // embedded fallback. The returned `source` describes which path was used,
 // for surfacing to the user in --verbose / debug output.
 //
-// Search order:
-//  1. explicit path (the value passed to this function), if non-empty
-//  2. $OPTIX_SECTORS_FILE
-//  3. <executable-dir>/../configs/sectors.json  (release-bundle layout)
-//  4. ./configs/sectors.json                    (dev-checkout fallback)
+// Search order, with the loud-vs-silent failure model for each tier:
+//
+//  1. explicit path arg            — LOUD on missing/malformed
+//  2. $OPTIX_SECTORS_FILE          — LOUD on missing/malformed (env var is
+//                                    explicit user intent, same class as the
+//                                    flag; silently swallowing a typo would
+//                                    mirror issue #48 one level down)
+//  3. <executable-dir>/../configs/sectors.json  (release-bundle auto-discovery)
+//  4. ./configs/sectors.json                    (dev-checkout auto-discovery)
 //  5. embedded default                          (never empty)
 //
-// Returns an error only when an explicit override exists but fails to load —
-// silently falling back from a user's typo would be worse than failing
-// loudly. Missing files in the auto-search chain (2–4) are treated as
-// "this path isn't where the map lives" rather than errors.
+// Auto-discovery tiers (3–4) silently skip missing files — that's the right
+// behavior because they're "is the map here?" probes, not user assertions
+// about where the map lives.
+//
+// For the executable-dir probe, symlinks are resolved first so that
+// Homebrew-style installs (/opt/homebrew/bin/optix → ../Cellar/.../optix)
+// look in the real bundle's configs/ rather than the formula prefix.
 func ResolveSectorMap(explicit string) (sm *SectorMap, source string, err error) {
 	if explicit != "" {
 		loaded, e := LoadSectorMap(explicit)
@@ -61,6 +68,17 @@ func ResolveSectorMap(explicit string) (sm *SectorMap, source string, err error)
 		return loaded, explicit, nil
 	}
 
+	// Tier 2: env var is user intent — fail loudly on a bad path rather than
+	// silently degrading to the embedded fallback.
+	if envPath := os.Getenv("OPTIX_SECTORS_FILE"); envPath != "" {
+		loaded, e := LoadSectorMap(envPath)
+		if e != nil {
+			return nil, "", fmt.Errorf("load $OPTIX_SECTORS_FILE=%q: %w", envPath, e)
+		}
+		return loaded, envPath, nil
+	}
+
+	// Tiers 3–4: auto-discovery; missing files silently skip.
 	for _, candidate := range autoSectorPaths() {
 		if candidate == "" {
 			continue
@@ -73,8 +91,8 @@ func ResolveSectorMap(explicit string) (sm *SectorMap, source string, err error)
 			return loaded, candidate, nil
 		}
 		// File exists but failed to parse — surface that rather than silently
-		// falling through to embedded. A malformed user-edited override
-		// should not be hidden.
+		// falling through to embedded. A malformed file on a discovered path
+		// is still likely a user-edited customization gone wrong.
 		return nil, "", fmt.Errorf("load %q (auto-discovered): %w", candidate, e)
 	}
 
@@ -87,10 +105,14 @@ func ResolveSectorMap(explicit string) (sm *SectorMap, source string, err error)
 }
 
 func autoSectorPaths() []string {
-	out := []string{
-		os.Getenv("OPTIX_SECTORS_FILE"),
-	}
+	var out []string
 	if exe, err := os.Executable(); err == nil {
+		// Resolve symlinks so Homebrew-style installs land at the real
+		// bundle's configs/ dir rather than the formula prefix. Falls
+		// through cleanly when exe isn't a symlink.
+		if real, evalErr := filepath.EvalSymlinks(exe); evalErr == nil {
+			exe = real
+		}
 		out = append(out, filepath.Join(filepath.Dir(exe), "..", "configs", "sectors.json"))
 	}
 	out = append(out, "./configs/sectors.json")

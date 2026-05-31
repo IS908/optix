@@ -28,10 +28,11 @@ func TestEmbeddedSectorsMatchesCanonical(t *testing.T) {
 }
 
 // TestEmbeddedDefaultSectorMapParses guards against shipping a binary with
-// a malformed embedded sectors.json. The embed source is a symlink to the
-// canonical configs/sectors.json — if someone breaks the JSON, every
-// downstream consumer that falls back to the embedded map gets a runtime
-// error in production.
+// a malformed embedded sectors.json. The embed source is a committed copy
+// of configs/sectors.json (go:embed can't traverse `..` or follow symlinks).
+// See TestEmbeddedSectorsMatchesCanonical for drift detection between the
+// two copies. If someone breaks the JSON, every downstream consumer that
+// falls back to the embedded map gets a runtime error in production.
 func TestEmbeddedDefaultSectorMapParses(t *testing.T) {
 	sm, err := LoadDefaultSectorMap()
 	if err != nil {
@@ -135,5 +136,25 @@ func TestResolveSectorMapEnvOverride(t *testing.T) {
 	}
 	if got := sm.Sector("ENV"); got != "e" {
 		t.Errorf("ENV should map to 'e' from env override, got %q", got)
+	}
+}
+
+// TestResolveSectorMapEnvTypoFailsLoudly guards the post-PR-#53-review
+// change: $OPTIX_SECTORS_FILE is user intent (same class as the explicit
+// flag), so a missing or unreadable env path must error rather than
+// silently degrading to the embedded fallback. Without this, a user who
+// exports the env var with a typo loses their customizations exactly the
+// way issue #48 did, just one tier down.
+func TestResolveSectorMapEnvTypoFailsLoudly(t *testing.T) {
+	tmp := t.TempDir()
+	missingPath := filepath.Join(tmp, "this-file-does-not-exist.json")
+	t.Setenv("OPTIX_SECTORS_FILE", missingPath)
+
+	_, _, err := ResolveSectorMap("")
+	if err == nil {
+		t.Fatalf("missing $OPTIX_SECTORS_FILE path should error, got nil")
+	}
+	if !strings.Contains(err.Error(), "OPTIX_SECTORS_FILE") {
+		t.Errorf("error should mention the env var name, got: %v", err)
 	}
 }

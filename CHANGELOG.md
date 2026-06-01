@@ -14,6 +14,19 @@ above it.
 
 _No changes yet._
 
+## [0.7.21] - 2026-06-01
+
+Patch release for quieter IBKR CLI output.
+
+### Fixed
+
+- Suppressed verbose `github.com/scmhub/ibapi` protocol callback logs by
+  default so read-only CLI commands no longer fill stderr with handshake,
+  market-data, and tick event internals (#110).
+- Stopped intentional `Disconnect()` calls from being reported as TCP drops or
+  marking the slot unhealthy while preserving the warning for unexpected IBKR
+  connection closures (#110).
+
 ## [0.7.20] - 2026-06-01
 
 Patch release for documentation drift cleanup.
@@ -1004,7 +1017,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.20...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.21...HEAD
+[0.7.21]: https://github.com/IS908/optix/compare/v0.7.20...v0.7.21
 [0.7.20]: https://github.com/IS908/optix/compare/v0.7.19...v0.7.20
 [0.7.19]: https://github.com/IS908/optix/compare/v0.7.18...v0.7.19
 [0.7.18]: https://github.com/IS908/optix/compare/v0.7.17...v0.7.18

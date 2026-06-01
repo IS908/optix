@@ -3,6 +3,7 @@ package ibkr
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
+	"github.com/rs/zerolog"
 	"github.com/scmhub/ibapi"
 )
 
@@ -28,11 +30,20 @@ type Client struct {
 	wrapper  *IbWrapper
 	ibClient *ibapi.EClient
 
-	mu          sync.RWMutex
-	connected   bool
-	watchCancel context.CancelFunc // stops the disconnect-watcher goroutine; nil if not running
+	mu            sync.RWMutex
+	connected     bool
+	disconnecting bool
+	watchCancel   context.CancelFunc // stops the disconnect-watcher goroutine; nil if not running
 
 	reqIDCounter int64 // atomic counter for request IDs
+}
+
+func init() {
+	configureIBAPILogger()
+}
+
+func configureIBAPILogger() {
+	ibapi.SetLogger(zerolog.New(io.Discard))
 }
 
 // New creates a new IB TWS client.
@@ -83,6 +94,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.ibClient.ReqMarketDataType(3)
 
 	c.connected = true
+	c.disconnecting = false
 
 	// Drain any stale disconnect signal that may linger from a prior session.
 	select {
@@ -110,12 +122,17 @@ func (c *Client) Disconnect() error {
 	if !c.connected {
 		return nil
 	}
-	err := c.ibClient.Disconnect()
-	c.connected = false
+	c.disconnecting = true
 	// Stop the watcher goroutine so it doesn't fire after an intentional disconnect.
 	if c.watchCancel != nil {
 		c.watchCancel()
 		c.watchCancel = nil
+	}
+	err := c.ibClient.Disconnect()
+	c.connected = false
+	select {
+	case <-c.wrapper.disconnectCh:
+	default:
 	}
 	return err
 }
@@ -127,9 +144,12 @@ func (c *Client) watchDisconnect(ctx context.Context) {
 	select {
 	case <-c.wrapper.disconnectCh:
 		c.mu.Lock()
+		expected := c.disconnecting
 		c.connected = false
 		c.mu.Unlock()
-		log.Printf("ibkr: TCP connection dropped (clientID %d) — slot marked unhealthy", c.cfg.ClientID)
+		if !expected {
+			log.Printf("ibkr: TCP connection dropped (clientID %d) — slot marked unhealthy", c.cfg.ClientID)
+		}
 	case <-ctx.Done():
 	}
 }

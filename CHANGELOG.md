@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.7] - 2026-06-01
+
+Patch release for portfolio stress index-shock semantics.
+
+### Fixed
+
+- **Market-index stress shocks no longer treat every group as beta=1 or apply
+  QQQ shocks to the whole portfolio (#71).** `spy_pct` shocks now scale
+  price-sensitive P&L by a built-in beta fallback for common names, while
+  `qqq_pct` shocks are restricted to Nasdaq/tech-like tickers and groups.
+
 ## [0.7.6] - 2026-06-01
 
 Patch release for portfolio stress transparency.
@@ -816,7 +827,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/IS908/optix/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/IS908/optix/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/IS908/optix/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/IS908/optix/compare/v0.7.3...v0.7.4

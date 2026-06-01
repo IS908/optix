@@ -14,6 +14,18 @@ above it.
 
 _No changes yet._
 
+## [0.7.14] - 2026-06-01
+
+Patch release for portfolio stress repricing fidelity.
+
+### Fixed
+
+- **`portfolio stress` now reprices option legs for shocked scenarios (#73).**
+  Stress reports built from live portfolio Greeks carry JSON-hidden stock and
+  option leg inputs, then use the analysis engine to reprice option legs at
+  shocked spot/IV values. The previous Delta/Gamma/Vega Taylor approximation
+  remains as a fallback when repricing cannot be completed.
+
 ## [0.7.13] - 2026-06-01
 
 Patch release for portfolio stress beta freshness.

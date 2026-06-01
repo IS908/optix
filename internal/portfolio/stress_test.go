@@ -1,11 +1,15 @@
 package portfolio
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/IS908/optix/pkg/model"
 )
 
 func TestRunStressUsesDollarDeltaDollarGammaAndIVPointShocks(t *testing.T) {
@@ -109,6 +113,67 @@ func TestRunStressUsesNonPositiveHistoricalBetaProvider(t *testing.T) {
 	}
 	if len(out.BetaSources) != 1 || out.BetaSources[0].Beta != -0.5 {
 		t.Fatalf("BetaSources = %+v, want historical beta -0.5", out.BetaSources)
+	}
+}
+
+func TestRunStressWithRepricingUsesPerLegPriceBeforeTaylorFallback(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups: []GreeksGroup{{
+			Key: "AAPL", DollarDelta: 9999, DollarGamma: 9999, Vega: 9999,
+		}},
+		StressOptionLegs: []StressOptionLeg{{
+			Key: "AAPL", ShockKey: "AAPL", Spot: 100, Strike: 100, TYears: 0.25,
+			RiskFreeRate: 0.04, IV: 0.20, BasePrice: 10, SignedQty: 1, Multiplier: 100,
+			OptionType: callOptionTypeForStressTest(),
+		}},
+	}
+	pricer := &fakeStressRepricePricer{price: 15}
+	provider := StaticStressBetaProvider{"AAPL": {Key: "AAPL", Beta: 1, Source: "historical_cache"}}
+
+	out := RunStressWithRepricing(context.Background(), report, []StressScenario{{
+		ID: "spy-down-iv-up", Label: "SPY down IV up", Shocks: []StressShock{
+			{Axis: "spy_pct", Magnitude: -0.10},
+			{Axis: "iv_points", Magnitude: 5},
+		},
+	}}, provider, pricer)
+
+	if len(pricer.calls) != 1 {
+		t.Fatalf("PriceOption calls = %d, want 1", len(pricer.calls))
+	}
+	call := pricer.calls[0]
+	if math.Abs(call.spot-90) > 1e-9 || math.Abs(call.iv-0.25) > 1e-9 {
+		t.Fatalf("repricer called with spot=%v iv=%v, want 90/0.25", call.spot, call.iv)
+	}
+	got := pnlByKey(out.Scenarios[0].Positions)
+	if got["AAPL"] != 500 {
+		t.Fatalf("AAPL P&L = %v, want (15 - 10) * 100 = 500", got["AAPL"])
+	}
+}
+
+func TestRunStressWithRepricingFallsBackToTaylorWhenRepriceFails(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "AAPL"}},
+		StressOptionLegs: []StressOptionLeg{{
+			Key: "AAPL", ShockKey: "AAPL", Spot: 100, Strike: 100, TYears: 0.25,
+			RiskFreeRate: 0.04, IV: 0.20, BasePrice: 10, SignedQty: 1, Multiplier: 100,
+			OptionType: model.OptionTypeCall, FallbackDollarDelta: 100, FallbackDollarGamma: 10, FallbackVega: 2,
+		}},
+	}
+	pricer := &fakeStressRepricePricer{err: errors.New("repricer down")}
+
+	out := RunStressWithRepricing(context.Background(), report, []StressScenario{{
+		ID: "underlying-up-iv-up", Label: "Underlying up IV up", Shocks: []StressShock{
+			{Axis: "underlying_pct", Magnitude: 0.01},
+			{Axis: "iv_points", Magnitude: 2},
+		},
+	}}, nil, pricer)
+
+	got := pnlByKey(out.Scenarios[0].Positions)
+	want := 100*1 + 0.5*10*1 + 2*2
+	if got["AAPL"] != want {
+		t.Fatalf("AAPL P&L = %v, want Taylor fallback %v", got["AAPL"], want)
 	}
 }
 
@@ -247,4 +312,31 @@ func pnlByKey(positions []StressPositionPnL) map[string]float64 {
 		out[p.Key] = p.PnLUSD
 	}
 	return out
+}
+
+func callOptionTypeForStressTest() model.OptionType {
+	return model.OptionTypeCall
+}
+
+type fakeStressRepricePricer struct {
+	price float64
+	err   error
+	calls []stressRepriceCall
+}
+
+type stressRepriceCall struct {
+	spot float64
+	iv   float64
+}
+
+func (f *fakeStressRepricePricer) PriceOption(_ context.Context, spot, _, _, _, iv float64, _ model.OptionType) (model.Greeks, error) {
+	f.calls = append(f.calls, stressRepriceCall{spot: spot, iv: iv})
+	if f.err != nil {
+		return model.Greeks{}, f.err
+	}
+	return model.Greeks{Price: f.price}, nil
+}
+
+func (f *fakeStressRepricePricer) ImpliedVol(context.Context, float64, float64, float64, float64, float64, model.OptionType) (float64, bool, error) {
+	return 0, false, nil
 }

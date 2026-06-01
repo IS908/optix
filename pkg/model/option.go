@@ -23,6 +23,7 @@ func (o OptionType) String() string {
 
 // Greeks represents option Greeks.
 type Greeks struct {
+	Price float64
 	Delta float64
 	Gamma float64
 	Theta float64

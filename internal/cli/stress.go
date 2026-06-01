@@ -106,7 +106,7 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 			}
 
 			betaProvider := buildStressBetaProvider(ctx, store, market, greeks.Groups, time.Now().UTC(), os.Stderr)
-			report := portfolio.RunStressWithBetaProvider(greeks, cfg.Stress.Scenarios, betaProvider)
+			report := portfolio.RunStressWithRepricing(ctx, greeks, cfg.Stress.Scenarios, betaProvider, pricer)
 			portfolio.RenderStress(report, os.Stdout)
 
 			if jsonOut != "" {

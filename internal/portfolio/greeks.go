@@ -63,13 +63,15 @@ type SkippedLeg struct {
 
 // GreeksReport is the full snapshot. JSON shape mirrors concentration.Report.
 type GreeksReport struct {
-	SnapshotAt   time.Time     `json:"snapshot_at"`
-	GroupBy      string        `json:"group_by"`
-	NetLiqUSD    float64       `json:"net_liq_usd"`
-	RiskFreeRate float64       `json:"risk_free_rate"`
-	Groups       []GreeksGroup `json:"groups"`
-	Total        GreeksGroup   `json:"total"`
-	SkippedLegs  []SkippedLeg  `json:"skipped_legs,omitempty"`
+	SnapshotAt       time.Time         `json:"snapshot_at"`
+	GroupBy          string            `json:"group_by"`
+	NetLiqUSD        float64           `json:"net_liq_usd"`
+	RiskFreeRate     float64           `json:"risk_free_rate"`
+	Groups           []GreeksGroup     `json:"groups"`
+	Total            GreeksGroup       `json:"total"`
+	SkippedLegs      []SkippedLeg      `json:"skipped_legs,omitempty"`
+	StressStockLegs  []StressStockLeg  `json:"-"`
+	StressOptionLegs []StressOptionLeg `json:"-"`
 }
 
 func rightToOptionType(right string) model.OptionType {
@@ -187,6 +189,7 @@ type pricedLeg struct {
 	dollarGamma float64 // USD second-order P&L coefficient per (+1% spot)^2
 	theta       float64 // display: USD per day
 	ivSource    string  // chain|mark|stock
+	stress      StressOptionLeg
 	skipped     *SkippedLeg
 }
 
@@ -296,7 +299,9 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		return g
 	}
 	for _, p := range stockLegs {
-		g := addGroup(keyOf(strings.ToUpper(p.Symbol)))
+		underlying := strings.ToUpper(p.Symbol)
+		key := keyOf(underlying)
+		g := addGroup(key)
 		g.NetDelta += p.Quantity
 		// Stock dollar-delta per +1% spot = NetDelta(shares) × price × 1%. For a
 		// stock leg price = MarketValue/Quantity, so this is MarketValue × 0.01
@@ -306,6 +311,9 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		g.MVUsd += math.Abs(p.MarketValue)
 		g.LegCount++
 		mergeIVSource(g, "stock")
+		r.StressStockLegs = append(r.StressStockLegs, StressStockLeg{
+			Key: key, ShockKey: underlying, MarketValue: p.MarketValue,
+		})
 	}
 	for i, pl := range priced {
 		key := keyOf(legs[i].Underlying)
@@ -324,6 +332,8 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		g.MVUsd += pl.mvUsd
 		g.LegCount++
 		mergeIVSource(g, pl.ivSource)
+		pl.stress.Key = key
+		r.StressOptionLegs = append(r.StressOptionLegs, pl.stress)
 	}
 
 	// 5) Weights, finalize, deterministic order.
@@ -404,30 +414,49 @@ func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spo
 	if err != nil {
 		return pricedLeg{skipped: skipFor(leg, "price_error")}
 	}
-	if !allFinite(g) {
+	if !allFinite(g) || g.Price < 0 {
 		return pricedLeg{skipped: skipFor(leg, "non_finite")}
 	}
 	scale := leg.SignedQty * leg.Multiplier
+	basePrice := g.Price
 	netDelta := g.Delta * scale
 	mvUsd := math.Abs(leg.MarketValue)
 	if mvUsd <= 0 {
 		mvUsd = math.Abs(effectiveOptionMark(leg) * scale)
 	}
+	dollarDelta := netDelta * spot * 0.01
+	dollarGamma := g.Gamma * scale * spot * spot * 0.0001
+	vega := g.Vega * scale / 100.0
 	return pricedLeg{
 		underlying:  leg.Underlying,
 		mvUsd:       mvUsd,
 		netDelta:    netDelta,
-		dollarDelta: netDelta * spot * 0.01, // USD per +1% spot (not full notional)
+		dollarDelta: dollarDelta, // USD per +1% spot (not full notional)
 		gamma:       g.Gamma * scale * spot * 0.01,
-		dollarGamma: g.Gamma * scale * spot * spot * 0.0001,
-		vega:        g.Vega * scale / 100.0,
+		dollarGamma: dollarGamma,
+		vega:        vega,
 		theta:       g.Theta * scale,
 		ivSource:    src,
+		stress: StressOptionLeg{
+			ShockKey:            leg.Underlying,
+			Spot:                spot,
+			Strike:              leg.Strike,
+			TYears:              leg.TYears,
+			RiskFreeRate:        r,
+			IV:                  iv,
+			BasePrice:           basePrice,
+			SignedQty:           leg.SignedQty,
+			Multiplier:          leg.Multiplier,
+			OptionType:          leg.OptionType,
+			FallbackDollarDelta: dollarDelta,
+			FallbackDollarGamma: dollarGamma,
+			FallbackVega:        vega,
+		},
 	}
 }
 
 func allFinite(g model.Greeks) bool {
-	for _, v := range []float64{g.Delta, g.Gamma, g.Vega, g.Theta} {
+	for _, v := range []float64{g.Price, g.Delta, g.Gamma, g.Vega, g.Theta} {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return false
 		}

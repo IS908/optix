@@ -2,7 +2,9 @@ package portfolio
 
 import (
 	"context"
+	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,7 +178,7 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	chain := mkChain("GOOGL", 180, model.OptionQuote{
 		Strike: 185, OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
 	})
-	pricer := &fakePricer{perShare: model.Greeks{Delta: 0.5, Gamma: 0.01, Vega: 0.2, Theta: -0.05}}
+	pricer := &fakePricer{perShare: model.Greeks{Price: 4.25, Delta: 0.5, Gamma: 0.01, Vega: 0.2, Theta: -0.05}}
 	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
 		pricer, fakeChains{"GOOGL": chain}, fakeSectorMap())
 	if err != nil {
@@ -209,6 +211,55 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	}
 	if g.IVSource != "chain" {
 		t.Errorf("IVSource = %q, want chain", g.IVSource)
+	}
+	if len(r.StressOptionLegs) != 1 {
+		t.Fatalf("StressOptionLegs len = %d, want 1", len(r.StressOptionLegs))
+	}
+	leg := r.StressOptionLegs[0]
+	if leg.Key != "GOOGL" || leg.ShockKey != "GOOGL" || leg.Spot != 180 || leg.IV != 0.31 || leg.BasePrice != 4.25 {
+		t.Fatalf("StressOptionLeg = %+v, want GOOGL spot/IV/model base price", leg)
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Marshal GreeksReport: %v", err)
+	}
+	if strings.Contains(string(data), "StressOptionLegs") || strings.Contains(string(data), "stress_option") {
+		t.Fatalf("stress repricing internals leaked into JSON: %s", data)
+	}
+}
+
+func TestAggregate_OptionStressLegUsesModelBasePriceNotMarketMark(t *testing.T) {
+	pos := []model.Position{optionPos("GOOGL", "C", 2, 185, 4.0)}
+	chain := mkChain("GOOGL", 180, model.OptionQuote{
+		Strike: 185, OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
+	})
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		&fakePricer{perShare: model.Greeks{Price: 4.25, Delta: 0.5, Gamma: 0.01, Vega: 0.2, Theta: -0.05}},
+		fakeChains{"GOOGL": chain}, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.StressOptionLegs[0].BasePrice; got != 4.25 {
+		t.Fatalf("BasePrice = %v, want model base price 4.25 rather than account mark 4.0", got)
+	}
+}
+
+func TestAggregate_SkipsOptionStressLegWhenModelPriceInvalid(t *testing.T) {
+	pos := []model.Position{optionPos("GOOGL", "C", 2, 185, 4.0)}
+	chain := mkChain("GOOGL", 180, model.OptionQuote{
+		Strike: 185, OptionType: model.OptionTypeCall, ImpliedVolatility: 0.31,
+	})
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		&fakePricer{perShare: model.Greeks{Price: math.NaN(), Delta: 0.5, Gamma: 0.01, Vega: 0.2, Theta: -0.05}},
+		fakeChains{"GOOGL": chain}, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.StressOptionLegs) != 0 {
+		t.Fatalf("StressOptionLegs = %+v, want invalid price skipped", r.StressOptionLegs)
+	}
+	if len(r.SkippedLegs) != 1 || r.SkippedLegs[0].Reason != "non_finite" {
+		t.Fatalf("SkippedLegs = %+v, want non_finite skip", r.SkippedLegs)
 	}
 }
 

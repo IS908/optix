@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/IS908/optix/pkg/model"
@@ -22,6 +24,9 @@ var migration002SQL string
 
 //go:embed migrations/003_trade_journal.sql
 var migration003SQL string
+
+//go:embed migrations/004_symbol_beta.sql
+var migration004SQL string
 
 // Store implements data persistence using SQLite.
 type Store struct {
@@ -83,6 +88,10 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("migration 003: %w", err)
 	}
 
+	if _, err := s.db.Exec(migration004SQL); err != nil {
+		return fmt.Errorf("migration 004: %w", err)
+	}
+
 	// Idempotent schema additions — error is swallowed when column already exists.
 	_, _ = s.db.Exec(`ALTER TABLE watchlist_snapshots ADD COLUMN last_refreshed_at TEXT`)
 	_, _ = s.db.Exec(`ALTER TABLE ohlcv_bars ADD COLUMN fetched_at TEXT`)
@@ -127,6 +136,54 @@ func (s *Store) addColumnIfNotExists(table, column, columnDef string) error {
 	}
 
 	return nil
+}
+
+func (s *Store) UpsertSymbolBeta(ctx context.Context, b model.SymbolBeta) error {
+	symbol := strings.ToUpper(strings.TrimSpace(b.Symbol))
+	if symbol == "" {
+		return fmt.Errorf("symbol beta: empty symbol")
+	}
+	if b.UpdatedAt.IsZero() {
+		b.UpdatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO symbol_beta (symbol, beta, observations, as_of, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(symbol) DO UPDATE SET
+			beta=excluded.beta,
+			observations=excluded.observations,
+			as_of=excluded.as_of,
+			updated_at=excluded.updated_at`,
+		symbol, b.Beta, b.Observations,
+		b.AsOf.UTC().Format(time.RFC3339),
+		b.UpdatedAt.UTC().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (s *Store) GetFreshSymbolBeta(ctx context.Context, symbol string, maxAge time.Duration, now time.Time) (model.SymbolBeta, bool, error) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	var b model.SymbolBeta
+	var asOf, updatedAt string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT symbol, beta, observations, as_of, updated_at
+		FROM symbol_beta WHERE symbol = ?`, symbol).
+		Scan(&b.Symbol, &b.Beta, &b.Observations, &asOf, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.SymbolBeta{}, false, nil
+	}
+	if err != nil {
+		return model.SymbolBeta{}, false, err
+	}
+	b.AsOf = parseTimeOrLog(asOf, "symbol_beta.as_of")
+	b.UpdatedAt = parseTimeOrLog(updatedAt, "symbol_beta.updated_at")
+	if b.AsOf.IsZero() || b.UpdatedAt.IsZero() {
+		return b, false, nil
+	}
+	if maxAge > 0 && (now.Sub(b.UpdatedAt) > maxAge || now.Sub(b.AsOf) > maxAge) {
+		return b, false, nil
+	}
+	return b, true, nil
 }
 
 // --- Stock Quotes ---
@@ -195,7 +252,7 @@ func (s *Store) InsertBars(ctx context.Context, symbol, timeframe string, bars [
 		// For intraday bars, keep full UTC timestamp.
 		var key string
 		if timeframe == "1 day" || timeframe == "1d" {
-			key = b.Timestamp.UTC().Truncate(24*time.Hour).Format(time.RFC3339)
+			key = b.Timestamp.UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
 		} else {
 			key = b.Timestamp.UTC().Format(time.RFC3339)
 		}

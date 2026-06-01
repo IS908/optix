@@ -147,7 +147,8 @@ JSON includes a `max_pain_offset_pct` field = `(max_pain - spot) / spot × 100`
 — positive = Max Pain above spot, negative = below. Useful for agents to
 decide directional bias at a glance.
 
-Exit codes: `0` · `1` bad flags · `2` broker unreachable · `3` analysis engine unreachable.
+Exit codes: `0` success · `1` generic error or bad flags · `2` broker
+unreachable · `3` SQLite error.
 
 ### Portfolio Risk (持仓风险 / 组合 Greeks)
 

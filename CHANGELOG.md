@@ -14,6 +14,20 @@ above it.
 
 _No changes yet._
 
+## [0.7.9] - 2026-06-01
+
+Patch release for CLI exit-code reliability.
+
+### Fixed
+
+- **CLI runtime failures now preserve documented exit-code categories (#70).**
+  `quote`, `analyze`, `dashboard`, `positions`, `trades`, and `max-pain` now
+  map SQLite failures to exit code `3` and broker/account-data failures to exit
+  code `2` instead of collapsing everything to generic exit code `1`;
+  `watch` and `server` now also map SQLite failures to exit code `3`. The
+  max-pain skill docs now correctly reserve exit code `3` for SQLite failures
+  rather than analysis-engine connectivity.
+
 ## [0.7.8] - 2026-06-01
 
 Patch release for portfolio config validation.

@@ -37,6 +37,14 @@ func validateSourceFlag(s string) error {
 	return fmt.Errorf("invalid --source %q: use ibkr | yfinance | auto", s)
 }
 
+func validateOutputFormat(s string) error {
+	switch strings.ToLower(s) {
+	case "text", "json":
+		return nil
+	}
+	return fmt.Errorf("invalid --format %q: use text | json", s)
+}
+
 // MaxPainOutput is the agent-stable JSON contract for `optix max-pain`.
 type MaxPainOutput struct {
 	Symbol           string  `json:"symbol"`
@@ -83,6 +91,10 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 				return err
 			}
 			source = strings.ToLower(source)
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
 
 			expiryCompact, err := parseExpiryFlag(expiry, time.Now())
 			if err != nil {
@@ -91,7 +103,7 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 
 			b, banner, err := buildMaxPainBroker(ctx, source)
 			if err != nil {
-				return err
+				return cliExit(err, exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Fprintln(os.Stderr, banner)
@@ -111,7 +123,7 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open db: %w", err)
+				return cliExit(fmt.Errorf("open db: %w", err), exitSQLiteErr)
 			}
 			defer store.Close()
 
@@ -123,7 +135,7 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 					tmpl := fmt.Sprintf("optix max-pain %s --expiry %%s", symbol)
 					return renderExpiryError(miss, tmpl, format)
 				}
-				return fmt.Errorf("fetch chain for %s: %w", symbol, err)
+				return cliExit(fmt.Errorf("fetch chain for %s: %w", symbol, err), exitIBKRUnreachable)
 			}
 
 			// Spot is best-effort: a missing quote disables max_pain_offset_pct
@@ -137,14 +149,14 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 			// Compute Max Pain via Python analysis engine.
 			ac, err := analysis.NewClient(analysisAddr)
 			if err != nil {
-				return fmt.Errorf("connect analysis engine at %s: %w", analysisAddr, err)
+				return cliExit(fmt.Errorf("connect analysis engine at %s: %w", analysisAddr, err), exitGenericErr)
 			}
 			defer ac.Close()
 
 			protoChain := buildProtoChainForMaxPain(chain)
 			mp, expBack, err := ac.GetMaxPain(ctx, symbol, protoChain)
 			if err != nil {
-				return fmt.Errorf("compute max pain: %w", err)
+				return cliExit(fmt.Errorf("compute max pain: %w", err), exitGenericErr)
 			}
 
 			result := MaxPainOutput{

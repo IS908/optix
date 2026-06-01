@@ -67,7 +67,6 @@ func runJournalSyncTicker(ctx context.Context, svc *server.JournalService, inter
 	}
 }
 
-
 func newServerCmd() *cobra.Command {
 	var (
 		webAddr             string
@@ -95,7 +94,7 @@ Examples:
 			// 1. Open SQLite store
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()

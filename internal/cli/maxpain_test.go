@@ -40,3 +40,24 @@ func TestValidateSourceFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateOutputFormat(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"text", true},
+		{"json", true},
+		{"JSON", true},
+		{"xml", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			err := validateOutputFormat(tc.in)
+			if (err == nil) != tc.want {
+				t.Errorf("validateOutputFormat(%q) err=%v, wantOK=%v", tc.in, err, tc.want)
+			}
+		})
+	}
+}

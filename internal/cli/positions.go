@@ -38,7 +38,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -49,7 +49,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 				ClientID: 4,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to broker: %w", err)
+				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Println(b.SourceBanner())
@@ -60,9 +60,9 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 			positions, err := acct.GetPositions(ctx)
 			if err != nil {
 				if errors.Is(err, broker.ErrAccountNotSupported) {
-					return fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行")
+					return cliExit(fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行"), exitIBKRUnreachable)
 				}
-				return fmt.Errorf("get positions: %w", err)
+				return cliExit(fmt.Errorf("get positions: %w", err), exitIBKRUnreachable)
 			}
 
 			if len(positions) == 0 {

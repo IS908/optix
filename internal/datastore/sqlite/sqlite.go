@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/IS908/optix/pkg/model"
@@ -33,16 +34,15 @@ type Store struct {
 	db *sql.DB
 }
 
+var memoryDBCounter atomic.Uint64
+
 // New opens (or creates) a SQLite database and runs migrations.
 func New(dbPath string) (*Store, error) {
-	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create db directory: %w", err)
+	dsn, err := sqliteDSN(dbPath)
+	if err != nil {
+		return nil, err
 	}
 
-	// Encode PRAGMAs in the DSN so that every connection opened by the
-	// database/sql connection pool inherits them — not just the first one.
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -60,6 +60,22 @@ func New(dbPath string) (*Store, error) {
 	}
 
 	return s, nil
+}
+
+func sqliteDSN(dbPath string) (string, error) {
+	if dbPath == ":memory:" {
+		id := memoryDBCounter.Add(1)
+		return fmt.Sprintf("file:optix_mem_%d?mode=memory&cache=shared&_pragma=busy_timeout(5000)", id), nil
+	}
+
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create db directory: %w", err)
+	}
+
+	// Encode PRAGMAs in the DSN so every connection opened by the
+	// database/sql pool inherits them, not just the first one.
+	return fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath), nil
 }
 
 // Close checkpoints the WAL and closes the database connection.

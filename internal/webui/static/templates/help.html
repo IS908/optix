@@ -55,7 +55,7 @@
     <div class="space-y-4">
 
       {{template "field" dict "Name" "Price" "Badge" "real-time"
-        "Desc" "Last trade price from IB TWS real-time quote feed."
+        "Desc" "Last trade price from the IB Gateway/TWS real-time quote feed."
         "Note" ""}}
 
       {{template "field" dict "Name" "Trend" "Badge" "technical"
@@ -102,7 +102,7 @@
 
       <div>
         <h3 class="font-semibold text-gray-200 mb-2">Price Summary</h3>
-        <p class="text-gray-400 text-sm">Current quote snapshot: last price, bid/ask, daily change %, day high/low, 52-week high/low, and 20-day average volume — all sourced directly from IB TWS market data.</p>
+        <p class="text-gray-400 text-sm">Current quote snapshot: last price, bid/ask, daily change %, day high/low, 52-week high/low, and 20-day average volume — all sourced directly from IB Gateway/TWS market data.</p>
       </div>
 
       <div>
@@ -298,14 +298,14 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-400">
       <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
         <div class="text-gray-200 font-semibold mb-1">📡 Live mode (<code class="text-emerald-400 text-xs">?refresh=true</code>)</div>
-        Fetches real-time quotes, OHLCV bars, and option chains directly from IB TWS via the IBAPI. The Python engine then runs full analysis in-process. Results are saved to the SQLite analysis cache for future cache-mode reads.
+        Fetches real-time quotes, OHLCV bars, and option chains directly from IB Gateway or TWS via the IBAPI. The Python engine then runs full analysis in-process. Results are saved to the SQLite analysis cache for future cache-mode reads.
       </div>
       <div class="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
         <div class="text-gray-200 font-semibold mb-1">📦 Cache mode (default)</div>
         Reads the most-recent <code class="font-mono text-xs">watchlist_snapshots</code> row per symbol (populated by <code class="font-mono text-xs">optix dashboard</code>) and the full JSON payload from <code class="font-mono text-xs">analysis_cache</code> (populated by <code class="font-mono text-xs">optix analyze</code> or a previous live web request). No IB connection required.
       </div>
     </div>
-    <p class="text-gray-600 text-xs mt-3">IB TWS must be running and accepting API connections on the configured host/port for live mode to work. Paper trading (port 7497) and live trading (port 7496) are both supported.</p>
+    <p class="text-gray-600 text-xs mt-3">IB Gateway or TWS must be running and accepting API connections on the configured host/port for live mode to work. Gateway live/paper ports are 4001/4002; TWS live/paper ports are 7496/7497.</p>
   </section>
 
   <div class="h-4"></div>

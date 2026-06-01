@@ -111,13 +111,14 @@ sqlite3 data/optix.db ".schema watchlist"
 ### 问题：后台任务不执行
 
 **可能原因**：
-- IBKR TWS 未运行或端口错误
+- IBKR Gateway/TWS 未运行或端口错误
 - Python 分析服务器未启动
 - 符号的 last_refreshed_at 时间戳太新
 
 **解决方法**：
 ```bash
-# 1. 检查 IBKR TWS 是否运行在 7496 端口
+# 1. 检查 IBKR Gateway/TWS 是否运行在配置端口
+#    默认 Gateway 实盘: 4001；Gateway 纸盘: 4002；TWS 实盘/纸盘: 7496/7497
 # 2. 启动 Python 服务器
 make py-server
 
@@ -142,7 +143,7 @@ rm data/optix.db*
 
 ### 前置条件
 
-- [ ] IBKR TWS 或 IB Gateway 运行在 `127.0.0.1:7496`
+- [ ] IBKR Gateway 或 TWS 已启用 API：Gateway 实盘 `127.0.0.1:4001`（默认 `gateway`），Gateway 纸盘 `4002`，TWS 实盘 `7496`，TWS 纸盘 `7497`
 - [ ] Python 分析服务器运行在 `localhost:50052`
   ```bash
   make py-server
@@ -207,10 +208,10 @@ rm data/optix.db*
      - **无需手动刷新页面**
 
 8. **测试失败重试**
-   - 停止 IBKR TWS
+   - 停止 IBKR Gateway/TWS
    - 等待下次调度（观察日志错误）
    - 验证 retry_count 增加
-   - 重启 TWS，验证最终成功
+   - 重启 Gateway/TWS，验证最终成功
 
 9. **性能测试（可选）**
    - 添加 20 个符号，全部 15 分钟刷新
@@ -225,7 +226,7 @@ rm data/optix.db*
 ## 已知限制
 
 1. **首次刷新延迟**：符号添加后，需等待最多 (刷新间隔 + 1分钟) 才会触发首次刷新
-2. **IBKR 依赖**：后台任务要求 IBKR TWS 持续连接，断开会导致任务失败（会自动重试）
+2. **IBKR 依赖**：后台任务要求 IBKR Gateway/TWS 持续连接，断开会导致任务失败（会自动重试）
 3. **Python 依赖**：分析功能要求 Python gRPC 服务器运行
 4. **单机限制**：当前 SQLite 后端仅支持单机部署
 

@@ -84,7 +84,7 @@ func newServerCmd() *cobra.Command {
 		Long: `Start the Optix lightweight web UI server.
 
 The server serves an HTML dashboard and per-symbol analysis pages backed by a
-SQLite cache (default) or live IB TWS + Python analysis engine (?refresh=true).
+SQLite cache (default) or live IB Gateway/TWS + Python analysis engine (?refresh=true).
 
 Examples:
   optix server
@@ -166,7 +166,7 @@ Examples:
 					Msg("Journal sync ticker started")
 			}
 
-			fmt.Printf("IB TWS:           %s:%d\n", ibHost, ibPort)
+			fmt.Printf("%-17s %s:%d\n", serverBrokerLabel(), ibHost, ibPort)
 			fmt.Printf("Analysis engine:  %s\n", analysisAddr)
 			fmt.Printf("Database:         %s\n", dbPath)
 			fmt.Printf("Capital:          $%.0f\n", capital)
@@ -185,4 +185,8 @@ Examples:
 	cmd.Flags().DurationVar(&journalSyncInterval, "journal-sync-interval", 6*time.Hour, "Background trade-journal sync interval; 0 disables")
 
 	return cmd
+}
+
+func serverBrokerLabel() string {
+	return "IB Gateway/TWS:"
 }

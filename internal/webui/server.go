@@ -1,6 +1,6 @@
 // Package webui implements the Optix lightweight web UI server.
 // It serves HTML pages and a JSON API backed by a SQLite cache (default) or
-// live IB TWS + Python analysis engine calls (?refresh=true).
+// live IB Gateway/TWS + Python analysis engine calls (?refresh=true).
 package webui
 
 import (
@@ -40,12 +40,12 @@ type Server struct {
 	cfg         Config
 	store       *sqlite.Store
 	mux         *http.ServeMux
-	refreshMu   sync.Mutex          // guards lastRefresh
+	refreshMu   sync.Mutex           // guards lastRefresh
 	lastRefresh map[string]time.Time // symbol → last background refresh time
-	sfGroup     singleflight.Group  // deduplicates concurrent live fetches per symbol
-	brokerPool  *brokerPool         // bounded IBKR connection pool
-	qCache      quoteCache          // TTL cache for /api/quotes (avoids 10s broker round-trips)
-	journal     *JournalDeps        // optional trade-journal service (nil → endpoints return 503)
+	sfGroup     singleflight.Group   // deduplicates concurrent live fetches per symbol
+	brokerPool  *brokerPool          // bounded IBKR connection pool
+	qCache      quoteCache           // TTL cache for /api/quotes (avoids 10s broker round-trips)
+	journal     *JournalDeps         // optional trade-journal service (nil → endpoints return 503)
 }
 
 // New creates a Server and registers all routes.

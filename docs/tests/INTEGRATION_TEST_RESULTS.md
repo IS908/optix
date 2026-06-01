@@ -281,14 +281,14 @@ Verified that the fix did not break existing features:
 ### Before Merging to Main
 
 1. ✅ **All integration tests passed**
-2. ⏳ **Manual E2E test with real IBKR connection** (requires TWS running)
+2. ⏳ **Manual E2E test with real IBKR connection** (requires Gateway/TWS running)
 3. ⏳ **Manual E2E test with Python gRPC server** (requires `make py-server`)
 4. ⏳ **Code review by maintainer**
 5. ⏳ **Update CHANGELOG.md**
 
 ### Manual E2E Test Checklist
 
-When IBKR TWS and Python server are available:
+When IBKR Gateway/TWS and Python server are available:
 
 - [ ] Add new symbol with 5-minute auto-refresh
 - [ ] Verify background refresh executes within 6 minutes
@@ -316,4 +316,4 @@ When IBKR TWS and Python server are available:
 
 All 16 integration tests passed. The fix was a simple one-line change to correct the API response field name in the JavaScript polling logic. The system is now fully functional and ready for manual E2E testing with real market data.
 
-**Ready for next phase**: Manual testing with IBKR TWS + Python gRPC server.
+**Ready for next phase**: Manual testing with IBKR Gateway/TWS + Python gRPC server.

@@ -44,8 +44,8 @@
               └───┬──────────┬───────┘
                   │          │ gRPC
          ┌────────▼──┐  ┌───▼───────────────────┐
-         │ IB TWS /  │  │ Python Analysis Engine │
-         │ Gateway   │  │ localhost:50052        │
+         │ IB Gateway│  │ Python Analysis Engine │
+         │ / TWS     │  │ localhost:50052        │
          │ port 4001 │  │ BS定价 / 技术分析 /    │
          └───────────┘  │ 期权分析 / 策略推荐    │
                         └───────────────────────┘
@@ -65,7 +65,7 @@
 | Go Backend | Go HTTP + gRPC | Web 服务器、IB 连接、数据采集、后台调度、API |
 | CLI | Go (Cobra) | 命令行交互界面 |
 | Analysis Engine | Python gRPC | 技术分析、波动率、策略推荐、BS 定价 |
-| IB TWS/Gateway | Interactive Brokers | 实时行情、历史K线、期权链结构 |
+| IB Gateway/TWS | Interactive Brokers | 实时行情、历史K线、期权链结构 |
 | SQLite | 本地数据库 (WAL) | 自选股、行情缓存、OHLCV、期权链、分析结果、快照 |
 
 ---
@@ -74,7 +74,7 @@
 
 ### 2.1 前置条件
 
-1. **IB TWS 或 IB Gateway** 已启动并允许 API 连接
+1. **IB Gateway 或 TWS** 已启动并允许 API 连接
    - 默认连接 IB Gateway 实盘端口 `4001`
    - `--ib-port` 支持别名：`gateway`（4001）、`tws`（7496），或直接数字端口
    - 纸盘端口：`4002`（Gateway）、`7497`（TWS）
@@ -204,8 +204,8 @@ Dashboard 是系统的核心操作界面，提供：
 | 模式 | 触发方式 | 速度 | 数据来源 |
 |------|---------|------|---------|
 | 缓存模式（默认） | 直接访问页面 | 快 | SQLite 缓存 |
-| 实时刷新 | `?refresh=true` | 慢 | IB TWS → Python 分析 → SQLite |
-| 后台调度 | 自动（服务器启动后） | 异步 | IB TWS → Python 分析 → SQLite → 前端轮询 |
+| 实时刷新 | `?refresh=true` | 慢 | IB Gateway/TWS → Python 分析 → SQLite |
+| 后台调度 | 自动（服务器启动后） | 异步 | IB Gateway/TWS → Python 分析 → SQLite → 前端轮询 |
 
 ### 3.6 JSON API
 
@@ -226,7 +226,7 @@ Dashboard 是系统的核心操作界面，提供：
 |------|--------|------|
 | `--config` | `configs/optix.yaml` | 根配置文件路径；文件不存在时使用内置默认值 |
 | `--db` | `./data/optix.db` | SQLite 数据库路径 |
-| `--ib-host` | `127.0.0.1` | IB TWS/Gateway 地址 |
+| `--ib-host` | `127.0.0.1` | IB Gateway/TWS 地址 |
 | `--ib-port` | `gateway` | IB 端口：`gateway`(4001)、`tws`(7496) 或数字 |
 
 ---

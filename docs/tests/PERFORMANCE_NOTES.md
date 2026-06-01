@@ -78,8 +78,9 @@
 
 **检查清单**:
 ```bash
-# 1. IBKR TWS 是否运行
-netstat -an | grep 7496
+# 1. IBKR Gateway/TWS 是否运行
+#    Gateway live/paper: 4001/4002；TWS live/paper: 7496/7497
+netstat -an | grep -E '4001|4002|7496|7497'
 
 # 2. Python 服务器是否运行
 netstat -an | grep 50052

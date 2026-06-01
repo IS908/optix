@@ -195,7 +195,7 @@ const FreshnessPoller = {
    - 派发 Task 到队列
    ↓
 6. Worker 执行 fetchAndCache(AAPL)
-   - 连接 IBKR TWS (获取 quote/ohlcv/options)
+   - 连接 IBKR Gateway/TWS (获取 quote/ohlcv/options)
    - 连接 Python gRPC (运行分析)
    - 保存到 3 个表:
      * stock_quotes (quote_at)
@@ -275,7 +275,8 @@ make build
 # Terminal 1: Python gRPC 服务器
 make py-server
 
-# Terminal 2: IBKR TWS (端口 7496)
+# Terminal 2: IBKR Gateway/TWS
+# 默认: Gateway 实盘 127.0.0.1:4001；TWS 实盘可用 --ib-port tws 或 7496
 
 # Terminal 3: Optix 服务器
 ./bin/optix-server
@@ -287,7 +288,7 @@ make py-server
 ./bin/optix-server \
   --web-addr 127.0.0.1:8080 \
   --ib-host 127.0.0.1 \
-  --ib-port 7496 \
+  --ib-port gateway \
   --analysis-addr localhost:50052 \
   --capital 100000
 ```
@@ -381,7 +382,7 @@ sqlite3 data/optix.db "SELECT * FROM background_jobs ORDER BY created_at DESC LI
 ### Refresh Live 超时
 
 **解决**:
-1. 检查 IBKR TWS 是否运行（端口 7496）
+1. 检查 IBKR Gateway/TWS 是否运行并启用 API（Gateway: 4001/4002；TWS: 7496/7497）
 2. 检查 Python 服务器是否运行（端口 50052）
 3. 减少 Watchlist 符号数量
 4. 使用自动后台刷新代替

@@ -17,14 +17,14 @@ import (
 	"github.com/scmhub/ibapi"
 )
 
-// Config holds IB TWS connection settings.
+// Config holds IB Gateway/TWS connection settings.
 type Config struct {
 	Host     string
 	Port     int
 	ClientID int64
 }
 
-// Client wraps the IB TWS API connection.
+// Client wraps the IB Gateway/TWS API connection.
 type Client struct {
 	cfg      Config
 	wrapper  *IbWrapper
@@ -46,7 +46,7 @@ func configureIBAPILogger() {
 	ibapi.SetLogger(zerolog.New(io.Discard))
 }
 
-// New creates a new IB TWS client.
+// New creates a new IB Gateway/TWS client.
 func New(cfg Config) *Client {
 	wrapper := newIbWrapper()
 	ibClient := ibapi.NewEClient(wrapper)
@@ -57,7 +57,7 @@ func New(cfg Config) *Client {
 	}
 }
 
-// Connect establishes a connection to IB TWS or Gateway.
+// Connect establishes a connection to IB Gateway or TWS.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -68,7 +68,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	err := c.ibClient.Connect(c.cfg.Host, c.cfg.Port, c.cfg.ClientID)
 	if err != nil {
-		return fmt.Errorf("connect to IB TWS at %s:%d: %w", c.cfg.Host, c.cfg.Port, err)
+		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d: %w", c.cfg.Host, c.cfg.Port, err)
 	}
 
 	// Wait for NextValidID (signals handshake complete) with a timeout.
@@ -79,7 +79,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", c.cfg.ClientID, dErr)
 		}
-		return fmt.Errorf("timeout waiting for IB TWS handshake")
+		return fmt.Errorf("timeout waiting for IB Gateway/TWS handshake")
 	case <-ctx.Done():
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", c.cfg.ClientID, dErr)
@@ -114,7 +114,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Disconnect closes the IB TWS connection.
+// Disconnect closes the IB Gateway/TWS connection.
 func (c *Client) Disconnect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -220,7 +220,7 @@ func optionContract(symbol, expiration, right string, strike float64) *ibapi.Con
 // the quote reflects the latest extended-hours price, not just the prior close.
 func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("not connected to IB TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	session := model.USMarketSession(time.Now())
@@ -307,7 +307,7 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 // so that pre-market and after-hours bars are included.
 func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, startDate, endDate string) ([]model.OHLCV, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("not connected to IB TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	reqID := c.nextReqID()
@@ -395,7 +395,7 @@ func (c *Client) getConID(ctx context.Context, symbol string) (int64, error) {
 // expiration: "YYYYMMDD" to filter, or "" for all near-term expirations.
 func (c *Client) GetOptionChain(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("not connected to IB TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	// Step 1a: resolve the contract ID (required by protobuf-path servers v212+).
@@ -764,7 +764,7 @@ func parseIBDate(s string) (time.Time, error) {
 // timeout as the backstop (see spec Constraint 4).
 func (c *Client) GetPositions(ctx context.Context) ([]model.Position, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("not connected to IB TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	pp := c.wrapper.registerPositions()
@@ -792,7 +792,7 @@ func (c *Client) GetPositions(ctx context.Context) ([]model.Position, error) {
 // the call forever. We filter by Side client-side instead.
 func (c *Client) GetExecutions(ctx context.Context, filter model.ExecutionFilter) ([]model.Execution, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("not connected to IB TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	reqID := c.nextReqID()
@@ -842,7 +842,7 @@ func (c *Client) GetExecutions(ctx context.Context, filter model.ExecutionFilter
 // subscription) when no price is available.
 func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error) {
 	if !c.IsConnected() {
-		return 0, fmt.Errorf("not connected to IB TWS")
+		return 0, fmt.Errorf("not connected to IB Gateway/TWS")
 	}
 
 	reqID := c.nextReqID()

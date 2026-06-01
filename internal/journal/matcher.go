@@ -21,13 +21,22 @@ type instrumentKey struct {
 	account    string
 	symbol     string
 	secType    string
+	currency   string
 	expiration string
 	strike     float64
 	right      string
 }
 
 func keyOf(e model.Execution) instrumentKey {
-	return instrumentKey{e.Account, e.Symbol, e.SecType, e.Expiration, e.Strike, e.Right}
+	return instrumentKey{
+		account:    e.Account,
+		symbol:     e.Symbol,
+		secType:    e.SecType,
+		currency:   model.NormalizeCurrency(e.Currency),
+		expiration: e.Expiration,
+		strike:     e.Strike,
+		right:      e.Right,
+	}
 }
 
 func multiplierFor(secType string) float64 {
@@ -98,7 +107,7 @@ func matchGroup(k instrumentKey, execs []model.Execution, asOf time.Time) []mode
 				}
 				trips = append(trips, model.RoundTrip{
 					Symbol: e.Symbol, SecType: k.secType, Expiration: k.expiration,
-					Strike: k.strike, Right: k.right, Account: k.account,
+					Strike: k.strike, Right: k.right, Account: k.account, Currency: k.currency,
 					Direction: "SHORT", OpenTime: front.time, CloseTime: e.Time,
 					OpenQty: take, CloseQty: take,
 					OpenAvgPrice: front.avgPrice, CloseAvgPrice: e.AvgPrice,
@@ -126,7 +135,7 @@ func matchGroup(k instrumentKey, execs []model.Execution, asOf time.Time) []mode
 				}
 				trips = append(trips, model.RoundTrip{
 					Symbol: e.Symbol, SecType: k.secType, Expiration: k.expiration,
-					Strike: k.strike, Right: k.right, Account: k.account,
+					Strike: k.strike, Right: k.right, Account: k.account, Currency: k.currency,
 					Direction: "LONG", OpenTime: front.time, CloseTime: e.Time,
 					OpenQty: take, CloseQty: take,
 					OpenAvgPrice: front.avgPrice, CloseAvgPrice: e.AvgPrice,
@@ -159,7 +168,7 @@ func matchGroup(k instrumentKey, execs []model.Execution, asOf time.Time) []mode
 func emitOpen(k instrumentKey, lo lot, direction string, mult float64, asOf time.Time) model.RoundTrip {
 	rt := model.RoundTrip{
 		Symbol: k.symbol, SecType: k.secType, Expiration: k.expiration,
-		Strike: k.strike, Right: k.right, Account: k.account,
+		Strike: k.strike, Right: k.right, Account: k.account, Currency: k.currency,
 		Direction: direction, OpenTime: lo.time,
 		OpenQty: lo.qty, OpenAvgPrice: lo.avgPrice,
 		Multiplier: mult, Status: "open",
@@ -215,11 +224,15 @@ func normalizeBAGPrice(e model.Execution) model.Execution {
 func enrichBAGFromLegs(group []model.Execution) []model.Execution {
 	var bagIdx = -1
 	var legExps []string
+	var legCurrency string
 	for i, e := range group {
 		if e.SecType == "BAG" {
 			bagIdx = i
 		} else if e.SecType == "OPT" && e.Expiration != "" {
 			legExps = append(legExps, e.Expiration)
+		}
+		if e.SecType == "OPT" && legCurrency == "" && e.Currency != "" {
+			legCurrency = e.Currency
 		}
 	}
 	if bagIdx < 0 {
@@ -229,6 +242,9 @@ func enrichBAGFromLegs(group []model.Execution) []model.Execution {
 	if len(legExps) > 0 {
 		sort.Strings(legExps)
 		bag.Expiration = legExps[len(legExps)-1]
+	}
+	if bag.Currency == "" {
+		bag.Currency = legCurrency
 	}
 	return []model.Execution{bag}
 }

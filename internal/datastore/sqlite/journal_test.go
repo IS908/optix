@@ -23,7 +23,7 @@ func newTestStore(t *testing.T) *Store {
 func sampleExec(execID, symbol, side string, ts time.Time) model.Execution {
 	return model.Execution{
 		ExecID: execID, Time: ts, Account: "DU1", Symbol: symbol,
-		SecType: "STK", Side: side, Shares: 100, Price: 50, AvgPrice: 50,
+		SecType: "STK", Currency: "USD", Side: side, Shares: 100, Price: 50, AvgPrice: 50,
 		Exchange: "SMART", OrderID: 42, PermID: 7,
 	}
 }
@@ -51,6 +51,53 @@ func TestUpsertExecutionsInsertsAndDedups(t *testing.T) {
 	n, err = s.UpsertExecutions(ctx, mixed)
 	if err != nil || n != 1 {
 		t.Fatalf("mixed run: n=%d err=%v, want 1/nil", n, err)
+	}
+}
+
+func TestExecutionCurrencyRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 16, 14, 0, 0, 0, time.UTC)
+	if _, err := s.UpsertExecutions(ctx, []model.Execution{{
+		ExecID: "E1", Time: now, Account: "DU1", Symbol: "0700", SecType: "STK",
+		Currency: "HKD", Side: "BOT", Shares: 100, Price: 50, AvgPrice: 50,
+	}}); err != nil {
+		t.Fatalf("UpsertExecutions: %v", err)
+	}
+
+	got, err := s.ListExecutions(ctx, JournalFilter{})
+	if err != nil {
+		t.Fatalf("ListExecutions: %v", err)
+	}
+	if len(got) != 1 || got[0].Currency != "HKD" {
+		t.Fatalf("executions = %+v, want one HKD execution", got)
+	}
+}
+
+func TestUpsertExecutionsBackfillsExplicitCurrencyForDuplicateExec(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 16, 14, 0, 0, 0, time.UTC)
+	legacy := model.Execution{
+		ExecID: "E1", Time: now, Account: "DU1", Symbol: "0700", SecType: "STK",
+		Side: "BOT", Shares: 100, Price: 50, AvgPrice: 50,
+	}
+	if n, err := s.UpsertExecutions(ctx, []model.Execution{legacy}); err != nil || n != 1 {
+		t.Fatalf("legacy insert: n=%d err=%v, want 1/nil", n, err)
+	}
+
+	corrected := legacy
+	corrected.Currency = "HKD"
+	if n, err := s.UpsertExecutions(ctx, []model.Execution{corrected}); err != nil || n != 0 {
+		t.Fatalf("duplicate currency backfill: n=%d err=%v, want 0/nil", n, err)
+	}
+
+	got, err := s.ListExecutions(ctx, JournalFilter{})
+	if err != nil {
+		t.Fatalf("ListExecutions: %v", err)
+	}
+	if len(got) != 1 || got[0].Currency != "HKD" {
+		t.Fatalf("executions = %+v, want duplicate row corrected to HKD", got)
 	}
 }
 

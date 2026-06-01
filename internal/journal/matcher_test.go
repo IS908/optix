@@ -91,6 +91,28 @@ func TestMatcherStillOpen(t *testing.T) {
 	}
 }
 
+func TestMatcherCarriesCurrencyAndDoesNotMatchAcrossCurrencies(t *testing.T) {
+	t0 := time.Date(2026, 5, 1, 14, 0, 0, 0, time.UTC)
+	t1 := t0.Add(24 * time.Hour)
+	usdBuy := mkExec("USD-B", "0700", "BOT", 100, 10, t0)
+	usdBuy.Currency = "USD"
+	hkdSell := mkExec("HKD-S", "0700", "SLD", 100, 12, t1)
+	hkdSell.Currency = "HKD"
+
+	rts := MatchRoundTrips([]model.Execution{usdBuy, hkdSell}, t1.Add(time.Hour))
+	if len(rts) != 2 {
+		t.Fatalf("len=%d, want 2 unmatched open trips separated by currency: %+v", len(rts), rts)
+	}
+	for _, rt := range rts {
+		if rt.Status == "closed" {
+			t.Fatalf("cross-currency executions were matched into a closed trip: %+v", rts)
+		}
+		if rt.Currency == "" {
+			t.Fatalf("round trip missing currency: %+v", rt)
+		}
+	}
+}
+
 func TestMatcherEmptyInput(t *testing.T) {
 	if rts := MatchRoundTrips(nil, time.Now()); len(rts) != 0 {
 		t.Errorf("expected empty, got %+v", rts)

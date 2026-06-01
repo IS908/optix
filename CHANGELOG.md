@@ -14,6 +14,23 @@ above it.
 
 _No changes yet._
 
+## [0.7.16] - 2026-06-01
+
+Patch release for trade-journal currency correctness.
+
+### Fixed
+
+- Persist IBKR execution currency in the trade journal and propagate it through
+  FIFO round-trip matching so same-symbol fills in different currencies no
+  longer match into one synthetic trade (#100).
+- Keep review P&L summaries USD-only until FX conversion is implemented:
+  non-USD round trips are excluded from realized P&L/win-rate aggregates and
+  surfaced via `excluded_non_usd_round_trips`; CLI and Web trip tables now show
+  each round trip's currency (#100).
+- Backfill migrated duplicate execution rows when a later IBKR sync provides an
+  explicit currency, while preserving `UpsertExecutions`' newly-inserted row
+  count contract (#100).
+
 ## [0.7.15] - 2026-06-01
 
 Patch release for post-review correctness and release-install hardening.
@@ -932,7 +949,15 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.8...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.16...HEAD
+[0.7.16]: https://github.com/IS908/optix/compare/v0.7.15...v0.7.16
+[0.7.15]: https://github.com/IS908/optix/compare/v0.7.14...v0.7.15
+[0.7.14]: https://github.com/IS908/optix/compare/v0.7.13...v0.7.14
+[0.7.13]: https://github.com/IS908/optix/compare/v0.7.12...v0.7.13
+[0.7.12]: https://github.com/IS908/optix/compare/v0.7.11...v0.7.12
+[0.7.11]: https://github.com/IS908/optix/compare/v0.7.10...v0.7.11
+[0.7.10]: https://github.com/IS908/optix/compare/v0.7.9...v0.7.10
+[0.7.9]: https://github.com/IS908/optix/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/IS908/optix/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/IS908/optix/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/IS908/optix/compare/v0.7.5...v0.7.6

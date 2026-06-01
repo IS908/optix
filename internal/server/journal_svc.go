@@ -148,15 +148,21 @@ func (s *JournalService) Review(ctx context.Context, since, until time.Time) (mo
 	}
 	sum.TotalExecutions = len(execs)
 
-	// Keyed by (Symbol, SecType) so AAPL stock and AAPL options produce
-	// separate SymbolStats rows. The composite key is "<symbol>|<sec_type>".
-	bySymKey := func(t model.RoundTrip) string { return t.Symbol + "|" + t.SecType }
+	// Keyed by (Symbol, SecType, Currency) so AAPL stock and AAPL options
+	// produce separate SymbolStats rows. Review P&L is USD-only for now.
+	bySymKey := func(t model.RoundTrip) string {
+		return t.Symbol + "|" + t.SecType + "|" + model.NormalizeCurrency(t.Currency)
+	}
 	bySym := make(map[string]*model.SymbolStats)
 	bySymWins := make(map[string]int)
 	bySymClosed := make(map[string]int) // denominator for per-symbol WinRate
 	var totalHold float64
 
 	for _, t := range trips {
+		if model.NormalizeCurrency(t.Currency) != "USD" {
+			sum.ExcludedNonUSDRoundTrips++
+			continue
+		}
 		switch t.Status {
 		case "open":
 			sum.OpenRoundTrips++
@@ -177,7 +183,11 @@ func (s *JournalService) Review(ctx context.Context, since, until time.Time) (mo
 		k := bySymKey(t)
 		ss, ok := bySym[k]
 		if !ok {
-			ss = &model.SymbolStats{Symbol: t.Symbol, SecType: t.SecType}
+			ss = &model.SymbolStats{
+				Symbol:   t.Symbol,
+				SecType:  t.SecType,
+				Currency: model.NormalizeCurrency(t.Currency),
+			}
 			bySym[k] = ss
 		}
 		ss.RoundTripCount++

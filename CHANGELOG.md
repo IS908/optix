@@ -14,6 +14,20 @@ above it.
 
 _No changes yet._
 
+## [0.7.24] - 2026-06-01
+
+Patch release for Optix skill descriptor drift cleanup.
+
+### Fixed
+
+- Refreshed the Optix skill frontmatter so agent discovery explicitly covers
+  Max Pain, dashboard summaries, trade-journal review, portfolio Greeks,
+  stress tests, and Chinese-language risk/position requests.
+- Added missing skill command examples for analysis sizing/risk flags, journal
+  filters, journal `--no-sync`, and portfolio risk flags.
+- Corrected the release-bundle fallback instructions in the skill wrapper and
+  removed the stale "future" wording from the release-mode install docs.
+
 ## [0.7.23] - 2026-06-01
 
 Patch release for post-release dry-run cleanup.
@@ -1045,7 +1059,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.23...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.24...HEAD
+[0.7.24]: https://github.com/IS908/optix/compare/v0.7.23...v0.7.24
 [0.7.23]: https://github.com/IS908/optix/compare/v0.7.22...v0.7.23
 [0.7.22]: https://github.com/IS908/optix/compare/v0.7.21...v0.7.22
 [0.7.21]: https://github.com/IS908/optix/compare/v0.7.20...v0.7.21

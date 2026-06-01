@@ -10,6 +10,7 @@ import (
 
 // pendingQuote accumulates tick data for a snapshot market data request.
 type pendingQuote struct {
+	mu     sync.Mutex
 	bid    float64
 	ask    float64
 	last   float64
@@ -17,6 +18,53 @@ type pendingQuote struct {
 	volume float64
 	done   chan struct{}
 	once   sync.Once
+}
+
+type quoteSnapshot struct {
+	bid    float64
+	ask    float64
+	last   float64
+	close  float64
+	volume float64
+}
+
+func (pq *pendingQuote) setPrice(tickType ibapi.TickType, price float64) {
+	if price <= 0 {
+		return
+	}
+
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+
+	switch tickType {
+	case ibapi.BID:
+		pq.bid = price
+	case ibapi.ASK:
+		pq.ask = price
+	case ibapi.LAST:
+		pq.last = price
+	case ibapi.CLOSE:
+		pq.close = price
+	}
+}
+
+func (pq *pendingQuote) setVolume(volume float64) {
+	pq.mu.Lock()
+	pq.volume = volume
+	pq.mu.Unlock()
+}
+
+func (pq *pendingQuote) snapshot() quoteSnapshot {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+
+	return quoteSnapshot{
+		bid:    pq.bid,
+		ask:    pq.ask,
+		last:   pq.last,
+		close:  pq.close,
+		volume: pq.volume,
+	}
 }
 
 // pendingOI accumulates Open Interest data for an option contract market data
@@ -28,10 +76,49 @@ type pendingQuote struct {
 // We close `done` as soon as ANY OI tick arrives so the caller can cancel the
 // streaming subscription quickly.
 type pendingOI struct {
+	mu           sync.Mutex
 	openInterest int32
 	iv           float64
 	done         chan struct{}
 	once         sync.Once
+}
+
+type oiSnapshot struct {
+	openInterest int32
+	iv           float64
+}
+
+func (po *pendingOI) setOpenInterest(openInterest int32) {
+	if openInterest <= 0 {
+		return
+	}
+
+	po.mu.Lock()
+	po.openInterest = openInterest
+	po.mu.Unlock()
+	po.once.Do(func() { close(po.done) })
+}
+
+func (po *pendingOI) setIV(iv float64) {
+	if iv <= 0 {
+		return
+	}
+
+	po.mu.Lock()
+	if po.iv == 0 {
+		po.iv = iv
+	}
+	po.mu.Unlock()
+}
+
+func (po *pendingOI) snapshot() oiSnapshot {
+	po.mu.Lock()
+	defer po.mu.Unlock()
+
+	return oiSnapshot{
+		openInterest: po.openInterest,
+		iv:           po.iv,
+	}
 }
 
 // pendingBars accumulates historical bars for a single request.
@@ -50,8 +137,8 @@ type pendingBars struct {
 // `once` guards `done` against double-close from concurrent End + Error
 // (#28).
 type pendingOptParams struct {
-	expSet     map[string]struct{}  // deduplicated expirations
-	strikeSet  map[float64]struct{} // deduplicated strikes
+	expSet      map[string]struct{}  // deduplicated expirations
+	strikeSet   map[float64]struct{} // deduplicated strikes
 	expirations []string
 	strikes     []float64
 	multiplier  string
@@ -97,7 +184,7 @@ type IbWrapper struct {
 	optParams       map[int64]*pendingOptParams
 	contractDetails map[int64]*pendingContractDetails
 	oi              map[int64]*pendingOI
-	positions       *pendingPositions             // singleton — ReqPositions has no reqID
+	positions       *pendingPositions // singleton — ReqPositions has no reqID
 	executions      map[int64]*pendingExecutions
 	errors          map[int64]chan error
 	nextValidID     chan int64
@@ -229,19 +316,10 @@ func (w *IbWrapper) TickPrice(reqID ibapi.TickerID, tickType ibapi.TickType, pri
 	w.mu.Lock()
 	pq, ok := w.quotes[reqID]
 	w.mu.Unlock()
-	if !ok || price <= 0 {
+	if !ok {
 		return
 	}
-	switch tickType {
-	case ibapi.BID:
-		pq.bid = price
-	case ibapi.ASK:
-		pq.ask = price
-	case ibapi.LAST:
-		pq.last = price
-	case ibapi.CLOSE:
-		pq.close = price
-	}
+	pq.setPrice(tickType, price)
 }
 
 // TickSize is called for VOLUME, OPEN_INTEREST and other size-based ticks.
@@ -258,7 +336,7 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 	w.mu.Unlock()
 
 	if qOK && tickType == ibapi.VOLUME {
-		pq.volume = size.Float()
+		pq.setVolume(size.Float())
 		return
 	}
 
@@ -268,10 +346,7 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 		// servers also send 27/28 on the option contract itself. Accept any.
 		if tickType == 86 || tickType == 27 || tickType == 28 {
 			oi := int32(size.Float())
-			if oi > 0 {
-				po.openInterest = oi
-				po.once.Do(func() { close(po.done) })
-			}
+			po.setOpenInterest(oi)
 		}
 	}
 }
@@ -285,14 +360,11 @@ func (w *IbWrapper) TickOptionComputation(
 	impliedVol, _ float64, _ float64, _ float64,
 	_ float64, _ float64, _ float64, _ float64,
 ) {
-	if impliedVol <= 0 {
-		return
-	}
 	w.mu.Lock()
 	po, ok := w.oi[reqID]
 	w.mu.Unlock()
-	if ok && po.iv == 0 {
-		po.iv = impliedVol
+	if ok {
+		po.setIV(impliedVol)
 	}
 }
 

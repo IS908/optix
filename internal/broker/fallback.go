@@ -15,9 +15,9 @@ import (
 // This gives per-request fallback semantics: each caller creates a new
 // FallbackBroker, and the decision is made once at Connect() time.
 type FallbackBroker struct {
-	primary     Broker
-	fallback    Broker
-	active      Broker // whichever connected successfully
+	primary       Broker
+	fallback      Broker
+	active        Broker // whichever connected successfully
 	usingFallback bool
 }
 
@@ -53,7 +53,7 @@ func (fb *FallbackBroker) Connect(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	log.Printf("⚠️  IBKR unavailable (%v), falling back to Yahoo Finance (delayed data, no options)", err)
+	log.Printf("⚠️  IBKR unavailable (%v), falling back to Yahoo Finance (delayed data)", err)
 
 	if fbErr := fb.fallback.Connect(ctx); fbErr != nil {
 		return fmt.Errorf("both IBKR and Yahoo Finance unavailable: ibkr=%w, yfinance=%v", err, fbErr)
@@ -97,7 +97,7 @@ func (fb *FallbackBroker) SourceName() string {
 // Suitable for printing after Connect().
 func (fb *FallbackBroker) SourceBanner() string {
 	if fb.usingFallback {
-		return "📡 Data source: Yahoo Finance (delayed ~15 min, no options data)"
+		return "📡 Data source: Yahoo Finance (delayed ~15 min)"
 	}
 	return "📡 Data source: IBKR (real-time)"
 }
@@ -124,8 +124,8 @@ func (fb *FallbackBroker) GetHistoricalBars(ctx context.Context, symbol, timefra
 	return fb.active.GetHistoricalBars(ctx, symbol, timeframe, startDate, endDate)
 }
 
-// GetOptionChain delegates to the active broker.
-// When using fallback, this returns an empty chain (options require IBKR).
+// GetOptionChain delegates to the active broker. The yfinance fallback can
+// return delayed option-chain data when IBKR is unavailable.
 func (fb *FallbackBroker) GetOptionChain(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
 	return fb.active.GetOptionChain(ctx, underlying, expiration)
 }

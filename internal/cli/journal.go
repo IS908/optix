@@ -54,9 +54,9 @@ const (
 	// Other CLI subcommands use their own non-zero IDs because they only
 	// need to read account/market data (positions, quotes) that does not
 	// require master client status: 1 quote, 2 analyze single, 3 dashboard,
-	// 4 positions, 5 portfolio, 6 `analyze --with-oi`, 8 max-pain. Scheduler
-	// workers start at 10 and the web pool starts at 30. `trades` reads
-	// executions like journal, so it also uses ClientID 0 (see tradesClientID).
+	// 4 positions, 5 portfolio, 6 `analyze --with-oi`, 8 max-pain, 9 chain.
+	// Scheduler workers start at 10 and the web pool starts at 30. `trades`
+	// reads executions like journal, so it also uses ClientID 0 (see tradesClientID).
 	journalClientID = 0
 )
 

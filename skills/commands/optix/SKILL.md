@@ -55,6 +55,12 @@ bash bin/optix.sh analyze <SYMBOL> --with-oi --expiry 2026-05-22   # specific ex
 
 The Max Pain line always shows the expiry used (e.g. `(expiry 2026-05-20)`), so the default-nearest pick is transparent. Use `--expiry YYYY-MM-DD` to override; bad expiries print a closest-first suggestion list.
 
+### Show option chain
+```bash
+bash bin/optix.sh chain <SYMBOL>
+bash bin/optix.sh chain <SYMBOL> --expiry 2026-05-22
+```
+
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
 bash bin/optix.sh dashboard
@@ -177,12 +183,12 @@ Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scena
 
 ## Notes
 - Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
-- IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance (delayed quotes, no options chain) if IBKR is unreachable
+- IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance delayed data if IBKR is unreachable
 - **`positions` and `trades` REQUIRE IBKR** — account data has no Yahoo Finance fallback; the commands print a clear error and exit non-zero when TWS/Gateway is not running
 - `trades` only covers the last ~7 days (IBKR's `ReqExecutions` window); `--since` older than 7 days is clamped with a warning
 - `positions` option mark prices require an OPRA market-data subscription; without it the option Mark / MktValue / UnrealPnL columns degrade to `—` (identity + cost columns still render)
 - Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
-- `--with-oi` requires an IBKR market data subscription (e.g. OPRA Top of Book) for Open Interest ticks
+- `analyze --with-oi` uses IBKR market-data ticks for Open Interest and requires a matching subscription (e.g. OPRA Top of Book); `max-pain --source yfinance` can use delayed Yahoo Finance OI without IBKR
 - `journal status` is offline-safe — does not require IBKR; useful for agents to decide whether to call `journal sync` first
 - `journal sync` requires IBKR; the `optix-server` web UI runs a 6h background sync ticker so users who keep the server running never accumulate gap warnings
 - `max-pain --source yfinance` works without IBKR; yfinance returns Open Interest inline, so no OPRA subscription is needed (delayed quotes, may differ slightly from IBKR's real-time chain)

@@ -70,8 +70,8 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	}
 	for _, sc := range scenarios {
 		res := StressScenarioResult{ID: sc.ID, Label: sc.Label, Shocks: append([]StressShock(nil), sc.Shocks...)}
-		pricePct, ivPoints := stressAxes(sc.Shocks)
 		for _, grp := range g.Groups {
+			pricePct, ivPoints := stressAxesForGroup(grp.Key, sc.Shocks)
 			pnl := grp.DollarDelta*(pricePct*100) + 0.5*grp.DollarGamma*math.Pow(pricePct*100, 2) + grp.Vega*ivPoints
 			pos := StressPositionPnL{Key: grp.Key, PnLUSD: pnl}
 			res.Positions = append(res.Positions, pos)
@@ -95,16 +95,65 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	return r
 }
 
-func stressAxes(shocks []StressShock) (pricePct float64, ivPoints float64) {
+func stressAxesForGroup(key string, shocks []StressShock) (pricePct float64, ivPoints float64) {
 	for _, sh := range shocks {
 		switch sh.Axis {
-		case "spy_pct", "qqq_pct", "underlying_pct":
+		case "underlying_pct":
 			pricePct += sh.Magnitude
+		case "spy_pct":
+			pricePct += sh.Magnitude * stressBeta(key)
+		case "qqq_pct":
+			if isQQQShockTarget(key) {
+				pricePct += sh.Magnitude * stressBeta(key)
+			}
 		case "iv_points":
 			ivPoints += sh.Magnitude
 		}
 	}
 	return pricePct, ivPoints
+}
+
+func stressBeta(key string) float64 {
+	if beta, ok := defaultStressBetas[strings.ToUpper(key)]; ok {
+		return beta
+	}
+	return 1
+}
+
+func isQQQShockTarget(key string) bool {
+	k := strings.ToUpper(key)
+	if defaultQQQStressTargets[k] {
+		return true
+	}
+	return defaultQQQStressTargets[strings.ToLower(key)]
+}
+
+var defaultStressBetas = map[string]float64{
+	// Static fallback betas keep config-driven stress from treating every
+	// underlying as beta=1 until a historical symbol_beta cache is available.
+	"AAPL":  1.2,
+	"MSFT":  1.0,
+	"GOOGL": 1.1,
+	"GOOG":  1.1,
+	"META":  1.2,
+	"AMZN":  1.2,
+	"NVDA":  1.8,
+	"AMD":   1.7,
+	"TSLA":  1.6,
+	"KO":    0.5,
+	"XOM":   0.8,
+	"QQQ":   1.0,
+	"SPY":   1.0,
+}
+
+var defaultQQQStressTargets = map[string]bool{
+	"AAPL": true, "MSFT": true, "GOOGL": true, "GOOG": true, "META": true,
+	"AMZN": true, "NVDA": true, "AMD": true, "AVGO": true, "QCOM": true,
+	"INTC": true, "ADBE": true, "CRM": true, "TSLA": true, "NFLX": true,
+	"QQQ":           true,
+	"mega-cap-tech": true, "ai-chips": true, "software-cloud": true,
+	"ai-auto-mobility": true, "ecommerce-consumer": true, "media-entertainment": true,
+	"ai-interconnect": true,
 }
 
 func RenderStress(r *StressReport, w io.Writer) {

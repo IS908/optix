@@ -13,6 +13,7 @@ type pendingQuote struct {
 	mu     sync.Mutex
 	bid    float64
 	ask    float64
+	mark   float64
 	last   float64
 	close  float64
 	volume float64
@@ -23,6 +24,7 @@ type pendingQuote struct {
 type quoteSnapshot struct {
 	bid    float64
 	ask    float64
+	mark   float64
 	last   float64
 	close  float64
 	volume float64
@@ -37,13 +39,15 @@ func (pq *pendingQuote) setPrice(tickType ibapi.TickType, price float64) {
 	defer pq.mu.Unlock()
 
 	switch tickType {
-	case ibapi.BID:
+	case ibapi.BID, ibapi.DELAYED_BID:
 		pq.bid = price
-	case ibapi.ASK:
+	case ibapi.ASK, ibapi.DELAYED_ASK:
 		pq.ask = price
-	case ibapi.LAST:
+	case ibapi.MARK_PRICE:
+		pq.mark = price
+	case ibapi.LAST, ibapi.DELAYED_LAST:
 		pq.last = price
-	case ibapi.CLOSE:
+	case ibapi.CLOSE, ibapi.DELAYED_CLOSE:
 		pq.close = price
 	}
 }
@@ -61,6 +65,7 @@ func (pq *pendingQuote) snapshot() quoteSnapshot {
 	return quoteSnapshot{
 		bid:    pq.bid,
 		ask:    pq.ask,
+		mark:   pq.mark,
 		last:   pq.last,
 		close:  pq.close,
 		volume: pq.volume,
@@ -335,7 +340,7 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 	po, oiOK := w.oi[reqID]
 	w.mu.Unlock()
 
-	if qOK && tickType == ibapi.VOLUME {
+	if qOK && (tickType == ibapi.VOLUME || tickType == ibapi.DELAYED_VOLUME) {
 		pq.setVolume(size.Float())
 		return
 	}

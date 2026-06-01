@@ -112,6 +112,48 @@ func TestWrapperQuoteAccumulatorConcurrentSnapshotRace(t *testing.T) {
 	wg.Wait()
 }
 
+func TestWrapperQuoteAccumulatorCapturesDelayedPrices(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(1003)
+	pq := w.registerQuote(reqID)
+	defer w.unregister(reqID)
+
+	w.TickPrice(reqID, ibapi.DELAYED_BID, 99.50, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.DELAYED_ASK, 100.50, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.DELAYED_LAST, 101.25, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.DELAYED_CLOSE, 100.00, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.MARK_PRICE, 102.00, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.DELAYED_LAST, 101.75, ibapi.TickAttrib{})
+	w.TickSize(reqID, ibapi.DELAYED_VOLUME, ibapi.StringToDecimal("12345"))
+
+	snap := pq.snapshot()
+	if snap.bid != 99.50 || snap.ask != 100.50 || snap.mark != 102.00 || snap.last != 101.75 || snap.close != 100.00 {
+		t.Fatalf("delayed price snapshot mismatch: %+v", snap)
+	}
+	if snap.volume != 12345 {
+		t.Fatalf("delayed volume = %v, want 12345", snap.volume)
+	}
+}
+
+func TestQuoteChangeSupportsNegativeAndMidpoint(t *testing.T) {
+	change, pct := quoteChange(95, 100)
+	if change != -5 {
+		t.Fatalf("change = %v, want -5", change)
+	}
+	if pct != -5 {
+		t.Fatalf("pct = %v, want -5", pct)
+	}
+
+	mid := (99.50 + 100.50) / 2
+	change, pct = quoteChange(mid, 98)
+	if change != 2 {
+		t.Fatalf("midpoint change = %v, want 2", change)
+	}
+	if pct < 2.0408 || pct > 2.0409 {
+		t.Fatalf("midpoint pct = %v, want about 2.0408", pct)
+	}
+}
+
 func TestWrapperOITickAccumulatorConcurrentSnapshotRace(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1002)

@@ -250,19 +250,8 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	c.ibClient.CancelMktData(reqID)
 
 	quote := pq.snapshot()
-	last := quote.last
-	// During extended hours, prefer bid/ask midpoint when no LAST trade has
-	// occurred yet in the current session — this gives a more meaningful price
-	// than falling back to previous close.
-	if session.IsExtendedHours() && last == 0 && quote.bid > 0 && quote.ask > 0 {
-		last = (quote.bid + quote.ask) / 2
-	}
-	if last == 0 {
-		last = (quote.bid + quote.ask) / 2 // midpoint fallback when market is closed
-	}
-	if last == 0 && quote.close > 0 {
-		last = quote.close // previous close
-	}
+	last := quoteMark(quote.mark, quote.last, quote.bid, quote.ask, quote.close)
+	change, changePct := quoteChange(last, quote.close)
 
 	// If streaming yielded no price data at all, fall back to historical close.
 	if last == 0 {
@@ -279,6 +268,8 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 		Last:          last,
 		Bid:           quote.bid,
 		Ask:           quote.ask,
+		Change:        change,
+		ChangePct:     changePct,
 		Close:         quote.close,
 		Volume:        int64(quote.volume),
 		Timestamp:     time.Now(),
@@ -654,18 +645,60 @@ func (c *Client) quoteFromHistory(ctx context.Context, symbol string) (*model.St
 	if err != nil || len(bars) == 0 {
 		return nil, fmt.Errorf("GetQuote %s: no market data subscription and historical fallback failed: %w", symbol, err)
 	}
+	q, err := historicalQuoteFromBars(symbol, bars)
+	if err != nil {
+		return nil, fmt.Errorf("GetQuote %s: historical fallback failed: %w", symbol, err)
+	}
+	return q, nil
+}
+
+func historicalQuoteFromBars(symbol string, bars []model.OHLCV) (*model.StockQuote, error) {
+	if len(bars) == 0 {
+		return nil, fmt.Errorf("no historical bars")
+	}
 	last := bars[len(bars)-1]
+	previousClose := 0.0
+	if len(bars) >= 2 {
+		previousClose = bars[len(bars)-2].Close
+	}
+	change, changePct := quoteChange(last.Close, previousClose)
 	// Reconstruct a best-effort quote from the last daily bar.
 	return &model.StockQuote{
 		Symbol:    symbol,
 		Last:      last.Close,
-		Close:     last.Close,
+		Change:    change,
+		ChangePct: changePct,
+		Close:     previousClose,
 		Open:      last.Open,
 		High:      last.High,
 		Low:       last.Low,
 		Volume:    last.Volume,
 		Timestamp: last.Timestamp,
 	}, nil
+}
+
+func quoteMark(mark, last, bid, ask, close float64) float64 {
+	if mark > 0 {
+		return mark
+	}
+	if last > 0 {
+		return last
+	}
+	if bid > 0 && ask > 0 {
+		return (bid + ask) / 2
+	}
+	if close > 0 {
+		return close
+	}
+	return 0
+}
+
+func quoteChange(last, close float64) (float64, float64) {
+	if last <= 0 || close <= 0 {
+		return 0, 0
+	}
+	change := last - close
+	return change, change / close * 100
 }
 
 // pickRequestedExpiry returns the OptionChainExpiry matching `requested` (a

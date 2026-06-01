@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.4] - 2026-06-01
+
+Patch release for implied-volatility solver correctness.
+
+### Fixed
+
+- **Degenerate mark-to-IV inversion no longer reports non-finite Newton
+  iterates as converged (#75).** The Python solver now requires Newton
+  convergence to produce a finite IV inside the supported range before it can
+  return success; bad iterates fall through to the bounded Brent fallback.
+
 ## [0.7.3] - 2026-06-01
 
 Patch release for IBKR tick-accumulator concurrency.
@@ -783,7 +794,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/IS908/optix/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/IS908/optix/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/IS908/optix/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/IS908/optix/compare/v0.7.0...v0.7.1

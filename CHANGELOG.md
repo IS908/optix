@@ -14,6 +14,20 @@ above it.
 
 _No changes yet._
 
+## [0.7.12] - 2026-06-01
+
+Patch release for IBKR quote day-change correctness.
+
+### Fixed
+
+- **IBKR stock quotes now populate day change and day-change percentage
+  (#67).** When IBKR supplies both latest price and prior close ticks,
+  including delayed-market-data ticks, `GetQuote` fills `Change` and
+  `ChangePct` from `last - close`, so quote, analyze, and dashboard displays
+  no longer show a misleading `0.00%` change for every IBKR-sourced symbol.
+  Historical fallback quotes also compare the latest daily close against the
+  previous daily close instead of reporting zero change.
+
 ## [0.7.11] - 2026-06-01
 
 Patch release for the option-chain CLI.

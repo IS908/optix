@@ -14,6 +14,18 @@ above it.
 
 _No changes yet._
 
+## [0.7.10] - 2026-06-01
+
+Patch release for release workflow Node 24 compatibility.
+
+### Fixed
+
+- **The release workflow now opts into Node 24-compatible GitHub Actions
+  (#82).** The workflow upgrades checkout, setup-go, artifact upload/download,
+  and GitHub Release publishing actions to Node 24-capable majors and sets the
+  Node 24 opt-in environment flag so release runs surface runtime regressions
+  before GitHub's default migration window.
+
 ## [0.7.9] - 2026-06-01
 
 Patch release for CLI exit-code reliability.

@@ -35,6 +35,7 @@ func newPortfolioGreeksCmd() *cobra.Command {
 		netLiqUSD    float64
 		riskFreeRate float64
 		sectorsFile  string
+		configPath   string
 		jsonOut      string
 		analysisAddr string
 	)
@@ -50,13 +51,18 @@ analysis engine for Black-Scholes pricing. Legs whose IV can't be resolved
 from the option chain or inverted from the mark are skipped and listed.`,
 		Example: `  optix portfolio greeks --net-liq-usd 354477
   optix portfolio greeks --by sector --json /tmp/greeks.json`,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateGroupBy(groupBy); err != nil {
 				return err
 			}
-			if riskFreeRate <= 0 {
-				riskFreeRate = defaultRiskFreeRate
+			resolvedRiskFreeRate, resolvedSectorsFile, err := resolveGreeksSettings(
+				configPath, sectorsFile, riskFreeRate, cmd.Flags().Changed("risk-free-rate"),
+			)
+			if err != nil {
+				return err
 			}
+			riskFreeRate = resolvedRiskFreeRate
+			sectorsFile = resolvedSectorsFile
 			ctx := context.Background()
 
 			store, err := sqlite.New(dbPath)
@@ -131,7 +137,22 @@ from the option chain or inverted from the mark are skipped and listed.`,
 	cmd.Flags().Float64Var(&netLiqUSD, "net-liq-usd", 0, "Net Liq value in USD (anchors weights). Omit to use sum(|MV|) fallback.")
 	cmd.Flags().Float64Var(&riskFreeRate, "risk-free-rate", 0, "Risk-free rate for Black-Scholes (default 0.043)")
 	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON (same search chain as concentration)")
+	cmd.Flags().StringVar(&configPath, "portfolio-config", "configs/portfolio.yaml", "Path to portfolio risk YAML config; missing file uses defaults")
 	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
 	return cmd
+}
+
+func resolveGreeksSettings(configPath, sectorsFile string, riskFreeRate float64, riskFreeRateSet bool) (float64, string, error) {
+	cfg, err := portfolio.LoadConfig(configPath)
+	if err != nil {
+		return 0, "", err
+	}
+	if !riskFreeRateSet {
+		riskFreeRate = cfg.Greeks.RiskFreeRate
+	}
+	if sectorsFile == "" {
+		sectorsFile = cfg.SectorsFile
+	}
+	return riskFreeRate, sectorsFile, nil
 }

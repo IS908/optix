@@ -37,20 +37,15 @@ Black-Scholes Greeks path as 'portfolio greeks', then applies config-driven
 SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 		Example: `  optix portfolio stress --net-liq-usd 354477
   optix portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, err := portfolio.LoadConfig(configPath)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, resolvedRiskFreeRate, resolvedSectorsFile, err := resolveStressSettings(
+				configPath, sectorsFile, riskFreeRate, cmd.Flags().Changed("risk-free-rate"),
+			)
 			if err != nil {
 				return err
 			}
-			if riskFreeRate <= 0 {
-				riskFreeRate = cfg.Greeks.RiskFreeRate
-			}
-			if riskFreeRate <= 0 {
-				riskFreeRate = defaultRiskFreeRate
-			}
-			if sectorsFile == "" {
-				sectorsFile = cfg.SectorsFile
-			}
+			riskFreeRate = resolvedRiskFreeRate
+			sectorsFile = resolvedSectorsFile
 
 			ctx := context.Background()
 			store, err := sqlite.New(dbPath)
@@ -129,4 +124,18 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
 	return cmd
+}
+
+func resolveStressSettings(configPath, sectorsFile string, riskFreeRate float64, riskFreeRateSet bool) (portfolio.PortfolioConfig, float64, string, error) {
+	cfg, err := portfolio.LoadConfig(configPath)
+	if err != nil {
+		return portfolio.PortfolioConfig{}, 0, "", err
+	}
+	if !riskFreeRateSet {
+		riskFreeRate = cfg.Greeks.RiskFreeRate
+	}
+	if sectorsFile == "" {
+		sectorsFile = cfg.SectorsFile
+	}
+	return cfg, riskFreeRate, sectorsFile, nil
 }

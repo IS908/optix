@@ -21,6 +21,7 @@ const chainClientID = 9
 
 func newChainCmd() *cobra.Command {
 	var expiry string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:           "chain [symbol]",
@@ -29,6 +30,10 @@ func newChainCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
 			symbol := strings.ToUpper(args[0])
 			ctx := context.Background()
 
@@ -58,12 +63,16 @@ func newChainCmd() *cobra.Command {
 				return cliExit(fmt.Errorf("fetch chain for %s: %w", symbol, err), exitIBKRUnreachable)
 			}
 
+			if format == "json" {
+				return renderOptionChainJSON(os.Stdout, chain, b.SourceName())
+			}
 			renderOptionChainText(os.Stdout, chain, b.SourceName())
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&expiry, "expiry", "", "Filter to specific expiration (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 
 	return cmd
 }

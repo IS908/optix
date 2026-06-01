@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/IS908/optix/internal/broker"
@@ -17,6 +18,7 @@ import (
 
 func newPositionsCmd() *cobra.Command {
 	var typeFilter string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "positions",
@@ -29,6 +31,10 @@ subscription — without it the option's mark/P&L columns show "—").
 
 Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
 			typeFilter = strings.ToLower(typeFilter)
 			if typeFilter != "" && typeFilter != "stk" && typeFilter != "opt" {
 				return fmt.Errorf("invalid --type %q: use stk or opt", typeFilter)
@@ -52,7 +58,11 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			if format == "json" {
+				fmt.Fprintln(os.Stderr, b.SourceBanner())
+			} else {
+				fmt.Println(b.SourceBanner())
+			}
 
 			market := server.NewMarketDataService(b, store)
 			acct := server.NewAccountService(b, market)
@@ -63,11 +73,6 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 					return cliExit(fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行"), exitIBKRUnreachable)
 				}
 				return cliExit(fmt.Errorf("get positions: %w", err), exitIBKRUnreachable)
-			}
-
-			if len(positions) == 0 {
-				fmt.Println("No open positions.")
-				return nil
 			}
 
 			var stocks, options []model.Position
@@ -81,6 +86,22 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 
 			showStocks := typeFilter == "" || typeFilter == "stk"
 			showOptions := typeFilter == "" || typeFilter == "opt"
+
+			if format == "json" {
+				selected := make([]model.Position, 0, len(positions))
+				if showStocks {
+					selected = append(selected, stocks...)
+				}
+				if showOptions {
+					selected = append(selected, options...)
+				}
+				return renderPositionsJSON(os.Stdout, selected, b.SourceName())
+			}
+
+			if len(positions) == 0 {
+				fmt.Println("No open positions.")
+				return nil
+			}
 
 			if showStocks {
 				fmt.Println("\n═══ STOCK POSITIONS ═══")
@@ -113,6 +134,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 	}
 
 	cmd.Flags().StringVar(&typeFilter, "type", "", "Filter by position type: stk | opt (default: both)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 	return cmd
 }
 

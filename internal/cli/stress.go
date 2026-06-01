@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -61,7 +60,11 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			if jsonOut == "-" {
+				fmt.Fprintln(os.Stderr, b.SourceBanner())
+			} else {
+				fmt.Println(b.SourceBanner())
+			}
 
 			market := server.NewMarketDataService(b, store)
 			acct := server.NewAccountService(b, market)
@@ -103,15 +106,14 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 
 			betaProvider := buildStressBetaProvider(ctx, store, market, greeks.Groups, time.Now().UTC(), os.Stderr)
 			report := portfolio.RunStressWithRepricing(ctx, greeks, cfg.Stress.Scenarios, betaProvider, pricer)
+			if jsonOut == "-" {
+				return writeJSONDestination(os.Stdout, jsonOut, report)
+			}
 			portfolio.RenderStress(report, os.Stdout)
 
 			if jsonOut != "" {
-				data, err := json.MarshalIndent(report, "", "  ")
-				if err != nil {
-					return fmt.Errorf("marshal report: %w", err)
-				}
-				if err := os.WriteFile(jsonOut, data, 0o644); err != nil {
-					return fmt.Errorf("write json: %w", err)
+				if err := writeJSONDestination(os.Stdout, jsonOut, report); err != nil {
+					return err
 				}
 				fmt.Fprintf(os.Stderr, "\nJSON snapshot written to %s\n", jsonOut)
 			}
@@ -122,7 +124,7 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 	cmd.Flags().Float64Var(&riskFreeRate, "risk-free-rate", 0, "Risk-free rate for Black-Scholes (default from config, then 0.043)")
 	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON (defaults to config/search chain)")
 	cmd.Flags().StringVar(&configPath, "portfolio-config", "configs/portfolio.yaml", "Path to portfolio risk YAML config; missing file uses defaults")
-	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path")
+	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path, or '-' for stdout only")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	return cmd
 }

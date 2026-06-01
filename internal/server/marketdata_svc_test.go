@@ -3,7 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +57,63 @@ func (f *fakeBarsBroker) GetOptionChain(context.Context, string, string) (*model
 
 func (f *fakeBarsBroker) GetOptionChainWithOI(context.Context, string, string) (*model.OptionChain, error) {
 	return f.oiChain, nil
+}
+
+func TestMarketDataCacheWarningsDoNotWriteStdout(t *testing.T) {
+	store, err := sqlite.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	restore, stdout := captureStdout(t)
+	defer restore()
+
+	svc := NewMarketDataService(&fakeBarsBroker{}, store)
+	q, err := svc.GetQuote(context.Background(), "AAPL")
+	if err != nil {
+		t.Fatalf("GetQuote: %v", err)
+	}
+	if q.Symbol != "AAPL" {
+		t.Fatalf("quote symbol = %q, want AAPL", q.Symbol)
+	}
+
+	restore()
+	if got := stdout.String(); strings.Contains(got, "warning: failed to cache quote") {
+		t.Fatalf("cache warning polluted stdout: %q", got)
+	}
+}
+
+func captureStdout(t *testing.T) (func(), *strings.Builder) {
+	t.Helper()
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stdout: %v", err)
+	}
+	os.Stdout = w
+
+	var out strings.Builder
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&out, r)
+		close(done)
+	}()
+
+	restored := false
+	return func() {
+		if restored {
+			return
+		}
+		restored = true
+		os.Stdout = old
+		_ = w.Close()
+		<-done
+		_ = r.Close()
+	}, &out
 }
 
 func TestGetOptionChainWithOIBackfillsUnderlyingPriceFromQuote(t *testing.T) {

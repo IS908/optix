@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ const tradesClientID = 0
 
 func newTradesCmd() *cobra.Command {
 	var symbol, side, since string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "trades",
@@ -38,6 +40,14 @@ with a warning.
 
 Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
+			logw := os.Stdout
+			if format == "json" {
+				logw = os.Stderr
+			}
 			ctx := context.Background()
 
 			if side != "" {
@@ -59,7 +69,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 				}
 				clamped, wasClamped := clampSinceTo7Days(t, time.Now())
 				if wasClamped {
-					fmt.Printf("⚠️  --since %s is older than 7 days; IBKR only returns the last 7 days — clamping to %s\n",
+					fmt.Fprintf(logw, "⚠️  --since %s is older than 7 days; IBKR only returns the last 7 days — clamping to %s\n",
 						since, clamped.Format("2006-01-02"))
 				}
 				filter.Since = clamped
@@ -81,7 +91,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			fmt.Fprintln(logw, b.SourceBanner())
 
 			market := server.NewMarketDataService(b, store)
 			acct := server.NewAccountService(b, market)
@@ -92,6 +102,10 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 					return cliExit(fmt.Errorf("账户数据需要 IBKR 连接，当前已回退到 Yahoo Finance（无账户接口）。请确认 TWS/Gateway 在运行"), exitIBKRUnreachable)
 				}
 				return cliExit(fmt.Errorf("get executions: %w", err), exitIBKRUnreachable)
+			}
+
+			if format == "json" {
+				return renderTradesJSON(os.Stdout, execs, b.SourceName())
 			}
 
 			if len(execs) == 0 {
@@ -117,6 +131,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 	cmd.Flags().StringVar(&symbol, "symbol", "", "Filter by symbol")
 	cmd.Flags().StringVar(&side, "side", "", "Filter by side: BOT | SLD")
 	cmd.Flags().StringVar(&since, "since", "", "Only executions on/after this date (YYYY-MM-DD, within last 7 days)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 	return cmd
 }
 

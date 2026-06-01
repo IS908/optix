@@ -40,6 +40,7 @@ The wrapper resolves the runtime (Go binary + Python engine) in this order:
 ### Get stock quote
 ```bash
 bash bin/optix.sh quote <SYMBOL>
+bash bin/optix.sh quote <SYMBOL> --format json
 ```
 
 ### Analyze a stock (technicals + options + strategy recommendations)
@@ -61,11 +62,14 @@ The Max Pain line always shows the expiry used (e.g. `(expiry 2026-05-20)`), so 
 ```bash
 bash bin/optix.sh chain <SYMBOL>
 bash bin/optix.sh chain <SYMBOL> --expiry 2026-05-22
+bash bin/optix.sh chain <SYMBOL> --expiry 2026-05-22 --format json
 ```
 
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
 bash bin/optix.sh dashboard
+bash bin/optix.sh dashboard --sort iv-rank --top 5 --capital 100000
+bash bin/optix.sh dashboard --format json
 ```
 
 ### List watchlist
@@ -76,6 +80,7 @@ bash bin/optix.sh watch list
 ### Add to watchlist
 ```bash
 bash bin/optix.sh watch add <SYMBOL>
+bash bin/optix.sh watch add AAPL MSFT NVDA
 ```
 
 ### Remove from watchlist
@@ -88,6 +93,7 @@ bash bin/optix.sh watch remove <SYMBOL>
 bash bin/optix.sh positions
 bash bin/optix.sh positions --type stk    # only stocks
 bash bin/optix.sh positions --type opt    # only options
+bash bin/optix.sh positions --format json
 ```
 
 ### Show recent executions (last 7 days)
@@ -96,6 +102,7 @@ bash bin/optix.sh trades
 bash bin/optix.sh trades --symbol <SYMBOL>     # filter by symbol
 bash bin/optix.sh trades --side BOT            # only buys (or SLD for sells)
 bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
+bash bin/optix.sh trades --format json
 ```
 
 ### Trade Journal (交易日记 / 复盘)
@@ -103,6 +110,13 @@ bash bin/optix.sh trades --since 2026-05-10    # only on/after this date
 Persists IBKR executions to a local SQLite database, working around IBKR's
 7-day history limit. All journal commands support `--format json` for
 agent-friendly structured output.
+
+Decision flow for agents:
+1. Use `journal status --format json` first when the user asks for retrospective
+   analysis or older trade history.
+2. If the journal is stale and IBKR is available, run `journal sync --format json`.
+3. Use `journal review` for summary metrics, `journal trips` for round-trip P&L,
+   and `journal list --no-sync` when IBKR is unavailable but SQLite already has data.
 
 #### Journal status (does NOT require IBKR)
 ```bash
@@ -171,6 +185,7 @@ Account-level risk views across all holdings. **Requires IBKR** (no Yahoo Financ
 ```bash
 bash bin/optix.sh portfolio concentration --net-liq-usd <NLV>
 bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --json /tmp/conc.json
+bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --json -
 bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --net-liq-sgd <NLV_SGD> --fx-usd-sgd <FX>
 bash bin/optix.sh portfolio concentration --threshold-warn 8 --threshold-red 18 --top-n 15
 ```
@@ -180,6 +195,7 @@ Per-underlying and per-sector weights, Top-N, HHI diversification bucket, and th
 ```bash
 bash bin/optix.sh portfolio greeks --by underlying --net-liq-usd <NLV>
 bash bin/optix.sh portfolio greeks --by sector --json /tmp/greeks.json
+bash bin/optix.sh portfolio greeks --by sector --json -
 bash bin/optix.sh portfolio greeks --risk-free-rate 0.043 --sectors-file configs/sectors.json
 ```
 Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%) and Θ/day in USD. IV comes from the option chain (falls back to inverting the mark). Legs with no resolvable IV are skipped and listed. Needs the Python analysis engine (auto-started by the skill). `--portfolio-config` can supply the default risk-free rate and sector map.
@@ -188,20 +204,23 @@ Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%)
 ```bash
 bash bin/optix.sh portfolio stress --net-liq-usd <NLV>
 bash bin/optix.sh portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json
+bash bin/optix.sh portfolio stress --portfolio-config configs/portfolio.yaml --json -
 bash bin/optix.sh portfolio stress --risk-free-rate 0.043 --sectors-file configs/sectors.json
 ```
 Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scenarios are config-driven: SPY -3/-5/-10%, IV +5 points, QQQ -5%, and a tech-correlated SPY/IV shock. Text output shows total P&L, % NLV, and worst position per scenario; JSON is stable for cron/agent consumers.
 
 ## Notes
-- Python gRPC server auto-starts/stops on port 50053 (separate from local dev server on 50052)
+- Python gRPC analysis engine auto-starts/stops on port 50053.
+- Prefer `--format json` or `--json -` when another agent/tool needs to parse the result. Diagnostic messages are written to stderr in JSON mode.
 - IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance delayed data if IBKR is unreachable
 - **`positions` and `trades` REQUIRE IBKR** — account data has no Yahoo Finance fallback; the commands print a clear error and exit non-zero when TWS/Gateway is not running
+- Override the IBKR connection with `OPTIX_IB_HOST` and `OPTIX_IB_PORT` (for example `OPTIX_IB_PORT=4002` for paper Gateway, `7497` for paper TWS, `4001` for live Gateway, or `7496` for live TWS)
 - `trades` only covers the last ~7 days (IBKR's `ReqExecutions` window); `--since` older than 7 days is clamped with a warning
 - `positions` option mark prices require an OPRA market-data subscription; without it the option Mark / MktValue / UnrealPnL columns degrade to `—` (identity + cost columns still render)
 - Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
 - `analyze --with-oi` uses IBKR market-data ticks for Open Interest and requires a matching subscription (e.g. OPRA Top of Book); `max-pain --source yfinance` can use delayed Yahoo Finance OI without IBKR
 - `journal status` is offline-safe — does not require IBKR; useful for agents to decide whether to call `journal sync` first
 - `journal list`, `journal trips`, and `journal review` auto-sync best-effort before reading SQLite unless `--no-sync` is passed
-- `journal sync` requires IBKR; the `optix-server` web UI runs a 6h background sync ticker so users who keep the server running never accumulate gap warnings
+- `journal sync` requires IBKR; use it before review/list/trips when the user wants the latest executions captured in SQLite
 - `max-pain --source yfinance` works without IBKR; yfinance returns Open Interest inline, so no OPRA subscription is needed (delayed quotes, may differ slightly from IBKR's real-time chain)
 - `analyze --with-oi` and `max-pain` both surface a closest-first suggestion list when `--expiry` doesn't match — agents/users can copy-paste the "Did you mean" line

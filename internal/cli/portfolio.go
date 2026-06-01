@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -125,7 +124,11 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			if jsonOut == "-" {
+				fmt.Fprintln(os.Stderr, b.SourceBanner())
+			} else {
+				fmt.Println(b.SourceBanner())
+			}
 
 			market := server.NewMarketDataService(b, store)
 			acct := server.NewAccountService(b, market)
@@ -177,15 +180,14 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				report.FXUSDtoSGD = fxUSDtoSGD
 			}
 
+			if jsonOut == "-" {
+				return writeJSONDestination(os.Stdout, jsonOut, report)
+			}
 			report.Render(os.Stdout)
 
 			if jsonOut != "" {
-				data, err := json.MarshalIndent(report, "", "  ")
-				if err != nil {
-					return fmt.Errorf("marshal report: %w", err)
-				}
-				if err := os.WriteFile(jsonOut, data, 0o644); err != nil {
-					return fmt.Errorf("write json: %w", err)
+				if err := writeJSONDestination(os.Stdout, jsonOut, report); err != nil {
+					return err
 				}
 				fmt.Fprintf(os.Stderr, "\nJSON snapshot written to %s\n", jsonOut)
 			}
@@ -200,7 +202,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); explicit value must be >0 and overrides config")
 	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); explicit value must be >0 and overrides config")
 	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; explicit value must be >0 and overrides config")
-	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path (for cron consumers)")
+	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path, or '-' for stdout only")
 	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON. Default search: $OPTIX_SECTORS_FILE → <bin-dir>/../configs/sectors.json → ./configs/sectors.json → embedded fallback (binary always has a copy).")
 	cmd.Flags().StringVar(&configPath, "portfolio-config", "configs/portfolio.yaml", "Path to portfolio risk YAML config; missing file uses defaults")
 

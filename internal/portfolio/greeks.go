@@ -426,7 +426,7 @@ func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spo
 	}
 	dollarDelta := netDelta * spot * 0.01
 	dollarGamma := g.Gamma * scale * spot * spot * 0.0001
-	vega := g.Vega * scale / 100.0
+	vega := g.Vega * scale
 	return pricedLeg{
 		underlying:  leg.Underlying,
 		mvUsd:       mvUsd,

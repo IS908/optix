@@ -14,6 +14,24 @@ above it.
 
 _No changes yet._
 
+## [0.7.15] - 2026-06-01
+
+Patch release for post-review correctness and release-install hardening.
+
+### Fixed
+
+- Correct portfolio option-leg Vega scaling so Greeks output and stress Taylor
+  fallback use USD per +1 IV point instead of values scaled down by 100x
+  (#95).
+- Harden release-mode skill installation so a failed `optix_engine` install or
+  broken Python runtime import fails verification instead of reporting success
+  (#96).
+- Preserve interrupted CLI exit status after cleanup: SIGINT exits 130 and
+  SIGTERM exits 143 instead of success (#97).
+- Avoid long serial repricing timeout cascades by switching remaining option
+  legs in a scenario to Taylor fallback after the first repricing RPC error
+  (#98).
+
 ## [0.7.14] - 2026-06-01
 
 Patch release for portfolio stress repricing fidelity.

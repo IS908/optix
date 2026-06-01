@@ -181,6 +181,7 @@ func RunStressWithRepricing(ctx context.Context, g *GreeksReport, scenarios []St
 	for _, sc := range scenarios {
 		res := StressScenarioResult{ID: sc.ID, Label: sc.Label, Shocks: append([]StressShock(nil), sc.Shocks...)}
 		pnlByGroup := map[string]float64{}
+		repricingDisabled := false
 		for key := range groupKeys {
 			pnlByGroup[key] = 0
 		}
@@ -190,7 +191,15 @@ func RunStressWithRepricing(ctx context.Context, g *GreeksReport, scenarios []St
 		}
 		for _, leg := range g.StressOptionLegs {
 			pricePct, ivPoints := stressAxesForGroup(stressShockKey(leg.Key, leg.ShockKey), sc.Shocks, betas, betaSources)
-			pnlByGroup[leg.Key] += repriceOptionLeg(ctx, leg, pricePct, ivPoints, pricer)
+			if repricingDisabled {
+				pnlByGroup[leg.Key] += taylorOptionLegPnL(leg, pricePct, ivPoints)
+				continue
+			}
+			pnl, failed := repriceOptionLeg(ctx, leg, pricePct, ivPoints, pricer)
+			pnlByGroup[leg.Key] += pnl
+			if failed {
+				repricingDisabled = true
+			}
 		}
 		for key, pnl := range pnlByGroup {
 			pos := StressPositionPnL{Key: key, PnLUSD: pnl}
@@ -226,17 +235,20 @@ func stressShockKey(key, shockKey string) string {
 	return key
 }
 
-func repriceOptionLeg(ctx context.Context, leg StressOptionLeg, pricePct, ivPoints float64, pricer OptionPricer) float64 {
+func repriceOptionLeg(ctx context.Context, leg StressOptionLeg, pricePct, ivPoints float64, pricer OptionPricer) (float64, bool) {
 	shockedSpot := leg.Spot * (1 + pricePct)
 	shockedIV := leg.IV + ivPoints/100.0
 	if shockedSpot <= 0 || shockedIV <= 0 || leg.BasePrice <= 0 {
-		return taylorOptionLegPnL(leg, pricePct, ivPoints)
+		return taylorOptionLegPnL(leg, pricePct, ivPoints), false
 	}
 	g, err := pricer.PriceOption(ctx, shockedSpot, leg.Strike, leg.TYears, leg.RiskFreeRate, shockedIV, leg.OptionType)
-	if err != nil || math.IsNaN(g.Price) || math.IsInf(g.Price, 0) || g.Price < 0 {
-		return taylorOptionLegPnL(leg, pricePct, ivPoints)
+	if err != nil {
+		return taylorOptionLegPnL(leg, pricePct, ivPoints), true
 	}
-	return (g.Price - leg.BasePrice) * leg.SignedQty * leg.Multiplier
+	if math.IsNaN(g.Price) || math.IsInf(g.Price, 0) || g.Price < 0 {
+		return taylorOptionLegPnL(leg, pricePct, ivPoints), false
+	}
+	return (g.Price - leg.BasePrice) * leg.SignedQty * leg.Multiplier, false
 }
 
 func taylorOptionLegPnL(leg StressOptionLeg, pricePct, ivPoints float64) float64 {

@@ -198,8 +198,11 @@ create_release_venv() {
 
     if [[ "$HOST_OK" == true ]]; then
         echo "  Host Python has all deps — installing optix_engine into a thin shim venv"
-        "$PYTHON_BIN" -m pip install --quiet --no-deps --user -e "$PY_TARGET" 2>/dev/null || \
-            "$PYTHON_BIN" -m pip install --quiet --no-deps -e "$PY_TARGET" 2>/dev/null || true
+        if ! "$PYTHON_BIN" -m pip install --quiet --no-deps --user -e "$PY_TARGET" 2>/dev/null && \
+           ! "$PYTHON_BIN" -m pip install --quiet --no-deps -e "$PY_TARGET" 2>/dev/null; then
+            echo "  ERROR: failed to install optix_engine into host Python" >&2
+            return 1
+        fi
         mkdir -p "$PY_TARGET/.venv/bin"
         ln -sf "$(command -v "$PYTHON_BIN")" "$PY_TARGET/.venv/bin/python"
     else
@@ -213,6 +216,11 @@ create_release_venv() {
         "$PY_TARGET/.venv/bin/pip" uninstall --quiet -y pip setuptools 2>/dev/null || true
         find "$PY_TARGET/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
         find "$PY_TARGET/.venv" -name "*.pyc" -delete 2>/dev/null || true
+    fi
+
+    if ! "$PY_TARGET/.venv/bin/python" -c "import optix_engine" 2>/dev/null; then
+        echo "  ERROR: Python runtime cannot import optix_engine" >&2
+        return 1
     fi
 }
 

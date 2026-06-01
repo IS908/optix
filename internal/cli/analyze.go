@@ -44,6 +44,7 @@ Examples:
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			ctx := context.Background()
 			forecastDays := int32(weeks * 7)
 
@@ -144,7 +145,7 @@ Examples:
 	cmd.Flags().Float64Var(&capital, "capital", 50000, "Available capital for strategy sizing")
 	cmd.Flags().StringVar(&risk, "risk", "moderate", "Risk tolerance: conservative, moderate, aggressive")
 	cmd.Flags().BoolVar(&useWatchlist, "watchlist", false, "Run deep analysis for all watchlist symbols")
-	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	cmd.Flags().BoolVar(&withOI, "with-oi", false, "Fetch per-contract Open Interest for the nearest expiry (requires OI-capable broker; enables Max Pain). Adds ~10–30s.")
 	cmd.Flags().StringVar(&expiry, "expiry", "", "Specific option expiration YYYY-MM-DD (default: nearest); requires --with-oi")
 

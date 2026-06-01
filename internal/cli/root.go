@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 )
 
 var (
@@ -20,6 +22,8 @@ var (
 	ibPortRaw string
 	ibPort    int
 	pythonBin string
+
+	defaultAnalysisAddr = "localhost:50052"
 )
 
 // resolveIBPort maps port aliases to numeric values.
@@ -104,6 +108,9 @@ func NewRootCmd() *cobra.Command {
 		Version: version,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			cleanupOnce.Do(initSignalHandler)
+			if err := applyRootConfig(changedFlags(cmd)); err != nil {
+				return err
+			}
 			p, err := resolveIBPort(ibPortRaw)
 			if err != nil {
 				return fmt.Errorf("invalid --ib-port %q: use gateway, tws, or a number", ibPortRaw)
@@ -113,7 +120,7 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
-	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./configs/optix.yaml)")
+	root.PersistentFlags().StringVar(&cfgFile, "config", "configs/optix.yaml", "root config file; missing file uses built-in defaults")
 	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB TWS/Gateway host")
 	root.PersistentFlags().StringVar(&ibPortRaw, "ib-port", "gateway", "IB port: gateway (4001), tws (7496), or number")
@@ -132,6 +139,93 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newServerCmd())
 
 	return root
+}
+
+type rootConfig struct {
+	DBPath             string
+	IBHost             string
+	IBPort             string
+	PythonAnalysisAddr string
+}
+
+type rootConfigYAML struct {
+	Database struct {
+		Path string `yaml:"path"`
+	} `yaml:"database"`
+	GRPC struct {
+		PythonServerAddr string `yaml:"python_server_addr"`
+	} `yaml:"grpc"`
+	IBKR struct {
+		Host string `yaml:"host"`
+		Port any    `yaml:"port"`
+	} `yaml:"ibkr"`
+}
+
+func changedFlags(cmd *cobra.Command) map[string]bool {
+	changed := map[string]bool{}
+	for _, name := range []string{"db", "ib-host", "ib-port", "analysis-addr"} {
+		if cmd.Flags().Changed(name) || cmd.InheritedFlags().Changed(name) {
+			changed[name] = true
+		}
+	}
+	return changed
+}
+
+func resolveAnalysisAddr(cmd *cobra.Command, current string) string {
+	if cmd.Flags().Changed("analysis-addr") || cmd.InheritedFlags().Changed("analysis-addr") {
+		return current
+	}
+	return defaultAnalysisAddr
+}
+
+func applyRootConfig(changed map[string]bool) error {
+	cfg, err := loadRootConfig(cfgFile)
+	if err != nil {
+		return err
+	}
+	if !changed["db"] && cfg.DBPath != "" {
+		dbPath = cfg.DBPath
+	}
+	if !changed["ib-host"] && cfg.IBHost != "" {
+		ibHost = cfg.IBHost
+	}
+	if !changed["ib-port"] && cfg.IBPort != "" {
+		ibPortRaw = cfg.IBPort
+	}
+	if !changed["analysis-addr"] && cfg.PythonAnalysisAddr != "" {
+		defaultAnalysisAddr = cfg.PythonAnalysisAddr
+	}
+	return nil
+}
+
+func loadRootConfig(path string) (rootConfig, error) {
+	var cfg rootConfig
+	if path == "" {
+		return cfg, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("read config: %w", err)
+	}
+	return parseRootConfigYAML(string(data))
+}
+
+func parseRootConfigYAML(s string) (rootConfig, error) {
+	var cfg rootConfig
+	var raw rootConfigYAML
+	if err := yaml.Unmarshal([]byte(s), &raw); err != nil {
+		return cfg, fmt.Errorf("parse config YAML: %w", err)
+	}
+	cfg.DBPath = raw.Database.Path
+	cfg.IBHost = raw.IBKR.Host
+	if raw.IBKR.Port != nil {
+		cfg.IBPort = fmt.Sprint(raw.IBKR.Port)
+	}
+	cfg.PythonAnalysisAddr = raw.GRPC.PythonServerAddr
+	return cfg, nil
 }
 
 // Execute runs the root command. Returns the error from cobra so the caller

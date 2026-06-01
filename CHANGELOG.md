@@ -14,6 +14,19 @@ above it.
 
 _No changes yet._
 
+## [0.7.19] - 2026-06-01
+
+Patch release for the root config-file contract.
+
+### Fixed
+
+- Wired the root `--config` contract for the currently supported global
+  settings: `database.path`, `ibkr.host`, `ibkr.port`, and
+  `grpc.python_server_addr`. CLI flags still take precedence when provided
+  (#102).
+- Added `configs/optix.yaml.example` so the documented setup copy command works
+  again, and marked unconsumed config keys as reserved instead of active (#102).
+
 ## [0.7.18] - 2026-06-01
 
 Patch release for portfolio config authority.
@@ -979,7 +992,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.18...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.19...HEAD
+[0.7.19]: https://github.com/IS908/optix/compare/v0.7.18...v0.7.19
 [0.7.18]: https://github.com/IS908/optix/compare/v0.7.17...v0.7.18
 [0.7.17]: https://github.com/IS908/optix/compare/v0.7.16...v0.7.17
 [0.7.16]: https://github.com/IS908/optix/compare/v0.7.15...v0.7.16

@@ -83,7 +83,8 @@ prefers IBKR and falls back to Yahoo Finance.
 Output supports --format text|json. JSON includes a max_pain_offset_pct
 field convenient for agents: (max_pain - spot) / spot × 100.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			symbol := strings.ToUpper(args[0])
 			ctx := context.Background()
 
@@ -199,7 +200,7 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 	cmd.Flags().StringVar(&expiry, "expiry", "", "Option expiration YYYY-MM-DD (default: nearest)")
 	cmd.Flags().StringVar(&source, "source", "auto", "Data source: ibkr | yfinance | auto")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
-	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	return cmd
 }
 

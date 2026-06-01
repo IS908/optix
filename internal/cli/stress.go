@@ -38,6 +38,7 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 		Example: `  optix portfolio stress --net-liq-usd 354477
   optix portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			cfg, resolvedRiskFreeRate, resolvedSectorsFile, err := resolveStressSettings(
 				configPath, sectorsFile, riskFreeRate, cmd.Flags().Changed("risk-free-rate"),
 			)
@@ -122,7 +123,7 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON (defaults to config/search chain)")
 	cmd.Flags().StringVar(&configPath, "portfolio-config", "configs/portfolio.yaml", "Path to portfolio risk YAML config; missing file uses defaults")
 	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path")
-	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	return cmd
 }
 

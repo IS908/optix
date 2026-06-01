@@ -91,6 +91,7 @@ Examples:
   optix server --web-addr=0.0.0.0:8080
   optix server --analysis-addr=localhost:50052 --capital=100000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			// 1. Open SQLite store
 			store, err := sqlite.New(dbPath)
 			if err != nil {
@@ -176,7 +177,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&webAddr, "web-addr", "127.0.0.1:8080", "HTTP listen address")
-	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	cmd.Flags().Float64Var(&capital, "capital", 100000, "Available capital for strategy sizing")
 	cmd.Flags().IntVar(&forecastDays, "forecast-days", 14, "Forecast horizon in days")
 	cmd.Flags().StringVar(&riskTol, "risk-tolerance", "moderate", "Risk tolerance: conservative, moderate, aggressive")

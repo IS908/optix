@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"time"
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
@@ -15,21 +16,29 @@ import (
 // UNAVAILABLE, which eliminates startup race conditions.
 var defaultCallOpts = []grpc.CallOption{grpc.WaitForReady(true)}
 
+const defaultRPCTimeout = 30 * time.Second
+
 // Client wraps the gRPC connection to the Python analysis engine.
 type Client struct {
-	conn   *grpc.ClientConn
-	svc    analysisv1.AnalysisServiceClient
+	conn       *grpc.ClientConn
+	svc        analysisv1.AnalysisServiceClient
+	rpcTimeout time.Duration
 }
 
 // NewClient connects to the Python analysis gRPC server.
 func NewClient(addr string) (*Client, error) {
+	return newClientWithRPCTimeout(addr, defaultRPCTimeout)
+}
+
+func newClientWithRPCTimeout(addr string, rpcTimeout time.Duration) (*Client, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("connect to analysis engine at %s: %w", addr, err)
 	}
 	return &Client{
-		conn: conn,
-		svc:  analysisv1.NewAnalysisServiceClient(conn),
+		conn:       conn,
+		svc:        analysisv1.NewAnalysisServiceClient(conn),
+		rpcTimeout: rpcTimeout,
 	}, nil
 }
 
@@ -38,14 +47,21 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+func (c *Client) contextWithRPCDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok || c.rpcTimeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, c.rpcTimeout)
+}
+
 // PriceOptionResult holds the result of a single option pricing call.
 type PriceOptionResult struct {
-	Price  float64
-	Delta  float64
-	Gamma  float64
-	Theta  float64
-	Vega   float64
-	Rho    float64
+	Price float64
+	Delta float64
+	Gamma float64
+	Theta float64
+	Vega  float64
+	Rho   float64
 }
 
 // PriceOption calls the Python Black-Scholes pricing engine.
@@ -57,6 +73,9 @@ func (c *Client) PriceOption(ctx context.Context,
 	if optionType == "put" {
 		ot = marketdatav1.OptionType_OPTION_TYPE_PUT
 	}
+
+	ctx, cancel := c.contextWithRPCDeadline(ctx)
+	defer cancel()
 
 	resp, err := c.svc.PriceOption(ctx, &analysisv1.PriceOptionRequest{
 		SpotPrice:     spotPrice,
@@ -99,6 +118,9 @@ func (c *Client) ImpliedVol(ctx context.Context,
 	if optionType == "put" {
 		ot = marketdatav1.OptionType_OPTION_TYPE_PUT
 	}
+	ctx, cancel := c.contextWithRPCDeadline(ctx)
+	defer cancel()
+
 	resp, err := c.svc.ImpliedVol(ctx, &analysisv1.ImpliedVolRequest{
 		MarketPrice:   marketPrice,
 		SpotPrice:     spotPrice,
@@ -116,6 +138,9 @@ func (c *Client) ImpliedVol(ctx context.Context,
 
 // GetMaxPain calls the Python Max Pain calculation.
 func (c *Client) GetMaxPain(ctx context.Context, underlying string, chain []*marketdatav1.OptionChainExpiry) (float64, string, error) {
+	ctx, cancel := c.contextWithRPCDeadline(ctx)
+	defer cancel()
+
 	resp, err := c.svc.GetMaxPain(ctx, &analysisv1.MaxPainRequest{
 		Underlying: underlying,
 		Chain:      chain,
@@ -128,6 +153,9 @@ func (c *Client) GetMaxPain(ctx context.Context, underlying string, chain []*mar
 
 // AnalyzeStock runs the full analysis pipeline on the Python engine.
 func (c *Client) AnalyzeStock(ctx context.Context, req *analysisv1.AnalyzeStockRequest) (*analysisv1.AnalyzeStockResponse, error) {
+	ctx, cancel := c.contextWithRPCDeadline(ctx)
+	defer cancel()
+
 	resp, err := c.svc.AnalyzeStock(ctx, req, defaultCallOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("AnalyzeStock: %w", err)
@@ -137,6 +165,9 @@ func (c *Client) AnalyzeStock(ctx context.Context, req *analysisv1.AnalyzeStockR
 
 // BatchQuickAnalysis runs quick analysis on multiple stocks for the dashboard.
 func (c *Client) BatchQuickAnalysis(ctx context.Context, req *analysisv1.BatchQuickAnalysisRequest) (*analysisv1.BatchQuickAnalysisResponse, error) {
+	ctx, cancel := c.contextWithRPCDeadline(ctx)
+	defer cancel()
+
 	resp, err := c.svc.BatchQuickAnalysis(ctx, req, defaultCallOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("BatchQuickAnalysis: %w", err)

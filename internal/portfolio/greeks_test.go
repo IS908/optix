@@ -18,9 +18,13 @@ type fakePricer struct {
 	ivOK     bool
 	iv       float64
 	lastMark float64
+	block    chan struct{}
 }
 
 func (f *fakePricer) PriceOption(_ context.Context, _, _, _, _, _ float64, _ model.OptionType) (model.Greeks, error) {
+	if f.block != nil {
+		<-f.block
+	}
 	return f.perShare, nil
 }
 func (f *fakePricer) ImpliedVol(_ context.Context, mark, _, _, _, _ float64, _ model.OptionType) (float64, bool, error) {
@@ -336,6 +340,75 @@ func TestAggregate_SkipWhenNoIV(t *testing.T) {
 	}
 	if r.Total.NetDelta != 0 {
 		t.Errorf("skipped leg must not contribute, NetDelta=%v", r.Total.NetDelta)
+	}
+}
+
+func TestAggregate_SkippedOptionStillCountsMarketValue(t *testing.T) {
+	pos := []model.Position{optionPos("RKLB", "C", 1, 16, 0)}
+	pos[0].MarketValue = 650
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		&fakePricer{ivOK: false}, fakeChains{}, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Groups) != 1 || r.Groups[0].Key != "RKLB" {
+		t.Fatalf("groups = %+v, want one RKLB group", r.Groups)
+	}
+	g := r.Groups[0]
+	if g.SkippedLegCount != 1 {
+		t.Fatalf("SkippedLegCount = %d, want 1", g.SkippedLegCount)
+	}
+	if g.MVUsd != 650 {
+		t.Errorf("MVUsd = %v, want skipped option market value 650", g.MVUsd)
+	}
+	if math.Abs(g.WeightPct-0.065) > 1e-9 {
+		t.Errorf("WeightPct = %v, want 0.065", g.WeightPct)
+	}
+	if r.Total.MVUsd != 650 {
+		t.Errorf("Total.MVUsd = %v, want 650", r.Total.MVUsd)
+	}
+	if len(r.StressOptionLegs) != 0 {
+		t.Fatalf("StressOptionLegs = %+v, want skipped option omitted", r.StressOptionLegs)
+	}
+}
+
+func TestSkippedPricedLegPreservesMarketValue(t *testing.T) {
+	pl := skippedPricedLeg(heldLeg{
+		Symbol: "RKLB", Expiration: "20260619", Right: "C", Strike: 16,
+		SignedQty: 1, Multiplier: 100, MarketValue: 650,
+	}, "price_error")
+	if pl.skipped == nil || pl.skipped.Reason != "price_error" {
+		t.Fatalf("skipped = %+v, want price_error", pl.skipped)
+	}
+	if pl.mvUsd != 650 {
+		t.Fatalf("mvUsd = %v, want 650", pl.mvUsd)
+	}
+}
+
+func TestAggregate_SkipsMissingMarkStockWithoutDelta(t *testing.T) {
+	pos := []model.Position{{
+		Symbol: "MSFT", SecType: "STK", Quantity: 100, MarketValue: 0, LastPrice: 0, Multiplier: 1, Currency: "USD",
+	}}
+	r, err := AggregateGreeks(context.Background(), pos, greeksOpts("underlying"),
+		&fakePricer{}, fakeChains{}, fakeSectorMap())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Groups) != 1 || r.Groups[0].Key != "MSFT" {
+		t.Fatalf("groups = %+v, want one MSFT group", r.Groups)
+	}
+	g := r.Groups[0]
+	if g.NetDelta != 0 || g.DollarDelta != 0 || g.MVUsd != 0 {
+		t.Errorf("missing-mark stock contributed math: %+v", g)
+	}
+	if g.LegCount != 0 || g.SkippedLegCount != 1 {
+		t.Errorf("LegCount/SkippedLegCount = %d/%d, want 0/1", g.LegCount, g.SkippedLegCount)
+	}
+	if len(r.SkippedLegs) != 1 || r.SkippedLegs[0].Symbol != "MSFT" || r.SkippedLegs[0].Reason != "no_mark" {
+		t.Fatalf("SkippedLegs = %+v, want MSFT no_mark", r.SkippedLegs)
+	}
+	if len(r.StressStockLegs) != 0 {
+		t.Fatalf("StressStockLegs = %+v, want missing-mark stock omitted", r.StressStockLegs)
 	}
 }
 

@@ -359,7 +359,7 @@ func RenderStress(r *StressReport, w io.Writer) {
 	if len(r.SkippedLegs) > 0 {
 		fmt.Fprintf(w, "\n⚠️  %d leg(s) excluded from stress; stress may understate risk:\n", len(r.SkippedLegs))
 		for _, s := range r.SkippedLegs {
-			fmt.Fprintf(w, "   %s %s %s%.0f (%s)\n", s.Symbol, s.Expiration, s.Right, s.Strike, s.Reason)
+			fmt.Fprintf(w, "   %s (%s)\n", skippedLegLabel(s), s.Reason)
 		}
 	}
 }

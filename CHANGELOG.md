@@ -14,6 +14,20 @@ above it.
 
 _No changes yet._
 
+## [0.7.17] - 2026-06-01
+
+Patch release for portfolio risk-report consistency.
+
+### Fixed
+
+- Keep `portfolio greeks` market-value and weight calculations aligned with
+  `portfolio concentration` when an option leg has market value but cannot
+  resolve IV: the leg is still counted in `MVUsd`/weight while Greek
+  sensitivities remain skipped (#101).
+- Skip and surface missing-mark stock legs in `portfolio greeks` instead of
+  reporting nonzero share delta alongside zero market value and zero dollar
+  delta (#101).
+
 ## [0.7.16] - 2026-06-01
 
 Patch release for trade-journal currency correctness.
@@ -949,7 +963,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.16...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.17...HEAD
+[0.7.17]: https://github.com/IS908/optix/compare/v0.7.16...v0.7.17
 [0.7.16]: https://github.com/IS908/optix/compare/v0.7.15...v0.7.16
 [0.7.15]: https://github.com/IS908/optix/compare/v0.7.14...v0.7.15
 [0.7.14]: https://github.com/IS908/optix/compare/v0.7.13...v0.7.14

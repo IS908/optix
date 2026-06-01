@@ -1,6 +1,7 @@
 package ibkr
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/scmhub/ibapi"
@@ -74,6 +75,73 @@ func TestWrapperExecutionsAccumulator(t *testing.T) {
 	if e1.Time.IsZero() {
 		t.Errorf("execution 0 Time failed to parse")
 	}
+}
+
+func TestWrapperQuoteAccumulatorConcurrentSnapshotRace(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(1001)
+	pq := w.registerQuote(reqID)
+	defer w.unregister(reqID)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 1000; i++ {
+			price := float64(i + 1)
+			w.TickPrice(reqID, ibapi.BID, price, ibapi.TickAttrib{})
+			w.TickPrice(reqID, ibapi.ASK, price+0.25, ibapi.TickAttrib{})
+			w.TickPrice(reqID, ibapi.LAST, price+0.10, ibapi.TickAttrib{})
+			w.TickSize(reqID, ibapi.VOLUME, ibapi.StringToDecimal("100"))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 1000; i++ {
+			snap := pq.snapshot()
+			_ = snap.bid + snap.ask + snap.last + snap.volume
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+}
+
+func TestWrapperOITickAccumulatorConcurrentSnapshotRace(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(1002)
+	po := w.registerOI(reqID)
+	defer w.unregister(reqID)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 1000; i++ {
+			w.TickSize(reqID, 86, ibapi.StringToDecimal("200"))
+			w.TickOptionComputation(reqID, 0, 0, 0.42, 0, 0, 0, 0, 0, 0, 0)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 1000; i++ {
+			snap := po.snapshot()
+			_ = snap.openInterest + int32(snap.iv)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
 }
 
 // TestWrapperEndAfterErrorNoDoubleClose pins the invariant that an End

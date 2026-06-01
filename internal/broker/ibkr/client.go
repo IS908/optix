@@ -249,18 +249,19 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	// Always cancel the stream so TWS stops sending updates.
 	c.ibClient.CancelMktData(reqID)
 
-	last := pq.last
+	quote := pq.snapshot()
+	last := quote.last
 	// During extended hours, prefer bid/ask midpoint when no LAST trade has
 	// occurred yet in the current session — this gives a more meaningful price
 	// than falling back to previous close.
-	if session.IsExtendedHours() && last == 0 && pq.bid > 0 && pq.ask > 0 {
-		last = (pq.bid + pq.ask) / 2
+	if session.IsExtendedHours() && last == 0 && quote.bid > 0 && quote.ask > 0 {
+		last = (quote.bid + quote.ask) / 2
 	}
 	if last == 0 {
-		last = (pq.bid + pq.ask) / 2 // midpoint fallback when market is closed
+		last = (quote.bid + quote.ask) / 2 // midpoint fallback when market is closed
 	}
-	if last == 0 && pq.close > 0 {
-		last = pq.close // previous close
+	if last == 0 && quote.close > 0 {
+		last = quote.close // previous close
 	}
 
 	// If streaming yielded no price data at all, fall back to historical close.
@@ -276,10 +277,10 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	return &model.StockQuote{
 		Symbol:        symbol,
 		Last:          last,
-		Bid:           pq.bid,
-		Ask:           pq.ask,
-		Close:         pq.close,
-		Volume:        int64(pq.volume),
+		Bid:           quote.bid,
+		Ask:           quote.ask,
+		Close:         quote.close,
+		Volume:        int64(quote.volume),
 		Timestamp:     time.Now(),
 		MarketSession: session,
 	}, nil
@@ -611,7 +612,8 @@ func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, rig
 		case <-time.After(200 * time.Millisecond):
 		case <-ctx.Done():
 		}
-		return po.openInterest, po.iv
+		oi := po.snapshot()
+		return oi.openInterest, oi.iv
 	case err := <-errCh:
 		// Per-contract error (e.g., contract not found) — non-fatal.
 		log.Printf("ibkr: OI fetch %s %s%.0f exp=%s: %v", symbol, right, strike, expiration, err)
@@ -619,7 +621,8 @@ func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, rig
 	case <-timer.C:
 		// Timeout — likely no live market data subscription for this contract,
 		// or low-volume contract with no OI updates. Move on.
-		return po.openInterest, po.iv
+		oi := po.snapshot()
+		return oi.openInterest, oi.iv
 	case <-ctx.Done():
 		return 0, 0
 	}
@@ -802,12 +805,13 @@ func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, rig
 		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: %w", underlying, expiration, right, strike, err)
 	}
 
-	mark := pq.last
-	if mark == 0 && pq.bid > 0 && pq.ask > 0 {
-		mark = (pq.bid + pq.ask) / 2
+	quote := pq.snapshot()
+	mark := quote.last
+	if mark == 0 && quote.bid > 0 && quote.ask > 0 {
+		mark = (quote.bid + quote.ask) / 2
 	}
 	if mark == 0 {
-		mark = pq.close
+		mark = quote.close
 	}
 	if mark == 0 {
 		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: no price data", underlying, expiration, right, strike)

@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.3] - 2026-06-01
+
+Patch release for IBKR tick-accumulator concurrency.
+
+### Fixed
+
+- **IBKR quote and option-OI tick accumulators are now race-free (#66).**
+  Market-data callbacks update quote/OI fields through mutex-protected setters,
+  and quote/OI callers read immutable snapshots, including timeout paths where
+  queued IBKR callbacks may still arrive after cancellation.
+
 ## [0.7.2] - 2026-06-01
 
 Patch release for analysis-engine availability failures.
@@ -772,7 +783,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/IS908/optix/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/IS908/optix/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/IS908/optix/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/IS908/optix/compare/v0.6.1...v0.7.0

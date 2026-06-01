@@ -54,7 +54,7 @@ const (
 	// Other CLI subcommands use their own non-zero IDs because they only
 	// need to read account/market data (positions, quotes) that does not
 	// require master client status: 1 quote, 2 analyze single, 3 dashboard,
-	// 4 positions, 5 portfolio, 6 `analyze --with-oi`, 8 max-pain, 9 chain.
+	// 4 positions, 5 portfolio, 6 `analyze --watchlist`, 8 max-pain, 9 chain.
 	// Scheduler workers start at 10 and the web pool starts at 30. `trades`
 	// reads executions like journal, so it also uses ClientID 0 (see tradesClientID).
 	journalClientID = 0
@@ -205,8 +205,9 @@ func errString(e error) string {
 // journal needs cross-client execution visibility, which requires master
 // status. Other subcommands use distinct non-zero IDs to avoid colliding
 // with each other: quote(1), analyze(2), dashboard(3), positions(4),
-// trades(5), `analyze --watchlist`(6), max-pain(8). Scheduler workers use
-// 10+ and the web pool 30+.
+// portfolio(5), `analyze --watchlist`(6), max-pain(8), chain(9). `trades`
+// also uses ClientID 0 because it reads executions. Scheduler workers use 10+
+// and the web pool 30+.
 func connectJournalBroker(ctx context.Context) (broker.Broker, error) {
 	b := factory.NewWithFallback(ibkr.Config{
 		Host: ibHost, Port: ibPort, ClientID: journalClientID,

@@ -14,6 +14,18 @@ above it.
 
 _No changes yet._
 
+## [0.7.20] - 2026-06-01
+
+Patch release for documentation drift cleanup.
+
+### Fixed
+
+- Corrected current ClientID comments and test labels so they no longer claim
+  `trades` uses ClientID 5 or that ClientID 6 belongs to `analyze --with-oi`;
+  `trades` shares ClientID 0 with journal for cross-client execution
+  visibility, while portfolio owns ClientID 5 and watchlist analysis owns
+  ClientID 6 (#104).
+
 ## [0.7.19] - 2026-06-01
 
 Patch release for the root config-file contract.
@@ -992,7 +1004,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.19...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.20...HEAD
+[0.7.20]: https://github.com/IS908/optix/compare/v0.7.19...v0.7.20
 [0.7.19]: https://github.com/IS908/optix/compare/v0.7.18...v0.7.19
 [0.7.18]: https://github.com/IS908/optix/compare/v0.7.17...v0.7.18
 [0.7.17]: https://github.com/IS908/optix/compare/v0.7.16...v0.7.17

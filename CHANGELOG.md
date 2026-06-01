@@ -14,6 +14,23 @@ above it.
 
 _No changes yet._
 
+## [0.7.1] - 2026-06-01
+
+Patch release for v0.7.0 release-bundle and skill invocation regressions.
+
+### Fixed
+
+- **Release tarballs now ship runtime configs (#65).** The release builder now
+  includes `configs/portfolio.yaml` and `configs/sectors.json`, and the
+  release-mode installer copies them into `.runtime/configs/` so documented
+  default config paths are available after install.
+
+- **The Optix skill now starts the Python analysis engine for all analysis-backed
+  commands (#69).** `max-pain`, `portfolio greeks`, and `portfolio stress` now
+  use the skill-managed analysis server and injected `--analysis-addr`, matching
+  `analyze` and `dashboard`. Skill commands now execute from the runtime root so
+  bundled relative defaults like `configs/portfolio.yaml` resolve correctly.
+
 ## [0.7.0] - 2026-06-01
 
 Minor release: v2.0 Phase 3 — config-driven portfolio stress scenarios on top
@@ -744,7 +761,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/IS908/optix/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/IS908/optix/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/IS908/optix/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/IS908/optix/compare/v0.5.1...v0.6.0

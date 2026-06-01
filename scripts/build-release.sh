@@ -17,6 +17,7 @@
 #   ├── SKILL.md
 #   ├── skill-wrapper.sh
 #   ├── bin/optix                                  # cross-compiled
+#   ├── configs/{portfolio.yaml,sectors.json}
 #   ├── python/{pyproject.toml, src/optix_engine/}
 #   └── skills/commands/optix/optix.sh
 
@@ -51,7 +52,7 @@ echo "    Output:  $TARBALL"
 
 # --- Clean staging area ------------------------------------------------------
 rm -rf "$STAGE"
-mkdir -p "$STAGE/bin" "$STAGE/python" "$STAGE/skills/commands/optix"
+mkdir -p "$STAGE/bin" "$STAGE/configs" "$STAGE/python" "$STAGE/skills/commands/optix"
 
 # --- Cross-compile the Go binary --------------------------------------------
 # Pure-Go, no CGO (modernc.org/sqlite). Strip with -s -w to slim the binary.
@@ -71,6 +72,11 @@ cp -r "$PROJECT_ROOT/python/src" "$STAGE/python/src"
 # Strip caches from Python source if any
 find "$STAGE/python/src" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 find "$STAGE/python/src" -name '*.pyc' -delete 2>/dev/null || true
+
+# --- Runtime configs ---------------------------------------------------------
+echo "==> Copying runtime configs"
+cp "$PROJECT_ROOT/configs/portfolio.yaml" "$STAGE/configs/portfolio.yaml"
+cp "$PROJECT_ROOT/configs/sectors.json" "$STAGE/configs/sectors.json"
 
 # --- Skill files (top-level) -------------------------------------------------
 echo "==> Copying skill files"

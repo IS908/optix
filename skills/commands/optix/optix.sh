@@ -66,9 +66,17 @@ NEED_PY_SERVER=false
 EXTRA_ARGS=()
 
 case "${1:-}" in
-    analyze|dashboard)
+    analyze|dashboard|max-pain)
         NEED_PY_SERVER=true
         EXTRA_ARGS+=(--analysis-addr "$ANALYSIS_ADDR")
+        ;;
+    portfolio)
+        case "${2:-}" in
+            greeks|stress)
+                NEED_PY_SERVER=true
+                EXTRA_ARGS+=(--analysis-addr "$ANALYSIS_ADDR")
+                ;;
+        esac
         ;;
 esac
 
@@ -124,4 +132,5 @@ cleanup() {
 }
 trap cleanup EXIT
 
+cd "$PROJECT_ROOT"
 "$PROJECT_ROOT/bin/optix" --db "$PROJECT_ROOT/data/optix.db" --python "$PROJECT_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}

@@ -19,6 +19,7 @@
 #   ├── bin/optix.sh                          ← thin wrapper (skill-wrapper.sh)
 #   └── .runtime                              ← symlink (dev) OR real dir (release)
 #       ├── bin/optix
+#       ├── configs/{portfolio.yaml,sectors.json}
 #       ├── python/{src,pyproject.toml,.venv}
 #       ├── data/optix.db
 #       └── skills/commands/optix/optix.sh    ← orchestration (Python server, IBKR probe)
@@ -155,6 +156,13 @@ build_runtime() {
             mkdir -p "$target/python"
             cp -r "$PROJECT_ROOT/python/src" "$target/python/src"
             cp "$PROJECT_ROOT/python/pyproject.toml" "$target/python/pyproject.toml"
+
+            if [[ -d "$PROJECT_ROOT/configs" ]]; then
+                echo "  Copying runtime configs..."
+                rm -rf "$target/configs"
+                mkdir -p "$target/configs"
+                cp -r "$PROJECT_ROOT/configs/." "$target/configs/"
+            fi
 
             echo "  Copying skill orchestration script..."
             mkdir -p "$target/skills/commands/optix"

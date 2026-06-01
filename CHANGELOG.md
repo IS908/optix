@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.2] - 2026-06-01
+
+Patch release for analysis-engine availability failures.
+
+### Fixed
+
+- **Analysis gRPC calls no longer wait forever when the Python engine is down
+  (#68).** The analysis client now applies a default 30s RPC deadline when the
+  caller did not provide one, while preserving explicit caller deadlines for
+  longer-running analyze/dashboard paths.
+
 ## [0.7.1] - 2026-06-01
 
 Patch release for v0.7.0 release-bundle and skill invocation regressions.
@@ -761,7 +772,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/IS908/optix/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/IS908/optix/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/IS908/optix/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/IS908/optix/compare/v0.6.0...v0.6.1

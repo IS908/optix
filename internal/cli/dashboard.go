@@ -36,6 +36,7 @@ Examples:
   optix dashboard --sort=iv-rank --top=5
   optix dashboard --capital=100000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			ctx := context.Background()
 
 			// 1. Open SQLite store
@@ -189,7 +190,7 @@ Examples:
 	cmd.Flags().Float64Var(&capital, "capital", 100000, "Available capital for strategy sizing")
 	cmd.Flags().StringVar(&sortBy, "sort", "opportunity", "Sort by: opportunity, iv-rank, trend, pcr")
 	cmd.Flags().IntVar(&top, "top", 0, "Show only top N results (0 = all)")
-	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", "localhost:50052", "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 
 	return cmd
 }

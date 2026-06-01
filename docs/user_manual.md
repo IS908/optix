@@ -89,7 +89,7 @@
    python -m optix_engine.grpc_server.server
    ```
 
-3. **配置文件**（可选，默认值已内置）
+3. **配置文件**（可选，默认值已内置；默认读取 `configs/optix.yaml`，文件不存在时继续使用内置默认值）
    ```bash
    cp configs/optix.yaml.example configs/optix.yaml
    ```
@@ -97,18 +97,21 @@
 ### 2.2 配置文件说明（configs/optix.yaml）
 
 ```yaml
+# 当前会被 CLI 读取：ibkr.host、ibkr.port、grpc.python_server_addr、
+# database.path；命令行参数优先级更高。
 ibkr:
   host: "127.0.0.1"
   port: 4001          # gateway=4001(默认), tws=7496, 纸盘: 4002/7497
-  client_id: 1
+  client_id: 1        # 预留；各命令仍使用内置 ClientID
 
 grpc:
+  go_server_addr: "localhost:50051"        # 预留
   python_server_addr: "localhost:50052"
 
 database:
   path: "./data/optix.db"
 
-analysis:
+analysis:                         # 预留；当前仍使用命令行参数
   forecast_days: 14           # 预测周期（天）
   risk_tolerance: "moderate"  # conservative / moderate / aggressive
   position_size_limit: 0.20   # 每笔仓位上限（占总资金比例）
@@ -221,7 +224,7 @@ Dashboard 是系统的核心操作界面，提供：
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--config` | `./configs/optix.yaml` | 配置文件路径 |
+| `--config` | `configs/optix.yaml` | 根配置文件路径；文件不存在时使用内置默认值 |
 | `--db` | `./data/optix.db` | SQLite 数据库路径 |
 | `--ib-host` | `127.0.0.1` | IB TWS/Gateway 地址 |
 | `--ib-port` | `gateway` | IB 端口：`gateway`(4001)、`tws`(7496) 或数字 |

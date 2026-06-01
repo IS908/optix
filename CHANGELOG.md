@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.8] - 2026-06-01
+
+Patch release for portfolio config validation.
+
+### Fixed
+
+- **Portfolio config parsing now rejects duplicate stress scenario IDs,
+  duplicate top-level sections, and tab indentation (#74).** These cases now
+  fail with explicit errors instead of silently overwriting config or producing
+  misleading unknown-key messages.
+
 ## [0.7.7] - 2026-06-01
 
 Patch release for portfolio stress index-shock semantics.
@@ -827,7 +838,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.7...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.8...HEAD
+[0.7.8]: https://github.com/IS908/optix/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/IS908/optix/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/IS908/optix/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/IS908/optix/compare/v0.7.4...v0.7.5

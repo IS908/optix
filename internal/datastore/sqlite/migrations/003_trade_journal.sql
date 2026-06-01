@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS trade_journal (
     quantity    REAL    NOT NULL,
     price       REAL    NOT NULL,
     avg_price   REAL    NOT NULL,
+    currency    TEXT    NOT NULL DEFAULT 'USD',
     exchange    TEXT    NOT NULL DEFAULT '',
     order_id    INTEGER NOT NULL DEFAULT 0,
     perm_id     INTEGER NOT NULL DEFAULT 0,

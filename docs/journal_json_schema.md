@@ -69,6 +69,7 @@ Query params (CLI flags): `symbol`, `side` (BOT/SLD), `type` (stk/opt), `since` 
       "Shares": 100,
       "Price": 192.34,
       "AvgPrice": 192.34,
+      "Currency": "USD",
       "Exchange": "SMART",
       "OrderID": 42,
       "PermID": 7
@@ -95,6 +96,7 @@ Query params: `symbol`, `status` (open / closed / expired), `since`, `until`.
       "symbol": "AAPL",
       "sec_type": "STK",
       "account": "DU1234567",
+      "currency": "USD",
       "direction": "LONG",
       "open_time":  "2026-05-10T14:30:00Z",
       "close_time": "2026-05-14T19:00:00Z",
@@ -129,6 +131,7 @@ Query params: `since`, `until`.
   "closed_round_trips": 10,
   "open_round_trips": 2,
   "expired_round_trips": 0,
+  "excluded_non_usd_round_trips": 1,
   "win_count": 7,
   "loss_count": 3,
   "win_rate": 0.7,
@@ -139,6 +142,7 @@ Query params: `since`, `until`.
     {
       "symbol": "AAPL",
       "sec_type": "STK",
+      "currency": "USD",
       "round_trip_count": 4,
       "realized_pnl": 500.00,
       "win_rate": 0.75
@@ -148,6 +152,10 @@ Query params: `since`, `until`.
 ```
 
 `by_symbol` is sorted by `realized_pnl` DESC.
+
+Review P&L metrics are USD-only. Non-USD round trips are omitted from realized
+P&L, win/loss, holding-day, and by-symbol summary metrics until FX conversion is
+implemented; their count is reported in `excluded_non_usd_round_trips`.
 
 Aggregate `win_rate` uses `closed_round_trips + expired_round_trips` as denominator
 (open trips don't count for or against win rate). Per-symbol `win_rate` uses the

@@ -446,16 +446,17 @@ func renderTripsTable(trips []model.RoundTrip) {
 		fmt.Println("No round trips match the filter.")
 		return
 	}
-	fmt.Printf("%-8s %-5s %-16s %-16s %8s %10s %10s %10s %-8s\n",
-		"Symbol", "Dir", "OpenTime", "CloseTime", "Qty", "OpenPx", "ClosePx", "PnL", "Status")
+	fmt.Printf("%-8s %-5s %-3s %-16s %-16s %8s %10s %10s %10s %-8s\n",
+		"Symbol", "Dir", "Ccy", "OpenTime", "CloseTime", "Qty", "OpenPx", "ClosePx", "PnL", "Status")
 	for _, t := range trips {
 		closeStr, closePx := "—", 0.0
 		if !t.CloseTime.IsZero() {
 			closeStr = t.CloseTime.Format("2006-01-02 15:04")
 			closePx = t.CloseAvgPrice
 		}
-		fmt.Printf("%-8s %-5s %-16s %-16s %8.0f %10.2f %10.2f %10.2f %-8s\n",
-			t.Symbol, t.Direction, t.OpenTime.Format("2006-01-02 15:04"), closeStr,
+		fmt.Printf("%-8s %-5s %-3s %-16s %-16s %8.0f %10.2f %10.2f %10.2f %-8s\n",
+			t.Symbol, t.Direction, model.NormalizeCurrency(t.Currency),
+			t.OpenTime.Format("2006-01-02 15:04"), closeStr,
 			t.OpenQty, t.OpenAvgPrice, closePx, t.RealizedPnL, t.Status)
 	}
 }
@@ -523,13 +524,16 @@ func renderReview(s model.ReviewSummary) {
 	fmt.Printf("Total executions:   %d\n", s.TotalExecutions)
 	fmt.Printf("Total round trips:  %d  (closed: %d, open: %d, expired: %d)\n",
 		s.TotalRoundTrips, s.ClosedRoundTrips, s.OpenRoundTrips, s.ExpiredRoundTrips)
+	if s.ExcludedNonUSDRoundTrips > 0 {
+		fmt.Printf("Excluded non-USD:   %d  (review P&L is USD-only)\n", s.ExcludedNonUSDRoundTrips)
+	}
 	fmt.Printf("Win rate:           %.1f%%  (W: %d, L: %d)\n", s.WinRate*100, s.WinCount, s.LossCount)
-	fmt.Printf("Total realized P&L: %.2f\n", s.TotalRealizedPnL)
+	fmt.Printf("Total realized P&L: %.2f USD\n", s.TotalRealizedPnL)
 	fmt.Printf("Avg per round trip: %.2f\n", s.AvgRealizedPnL)
 	fmt.Printf("Avg holding days:   %.1f\n", s.AvgHoldingDays)
 	if len(s.BySymbol) > 0 {
 		fmt.Println("\nBy symbol:")
-		fmt.Printf("  %-8s %6s %10s %8s\n", "Symbol", "Trips", "P&L", "Win%")
+		fmt.Printf("  %-8s %6s %10s %8s\n", "Symbol", "Trips", "P&L USD", "Win%")
 		for _, ss := range s.BySymbol {
 			fmt.Printf("  %-8s %6d %10.2f %7.1f%%\n",
 				ss.Symbol, ss.RoundTripCount, ss.RealizedPnL, ss.WinRate*100)

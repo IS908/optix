@@ -87,6 +87,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(migration003SQL); err != nil {
 		return fmt.Errorf("migration 003: %w", err)
 	}
+	if err := s.addColumnIfNotExists("trade_journal", "currency", "TEXT NOT NULL DEFAULT 'USD'"); err != nil {
+		return fmt.Errorf("migration 003 currency: %w", err)
+	}
 
 	if _, err := s.db.Exec(migration004SQL); err != nil {
 		return fmt.Errorf("migration 004: %w", err)

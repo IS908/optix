@@ -36,8 +36,8 @@ func (s *Store) UpsertExecutions(ctx context.Context, execs []model.Execution) (
 	stmt, err := tx.PrepareContext(ctx, `
         INSERT OR IGNORE INTO trade_journal
             (exec_id, time, account, symbol, sec_type, expiration, strike, right,
-             side, quantity, price, avg_price, exchange, order_id, perm_id, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+             side, quantity, price, avg_price, currency, exchange, order_id, perm_id, synced_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare: %w", err)
 	}
@@ -49,12 +49,20 @@ func (s *Store) UpsertExecutions(ctx context.Context, execs []model.Execution) (
 		res, err := stmt.ExecContext(ctx,
 			e.ExecID, e.Time.UTC().Format(time.RFC3339), e.Account, e.Symbol,
 			e.SecType, e.Expiration, e.Strike, e.Right,
-			e.Side, e.Shares, e.Price, e.AvgPrice, e.Exchange, e.OrderID, e.PermID, now)
+			e.Side, e.Shares, e.Price, e.AvgPrice, model.NormalizeCurrency(e.Currency),
+			e.Exchange, e.OrderID, e.PermID, now)
 		if err != nil {
 			return 0, fmt.Errorf("insert exec %s: %w", e.ExecID, err)
 		}
 		affected, _ := res.RowsAffected()
 		newCount += int(affected)
+		if affected == 0 && strings.TrimSpace(e.Currency) != "" {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE trade_journal SET currency = ? WHERE exec_id = ? AND currency <> ?`,
+				model.NormalizeCurrency(e.Currency), e.ExecID, model.NormalizeCurrency(e.Currency)); err != nil {
+				return 0, fmt.Errorf("update exec currency %s: %w", e.ExecID, err)
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit: %w", err)
@@ -91,7 +99,7 @@ func (s *Store) ListExecutions(ctx context.Context, f JournalFilter) ([]model.Ex
 		args = append(args, f.Until.UTC().Format(time.RFC3339))
 	}
 	q := `SELECT exec_id, time, account, symbol, sec_type, expiration, strike, right,
-                 side, quantity, price, avg_price, exchange, order_id, perm_id
+                 side, quantity, price, avg_price, currency, exchange, order_id, perm_id
             FROM trade_journal`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -113,9 +121,10 @@ func (s *Store) ListExecutions(ctx context.Context, f JournalFilter) ([]model.Ex
 		var ts string
 		if err := rows.Scan(&e.ExecID, &ts, &e.Account, &e.Symbol, &e.SecType,
 			&e.Expiration, &e.Strike, &e.Right, &e.Side, &e.Shares, &e.Price,
-			&e.AvgPrice, &e.Exchange, &e.OrderID, &e.PermID); err != nil {
+			&e.AvgPrice, &e.Currency, &e.Exchange, &e.OrderID, &e.PermID); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
+		e.Currency = model.NormalizeCurrency(e.Currency)
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			e.Time = t
 		}

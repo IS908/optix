@@ -142,6 +142,41 @@ func TestReviewBothInsideWindow(t *testing.T) {
 	}
 }
 
+func TestReviewExcludesNonUSDRoundTripsFromUSDSummary(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeAccountReader{}
+	svc, store := newJournalSvcForTest(t, fake)
+
+	t0 := time.Date(2026, 5, 20, 14, 0, 0, 0, time.UTC)
+	t1 := time.Date(2026, 5, 22, 14, 0, 0, 0, time.UTC)
+	_, _ = store.UpsertExecutions(ctx, []model.Execution{
+		{ExecID: "USD-B", Time: t0, Account: "DU1", Symbol: "AAPL", SecType: "STK",
+			Currency: "USD", Side: "BOT", Shares: 100, AvgPrice: 150, PermID: 1},
+		{ExecID: "USD-S", Time: t1, Account: "DU1", Symbol: "AAPL", SecType: "STK",
+			Currency: "USD", Side: "SLD", Shares: 100, AvgPrice: 160, PermID: 2},
+		{ExecID: "HKD-B", Time: t0, Account: "DU1", Symbol: "0700", SecType: "STK",
+			Currency: "HKD", Side: "BOT", Shares: 100, AvgPrice: 10, PermID: 3},
+		{ExecID: "HKD-S", Time: t1, Account: "DU1", Symbol: "0700", SecType: "STK",
+			Currency: "HKD", Side: "SLD", Shares: 100, AvgPrice: 12, PermID: 4},
+	})
+
+	sum, err := svc.Review(ctx,
+		time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC),
+		untilEOD(2026, 5, 25))
+	if err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	if sum.TotalRealizedPnL != 1000 {
+		t.Errorf("TotalRealizedPnL = %v, want USD-only +1000", sum.TotalRealizedPnL)
+	}
+	if sum.ClosedRoundTrips != 1 {
+		t.Errorf("ClosedRoundTrips = %d, want 1 USD trip only", sum.ClosedRoundTrips)
+	}
+	if sum.ExcludedNonUSDRoundTrips != 1 {
+		t.Errorf("ExcludedNonUSDRoundTrips = %d, want 1 HKD trip", sum.ExcludedNonUSDRoundTrips)
+	}
+}
+
 // R3: Open inside window but trip still open → not counted in realized review.
 func TestReviewSkipsOpenTrips(t *testing.T) {
 	ctx := context.Background()

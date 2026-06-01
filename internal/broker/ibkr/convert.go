@@ -55,6 +55,7 @@ func executionFromIB(c *ibapi.Contract, e *ibapi.Execution) model.Execution {
 		Account:  e.AcctNumber,
 		Symbol:   c.Symbol,
 		SecType:  c.SecType,
+		Currency: c.Currency,
 		Side:     e.Side,
 		Shares:   e.Shares.Float(),
 		Price:    e.Price,

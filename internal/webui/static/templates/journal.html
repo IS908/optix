@@ -98,20 +98,21 @@
     const j = await r.json();
     const trips = j.round_trips || [];
 
-    const headers = ['Symbol', 'Dir', 'Open', 'Close', 'Qty', 'OpenPx', 'ClosePx', 'P&L', 'Status'];
+    const headers = ['Symbol', 'Dir', 'Ccy', 'Open', 'Close', 'Qty', 'OpenPx', 'ClosePx', 'P&L', 'Status'];
     const thead = el('thead', {class: 'bg-gray-100'},
       el('tr', {}, ...headers.map(h => el('th', {class: 'px-2 py-1 text-left'}, h))));
 
     const tbody = el('tbody');
     if (trips.length === 0) {
       tbody.appendChild(el('tr', {},
-        el('td', {colspan: '9', class: 'px-2 py-3 text-gray-500'}, 'No round trips.')));
+        el('td', {colspan: '10', class: 'px-2 py-3 text-gray-500'}, 'No round trips.')));
     } else {
       trips.forEach(t => {
         const pnlCls = 'px-2 py-1 text-right ' + (t.realized_pnl >= 0 ? 'text-green-700' : 'text-red-700');
         tbody.appendChild(el('tr', {},
           el('td', {class: 'px-2 py-1'}, t.symbol),
           el('td', {class: 'px-2 py-1'}, t.direction),
+          el('td', {class: 'px-2 py-1'}, t.currency || 'USD'),
           el('td', {class: 'px-2 py-1'}, fmtDateTime(t.open_time)),
           el('td', {class: 'px-2 py-1'}, fmtDateTime(t.close_time) || '—'),
           el('td', {class: 'px-2 py-1 text-right'}, String(t.open_qty)),
@@ -136,9 +137,13 @@
       el('dt', {}, 'Total round trips'),     el('dd', {}, String(s.total_round_trips)),
       el('dt', {}, 'Closed / Open / Expired'),
       el('dd', {}, `${s.closed_round_trips} / ${s.open_round_trips} / ${s.expired_round_trips}`),
+      ...(s.excluded_non_usd_round_trips > 0 ? [
+        el('dt', {}, 'Excluded non-USD'),
+        el('dd', {}, `${s.excluded_non_usd_round_trips} (review P&L is USD-only)`)
+      ] : []),
       el('dt', {}, 'Win rate'),
       el('dd', {}, `${(s.win_rate * 100).toFixed(1)}% (${s.win_count}W / ${s.loss_count}L)`),
-      el('dt', {}, 'Total realized P&L'),    el('dd', {}, s.total_realized_pnl.toFixed(2)),
+      el('dt', {}, 'Total realized P&L'),    el('dd', {}, `${s.total_realized_pnl.toFixed(2)} USD`),
       el('dt', {}, 'Avg per round trip'),    el('dd', {}, s.avg_realized_pnl.toFixed(2)),
       el('dt', {}, 'Avg holding days'),      el('dd', {}, s.avg_holding_days.toFixed(1)));
 
@@ -146,7 +151,7 @@
       el('tr', {},
         el('th', {class: 'px-2 py-1 text-left'},  'Symbol'),
         el('th', {class: 'px-2 py-1 text-right'}, 'Trips'),
-        el('th', {class: 'px-2 py-1 text-right'}, 'P&L'),
+        el('th', {class: 'px-2 py-1 text-right'}, 'P&L USD'),
         el('th', {class: 'px-2 py-1 text-right'}, 'Win%')));
     const tbody = el('tbody');
     if (bySym.length === 0) {

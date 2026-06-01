@@ -60,13 +60,14 @@ func TestPositionFromIB(t *testing.T) {
 
 func TestExecutionFromIB(t *testing.T) {
 	ex := executionFromIB(
-		&ibapi.Contract{Symbol: "AAPL", SecType: "STK"},
+		&ibapi.Contract{Symbol: "AAPL", SecType: "STK", Currency: "HKD"},
 		&ibapi.Execution{ExecID: "e1", Time: "20260510-14:32:00", AcctNumber: "U1",
 			Side: "BOT", Shares: ibapi.StringToDecimal("100"), Price: 245.30,
 			AvgPrice: 245.31, Exchange: "SMART", OrderID: 7, PermID: 700})
 	if ex.ExecID != "e1" || ex.Symbol != "AAPL" || ex.Side != "BOT" ||
 		ex.Shares != 100 || ex.Price != 245.30 || ex.AvgPrice != 245.31 ||
-		ex.Exchange != "SMART" || ex.OrderID != 7 || ex.PermID != 700 {
+		ex.Exchange != "SMART" || ex.OrderID != 7 || ex.PermID != 700 ||
+		ex.Currency != "HKD" {
 		t.Errorf("execution conversion mismatch: %+v", ex)
 	}
 	if ex.Time.IsZero() {

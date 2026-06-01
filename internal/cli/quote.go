@@ -22,7 +22,7 @@ func newQuoteCmd() *cobra.Command {
 
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -33,7 +33,7 @@ func newQuoteCmd() *cobra.Command {
 				ClientID: 1,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to broker: %w", err)
+				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Println(b.SourceBanner())
@@ -41,7 +41,7 @@ func newQuoteCmd() *cobra.Command {
 			svc := server.NewMarketDataService(b, store)
 			q, err := svc.GetQuote(ctx, symbol)
 			if err != nil {
-				return err
+				return cliExit(err, exitIBKRUnreachable)
 			}
 
 			fmt.Printf("%-10s %s\n", "Symbol:", q.Symbol)

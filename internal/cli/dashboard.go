@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
+	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/internal/analysis"
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/watchlist"
-	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
 	"github.com/IS908/optix/pkg/model"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +41,7 @@ Examples:
 			// 1. Open SQLite store
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -50,7 +50,7 @@ Examples:
 			mgr := watchlist.NewManager(store)
 			items, err := mgr.List(ctx)
 			if err != nil {
-				return fmt.Errorf("get watchlist: %w", err)
+				return cliExit(fmt.Errorf("get watchlist: %w", err), exitSQLiteErr)
 			}
 			if len(items) == 0 {
 				fmt.Println("Watchlist is empty. Use 'optix watch add AAPL TSLA' to add symbols.")
@@ -67,7 +67,7 @@ Examples:
 				ClientID: 3,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to broker: %w", err)
+				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Println(b.SourceBanner())
@@ -126,14 +126,14 @@ Examples:
 				}
 			}
 			if len(stocks) == 0 {
-				return fmt.Errorf("failed to fetch data for all watchlist symbols")
+				return cliExit(fmt.Errorf("failed to fetch data for all watchlist symbols"), exitIBKRUnreachable)
 			}
 
 			// 5. Connect to Python analysis engine
 			fmt.Printf("🔬 Running batch analysis on %d symbols via %s...\n", len(stocks), analysisAddr)
 			analysisClient, err := analysis.NewClient(analysisAddr)
 			if err != nil {
-				return fmt.Errorf("connect to analysis engine: %w", err)
+				return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
 			}
 			defer analysisClient.Close()
 
@@ -146,7 +146,7 @@ Examples:
 				AvailableCapital: capital,
 			})
 			if err != nil {
-				return fmt.Errorf("batch analysis: %w", err)
+				return cliExit(fmt.Errorf("batch analysis: %w", err), exitGenericErr)
 			}
 
 			summaries := batchResp.Summaries
@@ -236,15 +236,15 @@ func dashTrendScore(trend string) int {
 
 // Column widths (not counting the border chars / padding spaces).
 const (
-	dashW_sym  = 8
-	dashW_prc  = 8
-	dashW_trd  = 8
-	dashW_rsi  = 5
-	dashW_iv   = 8
-	dashW_mp   = 9
-	dashW_pcr  = 6
-	dashW_rng  = 14
-	dashW_rec  = 20
+	dashW_sym = 8
+	dashW_prc = 8
+	dashW_trd = 8
+	dashW_rsi = 5
+	dashW_iv  = 8
+	dashW_mp  = 9
+	dashW_pcr = 6
+	dashW_rng = 14
+	dashW_rec = 20
 )
 
 func dashBorder(left, mid, right, fill string) string {

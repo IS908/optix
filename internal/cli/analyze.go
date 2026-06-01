@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
+	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
+	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
 	"github.com/IS908/optix/internal/analysis"
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/server"
-	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
-	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +70,7 @@ Examples:
 			// Open SQLite store for caching
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -82,7 +82,7 @@ Examples:
 				ClientID: 2,
 			}, pythonBin)
 			if err := b.Connect(ctx); err != nil {
-				return fmt.Errorf("connect to broker: %w", err)
+				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
 			fmt.Println(b.SourceBanner())
@@ -106,14 +106,14 @@ Examples:
 					tmpl := fmt.Sprintf("optix analyze %s --with-oi --expiry %%s", symbol)
 					return errors.New(FormatExpiryError(miss.Underlying, miss.Requested, miss.Available, tmpl))
 				}
-				return fmt.Errorf("fetch data: %w", err)
+				return cliExit(fmt.Errorf("fetch data: %w", err), exitIBKRUnreachable)
 			}
 
 			// Connect to Python analysis engine
 			fmt.Printf("🔬 Running analysis engine at %s...\n", analysisAddr)
 			analysisClient, err := analysis.NewClient(analysisAddr)
 			if err != nil {
-				return fmt.Errorf("connect to analysis engine: %w", err)
+				return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
 			}
 			defer analysisClient.Close()
 
@@ -131,7 +131,7 @@ Examples:
 				CurrentQuote:     stockData.Quote,
 			})
 			if err != nil {
-				return fmt.Errorf("analyze: %w", err)
+				return cliExit(fmt.Errorf("analyze: %w", err), exitGenericErr)
 			}
 
 			// Print the report
@@ -187,15 +187,15 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	// Open SQLite store
 	store, err := sqlite.New(dbPath)
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 	}
 	RegisterCleanup(store)
-			defer store.Close()
+	defer store.Close()
 
 	// Get watchlist
 	items, err := store.GetWatchlist(ctx)
 	if err != nil {
-		return fmt.Errorf("get watchlist: %w", err)
+		return cliExit(fmt.Errorf("get watchlist: %w", err), exitSQLiteErr)
 	}
 	if len(items) == 0 {
 		fmt.Println("Watchlist is empty. Use 'optix watch add AAPL TSLA' to add symbols.")
@@ -213,7 +213,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 		ClientID: 6,
 	}, pythonBin)
 	if err := b.Connect(ctx); err != nil {
-		return fmt.Errorf("connect to broker: %w", err)
+		return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 	}
 	defer b.Disconnect()
 	fmt.Println(b.SourceBanner())
@@ -224,17 +224,23 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	fmt.Printf("🔬 Analysis engine at %s\n", analysisAddr)
 	analysisClient, err := analysis.NewClient(analysisAddr)
 	if err != nil {
-		return fmt.Errorf("connect to analysis engine: %w", err)
+		return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
 	}
 	defer analysisClient.Close()
 
 	// Process each symbol sequentially (IB pacing rules)
+	var successes int
+	var firstFetchErr error
+	var firstAnalyzeErr error
 	for i, item := range items {
 		sym := strings.ToUpper(item.Symbol)
 		fmt.Printf("\n[%d/%d] Analyzing %s...\n", i+1, len(items), sym)
 
 		stockData, fetchErr := fetchSymbolData(ctx, sym, svc)
 		if fetchErr != nil {
+			if firstFetchErr == nil {
+				firstFetchErr = fetchErr
+			}
 			fmt.Printf("  ⚠️  %s: fetch error: %v — skipping\n", sym, fetchErr)
 			continue
 		}
@@ -252,14 +258,35 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 		cancel()
 
 		if analyzeErr != nil {
+			if firstAnalyzeErr == nil {
+				firstAnalyzeErr = analyzeErr
+			}
 			fmt.Printf("  ⚠️  %s: analysis error: %v — skipping\n", sym, analyzeErr)
 			continue
 		}
 
 		printAnalysisReport(resp, sym, weeks, false)
+		successes++
+	}
+
+	if err := watchlistAnalysisExit(successes, firstFetchErr, firstAnalyzeErr); err != nil {
+		return err
 	}
 
 	fmt.Printf("\n✅ Watchlist analysis complete (%d symbols)\n", len(items))
+	return nil
+}
+
+func watchlistAnalysisExit(successes int, firstFetchErr, firstAnalyzeErr error) error {
+	if successes > 0 {
+		return nil
+	}
+	if firstAnalyzeErr != nil {
+		return cliExit(fmt.Errorf("all watchlist analyses failed; first error: %w", firstAnalyzeErr), exitGenericErr)
+	}
+	if firstFetchErr != nil {
+		return cliExit(fmt.Errorf("all watchlist fetches failed; first error: %w", firstFetchErr), exitIBKRUnreachable)
+	}
 	return nil
 }
 
@@ -271,9 +298,9 @@ func fetchSymbolData(ctx context.Context, symbol string, svc *server.MarketDataS
 // ─── Report printing ──────────────────────────────────────────────────────────
 
 const (
-	lineWidth   = 65
-	sectionSep  = "─────────────────────────────────────────────────────────────────"
-	doubleSep   = "═════════════════════════════════════════════════════════════════"
+	lineWidth  = 65
+	sectionSep = "─────────────────────────────────────────────────────────────────"
+	doubleSep  = "═════════════════════════════════════════════════════════════════"
 )
 
 func printAnalysisReport(resp *analysisv1.AnalyzeStockResponse, symbol string, weeks int, userRequestedExpiry bool) {

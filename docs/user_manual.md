@@ -514,7 +514,7 @@ JSON 输出包含 `max_pain_offset_pct = (max_pain - spot) / spot × 100`，agen
 | 0 | 成功 |
 | 1 | 通用错误（标志格式错、过去日期、到期日不存在） |
 | 2 | 数据源不可达 |
-| 3 | Python 分析引擎不可达 |
+| 3 | SQLite 数据库错误 |
 
 > **注意：** `max-pain` 同样是只读的 — 不会下单。
 

@@ -31,14 +31,14 @@ func newWatchAddCmd() *cobra.Command {
 			ctx := context.Background()
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
 
 			mgr := watchlist.NewManager(store)
 			if err := mgr.Add(ctx, args...); err != nil {
-				return err
+				return cliExit(err, exitSQLiteErr)
 			}
 
 			for _, s := range args {
@@ -58,7 +58,7 @@ func newWatchRemoveCmd() *cobra.Command {
 			ctx := context.Background()
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -66,13 +66,19 @@ func newWatchRemoveCmd() *cobra.Command {
 			symbol := args[0]
 			mgr := watchlist.NewManager(store)
 			if err := mgr.Remove(ctx, symbol); err != nil {
-				return err
+				return cliExit(err, exitSQLiteErr)
 			}
 
 			// Cascade: clean up related data for the removed symbol
-			_ = store.DeleteWatchlistSnapshots(ctx, symbol)
-			_ = store.DeleteAnalysisCache(ctx, symbol)
-			_ = store.DeleteBackgroundJobs(ctx, symbol)
+			if err := store.DeleteWatchlistSnapshots(ctx, symbol); err != nil {
+				return cliExit(fmt.Errorf("delete watchlist snapshots: %w", err), exitSQLiteErr)
+			}
+			if err := store.DeleteAnalysisCache(ctx, symbol); err != nil {
+				return cliExit(fmt.Errorf("delete analysis cache: %w", err), exitSQLiteErr)
+			}
+			if err := store.DeleteBackgroundJobs(ctx, symbol); err != nil {
+				return cliExit(fmt.Errorf("delete background jobs: %w", err), exitSQLiteErr)
+			}
 
 			fmt.Printf("Removed %s from watchlist\n", symbol)
 			return nil
@@ -88,7 +94,7 @@ func newWatchListCmd() *cobra.Command {
 			ctx := context.Background()
 			store, err := sqlite.New(dbPath)
 			if err != nil {
-				return fmt.Errorf("open database: %w", err)
+				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
@@ -96,7 +102,7 @@ func newWatchListCmd() *cobra.Command {
 			mgr := watchlist.NewManager(store)
 			items, err := mgr.List(ctx)
 			if err != nil {
-				return err
+				return cliExit(err, exitSQLiteErr)
 			}
 
 			if len(items) == 0 {

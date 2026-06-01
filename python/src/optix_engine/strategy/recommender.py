@@ -430,11 +430,10 @@ def _build_short_strangle(ctx, put_strike, call_strike, T) -> StrategyRecommenda
     # Max loss is theoretically unlimited (short call side)
     max_loss = ctx.current_price * 100  # practical max loss estimate
 
-    # Breakeven prices:  lower_be = put_strike - net_credit,  upper_be = call_strike + net_credit
+    # Breakeven prices: lower side is persisted in the legacy single breakeven field.
     lower_be = put_strike - net_credit
-    upper_be = call_strike + net_credit
 
-    # Probability of profit: P(lower_be < S_T < upper_be) using BS delta proxy
+    # Probability of profit uses both lower and upper tails via BS delta proxy.
     from optix_engine.options.pricing import delta as bs_delta
     prob_below = abs(bs_delta(ctx.current_price, put_strike, T, 0.05, ctx.iv_current, "put"))
     prob_above = bs_delta(ctx.current_price, call_strike, T, 0.05, ctx.iv_current, "call")

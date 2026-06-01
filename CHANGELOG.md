@@ -14,6 +14,19 @@ above it.
 
 _No changes yet._
 
+## [0.7.23] - 2026-06-01
+
+Patch release for post-release dry-run cleanup.
+
+### Fixed
+
+- Updated developer setup docs to install Python dev extras, matching the
+  documented Ruff workflow, and added a `make lint-python` target for the
+  check.
+- Refreshed the release install example and Go prerequisite in the README.
+- Added regression coverage that portfolio stress fallback legs preserve Vega
+  in USD per +1% IV, matching the aggregate Greeks convention.
+
 ## [0.7.22] - 2026-06-01
 
 Patch release for Gateway/TWS port consistency.
@@ -1032,7 +1045,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.22...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.23...HEAD
+[0.7.23]: https://github.com/IS908/optix/compare/v0.7.22...v0.7.23
 [0.7.22]: https://github.com/IS908/optix/compare/v0.7.21...v0.7.22
 [0.7.21]: https://github.com/IS908/optix/compare/v0.7.20...v0.7.21
 [0.7.20]: https://github.com/IS908/optix/compare/v0.7.19...v0.7.20

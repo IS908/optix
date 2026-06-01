@@ -1,10 +1,15 @@
 """Tests for Black-Scholes pricing and Greeks."""
 
-import pytest
 import numpy as np
 import optix_engine.options.implied_vol as implied_vol_module
 from optix_engine.options.pricing import (
-    call_price, put_price, delta, gamma, theta, vega, rho, all_greeks,
+    all_greeks,
+    call_price,
+    delta,
+    gamma,
+    put_price,
+    theta,
+    vega,
 )
 from optix_engine.options.implied_vol import implied_volatility
 from optix_engine.options.max_pain import calculate_max_pain

@@ -1,6 +1,5 @@
 """Open Interest analysis: OI walls, unusual activity detection."""
 
-import numpy as np
 import pandas as pd
 
 

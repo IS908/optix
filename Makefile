@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-cli build-server tidy test test-integration clean proto py-server release release-all release-smoke release-clean
+.PHONY: build build-cli build-server tidy test lint-python test-integration clean proto py-server release release-all release-smoke release-clean
 
 PYTHON := python/.venv/bin/python
 
@@ -20,6 +20,9 @@ tidy:
 test:
 	go test ./...
 	$(PYTHON) -m pytest python/tests/ -v
+
+lint-python:
+	$(PYTHON) -m ruff check python/src python/tests
 
 # Integration tests: starts Python gRPC server, runs Go tests, stops server
 test-integration:

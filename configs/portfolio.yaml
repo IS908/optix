@@ -23,8 +23,8 @@ greeks:
   # r; this is the current US short-end T-bill. Override with --risk-free-rate.
   risk_free_rate: 0.043
 
-# IV cache staleness windows (consumed by Phase 2 greeks/stress).
-# Phase 1 doesn't use these but the schema is forward-compatible.
+# IV cache staleness windows reserved for a future IV cache freshness gate.
+# The values are parsed/validated today but are not consumed by greeks/stress yet.
 iv_staleness:
   fresh_max:      "4h"    # ✓
   acceptable_max: "24h"   # ⚠️

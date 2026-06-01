@@ -14,6 +14,22 @@ above it.
 
 _No changes yet._
 
+## [0.7.18] - 2026-06-01
+
+Patch release for portfolio config authority.
+
+### Fixed
+
+- Wire `portfolio concentration` to `configs/portfolio.yaml` so
+  `concentration:` thresholds and `sectors_file` are consumed, while valid
+  explicit CLI flags continue to take precedence (#103).
+- Wire `portfolio greeks` to `configs/portfolio.yaml` for `greeks.risk_free_rate`
+  and `sectors_file`, again preserving explicit flag precedence (#103).
+- Preserve explicit zero risk-free rates from YAML or `--risk-free-rate 0` for
+  greeks/stress instead of treating them as unset (#103).
+- Correct the `iv_staleness:` YAML comments to mark those knobs as parsed but
+  reserved until an IV cache freshness gate exists (#103).
+
 ## [0.7.17] - 2026-06-01
 
 Patch release for portfolio risk-report consistency.
@@ -963,7 +979,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.17...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.18...HEAD
+[0.7.18]: https://github.com/IS908/optix/compare/v0.7.17...v0.7.18
 [0.7.17]: https://github.com/IS908/optix/compare/v0.7.16...v0.7.17
 [0.7.16]: https://github.com/IS908/optix/compare/v0.7.15...v0.7.16
 [0.7.15]: https://github.com/IS908/optix/compare/v0.7.14...v0.7.15

@@ -69,6 +69,7 @@ func newPortfolioConcentrationCmd() *cobra.Command {
 		topN          int
 		jsonOut       string
 		sectorsFile   string
+		configPath    string
 	)
 
 	cmd := &cobra.Command{
@@ -88,6 +89,17 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
   optix portfolio concentration --net-liq-usd 354477 --threshold-red 25 --top-n 15
   optix portfolio concentration --net-liq-usd 354477 --json /tmp/snap.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, resolvedSectorsFile, err := resolveConcentrationSettings(
+				configPath, sectorsFile,
+				thresholdWarn, cmd.Flags().Changed("threshold-warn"),
+				thresholdRed, cmd.Flags().Changed("threshold-red"),
+				topN, cmd.Flags().Changed("top-n"),
+			)
+			if err != nil {
+				return err
+			}
+			sectorsFile = resolvedSectorsFile
+
 			// Flag validation FIRST — before any expensive broker/DB work.
 			// A user with mistyped SGD/FX flags shouldn't pay the IBKR
 			// round-trip cost only to be told their input is bad.
@@ -145,17 +157,6 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				fmt.Fprintf(os.Stderr, "info: sector map source: %s\n", source)
 			}
 
-			cfg := portfolio.DefaultConfig()
-			if thresholdWarn > 0 {
-				cfg.WarnPct = thresholdWarn
-			}
-			if thresholdRed > 0 {
-				cfg.RedPct = thresholdRed
-			}
-			if topN > 0 {
-				cfg.TopN = topN
-			}
-
 			// Phase 1 NLV fallback: if the user didn't pass --net-liq-usd, anchor
 			// against FallbackNLV (sum of |MV| over USD, non-residual legs). It
 			// applies the same exclusions as Compute, so deployed_pct renders
@@ -196,11 +197,42 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 	cmd.Flags().Float64Var(&netLiqUSD, "net-liq-usd", 0, "Net Liq value in USD (anchors weight calc). Omit to use sum(|MV|) fallback.")
 	cmd.Flags().Float64Var(&netLiqSGD, "net-liq-sgd", 0, "Net Liq value in SGD, for dual-currency display (must be passed with --fx-usd-sgd). Manual until IBKR account-summary integration ships.")
 	cmd.Flags().Float64Var(&fxUSDtoSGD, "fx-usd-sgd", 0, "USD→SGD exchange rate, for dual-currency display (must be passed with --net-liq-sgd).")
-	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); default 10")
-	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); default 20")
-	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; default 10")
+	cmd.Flags().Float64Var(&thresholdWarn, "threshold-warn", 0, "Yellow flag threshold (% of NLV); explicit value must be >0 and overrides config")
+	cmd.Flags().Float64Var(&thresholdRed, "threshold-red", 0, "Red flag threshold (% of NLV); explicit value must be >0 and overrides config")
+	cmd.Flags().IntVar(&topN, "top-n", 0, "Top-N rollup count; explicit value must be >0 and overrides config")
 	cmd.Flags().StringVar(&jsonOut, "json", "", "Also write the full report as JSON to this path (for cron consumers)")
 	cmd.Flags().StringVar(&sectorsFile, "sectors-file", "", "Path to sector mapping JSON. Default search: $OPTIX_SECTORS_FILE → <bin-dir>/../configs/sectors.json → ./configs/sectors.json → embedded fallback (binary always has a copy).")
+	cmd.Flags().StringVar(&configPath, "portfolio-config", "configs/portfolio.yaml", "Path to portfolio risk YAML config; missing file uses defaults")
 
 	return cmd
+}
+
+func resolveConcentrationSettings(configPath, sectorsFile string, thresholdWarn float64, thresholdWarnSet bool, thresholdRed float64, thresholdRedSet bool, topN int, topNSet bool) (portfolio.Config, string, error) {
+	pc, err := portfolio.LoadConfig(configPath)
+	if err != nil {
+		return portfolio.Config{}, "", err
+	}
+	cfg := pc.Concentration
+	if thresholdWarnSet {
+		if thresholdWarn <= 0 {
+			return portfolio.Config{}, "", fmt.Errorf("--threshold-warn must be > 0 when set")
+		}
+		cfg.WarnPct = thresholdWarn
+	}
+	if thresholdRedSet {
+		if thresholdRed <= 0 {
+			return portfolio.Config{}, "", fmt.Errorf("--threshold-red must be > 0 when set")
+		}
+		cfg.RedPct = thresholdRed
+	}
+	if topNSet {
+		if topN <= 0 {
+			return portfolio.Config{}, "", fmt.Errorf("--top-n must be > 0 when set")
+		}
+		cfg.TopN = topN
+	}
+	if sectorsFile == "" {
+		sectorsFile = pc.SectorsFile
+	}
+	return cfg, sectorsFile, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
@@ -83,7 +84,7 @@ func fetchSymbolDataInternal(
 			if errors.As(chainErr, &miss) {
 				return nil, chainErr
 			}
-			fmt.Printf("warning: OI fetch failed (%v) — using structure-only chain\n", chainErr)
+			fmt.Fprintf(os.Stderr, "warning: OI fetch failed (%v) — using structure-only chain\n", chainErr)
 			chain, chainErr = svc.GetOptionChain(ctx, symbol, opts.Expiry)
 		}
 	} else {

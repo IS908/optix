@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ func newDashboardCmd() *cobra.Command {
 	var sortBy string
 	var top int
 	var analysisAddr string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "dashboard",
@@ -36,6 +38,14 @@ Examples:
   optix dashboard --sort=iv-rank --top=5
   optix dashboard --capital=100000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
+			logw := os.Stdout
+			if format == "json" {
+				logw = os.Stderr
+			}
 			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			ctx := context.Background()
 
@@ -54,12 +64,15 @@ Examples:
 				return cliExit(fmt.Errorf("get watchlist: %w", err), exitSQLiteErr)
 			}
 			if len(items) == 0 {
-				fmt.Println("Watchlist is empty. Use 'optix watch add AAPL TSLA' to add symbols.")
+				if format == "json" {
+					return renderDashboardJSON(os.Stdout, nil, sortBy, "")
+				}
+				fmt.Fprintln(logw, "Watchlist is empty. Use 'optix watch add AAPL TSLA' to add symbols.")
 				return nil
 			}
 
-			fmt.Printf("📋 Dashboard — %d symbols\n", len(items))
-			fmt.Printf("⏳ Connecting to market data source...\n")
+			fmt.Fprintf(logw, "📋 Dashboard — %d symbols\n", len(items))
+			fmt.Fprintf(logw, "⏳ Connecting to market data source...\n")
 
 			// 3. Connect to broker (IBKR with yfinance fallback)
 			b := factory.NewWithFallback(ibkr.Config{
@@ -71,12 +84,12 @@ Examples:
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			fmt.Fprintln(logw, b.SourceBanner())
 
 			svc := server.NewMarketDataService(b, store)
 
 			// 4. Fetch data for each symbol (bounded concurrency = 2)
-			fmt.Printf("📊 Fetching market data...\n")
+			fmt.Fprintf(logw, "📊 Fetching market data...\n")
 
 			type fetchResult struct {
 				idx  int
@@ -98,9 +111,9 @@ Examples:
 					data, fetchErr := fetchSymbolData(ctx, sym, svc)
 					resultsCh <- fetchResult{idx: idx, data: data, err: fetchErr}
 					if fetchErr != nil {
-						fmt.Printf("  ⚠️  %-6s  %v\n", sym, fetchErr)
+						fmt.Fprintf(logw, "  ⚠️  %-6s  %v\n", sym, fetchErr)
 					} else {
-						fmt.Printf("  ✓  %s\n", sym)
+						fmt.Fprintf(logw, "  ✓  %s\n", sym)
 					}
 				}(i, item.Symbol)
 			}
@@ -131,7 +144,7 @@ Examples:
 			}
 
 			// 5. Connect to Python analysis engine
-			fmt.Printf("🔬 Running batch analysis on %d symbols via %s...\n", len(stocks), analysisAddr)
+			fmt.Fprintf(logw, "🔬 Running batch analysis on %d symbols via %s...\n", len(stocks), analysisAddr)
 			analysisClient, err := analysis.NewClient(analysisAddr)
 			if err != nil {
 				return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
@@ -182,6 +195,9 @@ Examples:
 			}
 
 			// 9. Print table
+			if format == "json" {
+				return renderDashboardJSON(os.Stdout, summaries, sortBy, b.SourceName())
+			}
 			printDashboard(summaries, sortBy, b.SourceName())
 			return nil
 		},
@@ -191,6 +207,7 @@ Examples:
 	cmd.Flags().StringVar(&sortBy, "sort", "opportunity", "Sort by: opportunity, iv-rank, trend, pcr")
 	cmd.Flags().IntVar(&top, "top", 0, "Show only top N results (0 = all)")
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 
 	return cmd
 }

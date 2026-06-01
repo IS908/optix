@@ -14,6 +14,24 @@ above it.
 
 _No changes yet._
 
+## [0.7.25] - 2026-06-01
+
+Patch release for agent-friendly CLI output.
+
+### Added
+
+- Added agent-friendly JSON output for `quote`, `chain`, `dashboard`,
+  `positions`, and `trades`, plus stdout-only `--json -` support for portfolio
+  risk reports (#118).
+- Expanded the Optix skill descriptor with structured-output guidance,
+  dashboard/watchlist examples, journal decision flow, portfolio stdout JSON
+  examples, and IBKR host/port override notes (#118).
+
+### Fixed
+
+- Moved non-fatal market-data cache and OI fallback warnings to stderr so they
+  cannot corrupt JSON stdout consumed by agents (#118).
+
 ## [0.7.24] - 2026-06-01
 
 Patch release for Optix skill descriptor drift cleanup.
@@ -1059,7 +1077,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.24...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.25...HEAD
+[0.7.25]: https://github.com/IS908/optix/compare/v0.7.24...v0.7.25
 [0.7.24]: https://github.com/IS908/optix/compare/v0.7.23...v0.7.24
 [0.7.23]: https://github.com/IS908/optix/compare/v0.7.22...v0.7.23
 [0.7.22]: https://github.com/IS908/optix/compare/v0.7.21...v0.7.22

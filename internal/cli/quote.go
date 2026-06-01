@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
@@ -12,11 +14,17 @@ import (
 )
 
 func newQuoteCmd() *cobra.Command {
-	return &cobra.Command{
+	var format string
+
+	cmd := &cobra.Command{
 		Use:   "quote [symbol]",
 		Short: "Get the latest stock quote",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
 			symbol := args[0]
 			ctx := context.Background()
 
@@ -36,12 +44,20 @@ func newQuoteCmd() *cobra.Command {
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
-			fmt.Println(b.SourceBanner())
+			if format == "json" {
+				fmt.Fprintln(os.Stderr, b.SourceBanner())
+			} else {
+				fmt.Println(b.SourceBanner())
+			}
 
 			svc := server.NewMarketDataService(b, store)
 			q, err := svc.GetQuote(ctx, symbol)
 			if err != nil {
 				return cliExit(err, exitIBKRUnreachable)
+			}
+
+			if format == "json" {
+				return renderQuoteJSON(os.Stdout, q, b.SourceName())
 			}
 
 			fmt.Printf("%-10s %s\n", "Symbol:", q.Symbol)
@@ -55,4 +71,7 @@ func newQuoteCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
+	return cmd
 }

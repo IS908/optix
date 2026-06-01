@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
@@ -34,7 +35,7 @@ func (svc *MarketDataService) GetQuote(ctx context.Context, symbol string) (*mod
 	// Cache to SQLite
 	if err := svc.store.UpsertStockQuote(ctx, q); err != nil {
 		// Log but don't fail - quote is still valid
-		fmt.Printf("warning: failed to cache quote: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to cache quote: %v\n", err)
 	}
 
 	return q, nil
@@ -73,7 +74,7 @@ func (svc *MarketDataService) GetHistoricalBars(ctx context.Context, symbol, tim
 
 	// Cache
 	if err := svc.store.InsertBars(ctx, symbol, timeframe, fresh); err != nil {
-		fmt.Printf("warning: failed to cache bars: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to cache bars: %v\n", err)
 	}
 
 	return fresh, nil
@@ -87,12 +88,12 @@ func (svc *MarketDataService) GetOptionChain(ctx context.Context, underlying, ex
 	}
 
 	if err := svc.backfillOptionChainUnderlyingPrice(ctx, underlying, chain); err != nil {
-		fmt.Printf("warning: failed to backfill option chain underlying price: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to backfill option chain underlying price: %v\n", err)
 	}
 
 	// Cache to option_quotes so freshness tracking picks it up
 	if err := svc.store.UpsertOptionChain(ctx, chain); err != nil {
-		fmt.Printf("warning: failed to cache option chain: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to cache option chain: %v\n", err)
 	}
 
 	return chain, nil
@@ -112,10 +113,10 @@ func (svc *MarketDataService) GetOptionChainWithOI(ctx context.Context, underlyi
 		return nil, fmt.Errorf("get option chain with OI for %s: %w", underlying, err)
 	}
 	if err := svc.backfillOptionChainUnderlyingPrice(ctx, underlying, chain); err != nil {
-		fmt.Printf("warning: failed to backfill option chain underlying price: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to backfill option chain underlying price: %v\n", err)
 	}
 	if err := svc.store.UpsertOptionChain(ctx, chain); err != nil {
-		fmt.Printf("warning: failed to cache option chain: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to cache option chain: %v\n", err)
 	}
 	return chain, nil
 }

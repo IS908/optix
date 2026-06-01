@@ -32,11 +32,18 @@ func RenderGreeks(r *GreeksReport, w io.Writer) {
 		r.Total.Gamma, fmtSignedMoney2(r.Total.Vega), fmtSignedMoney2(r.Total.Theta))
 
 	if len(r.SkippedLegs) > 0 {
-		fmt.Fprintf(w, "\n⚠️  %d leg(s) skipped (no IV from chain or mark):\n", len(r.SkippedLegs))
+		fmt.Fprintf(w, "\n⚠️  %d leg(s) skipped from Greek sensitivities:\n", len(r.SkippedLegs))
 		for _, s := range r.SkippedLegs {
-			fmt.Fprintf(w, "   %s %s %s%.0f (%s)\n", s.Symbol, s.Expiration, s.Right, s.Strike, s.Reason)
+			fmt.Fprintf(w, "   %s (%s)\n", skippedLegLabel(s), s.Reason)
 		}
 	}
+}
+
+func skippedLegLabel(s SkippedLeg) string {
+	if strings.EqualFold(s.SecType, "STK") || (s.Expiration == "" && s.Right == "" && s.Strike == 0) {
+		return s.Symbol + " STK"
+	}
+	return fmt.Sprintf("%s %s %s%.0f", s.Symbol, s.Expiration, s.Right, s.Strike)
 }
 
 // ivLabel decorates a group's IV source for the table, per spec §5.1:

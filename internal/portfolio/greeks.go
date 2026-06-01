@@ -52,9 +52,11 @@ type GreeksGroup struct {
 	IVSource        string  `json:"iv_source,omitempty"` // chain|mark|stock|mixed
 }
 
-// SkippedLeg records an option leg excluded from the math, for transparency.
+// SkippedLeg records a position leg excluded from Greek sensitivities, for
+// transparency. Options can still contribute market value when MV is known.
 type SkippedLeg struct {
 	Symbol     string  `json:"symbol"`
+	SecType    string  `json:"sec_type,omitempty"`
 	Expiration string  `json:"expiration"`
 	Right      string  `json:"right"`
 	Strike     float64 `json:"strike"`
@@ -272,7 +274,7 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
-				priced[idx] = pricedLeg{skipped: skipFor(legs[idx], "price_error")}
+				priced[idx] = skippedPricedLeg(legs[idx], "price_error")
 				return
 			}
 			defer func() { <-sem }()
@@ -302,6 +304,16 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		underlying := strings.ToUpper(p.Symbol)
 		key := keyOf(underlying)
 		g := addGroup(key)
+		if p.MarketValue == 0 && p.Quantity != 0 {
+			g.SkippedLegCount++
+			r.SkippedLegs = append(r.SkippedLegs, skipForPosition(p, "no_mark"))
+			continue
+		}
+		if math.IsNaN(p.MarketValue) || math.IsInf(p.MarketValue, 0) {
+			g.SkippedLegCount++
+			r.SkippedLegs = append(r.SkippedLegs, skipForPosition(p, "non_finite"))
+			continue
+		}
 		g.NetDelta += p.Quantity
 		// Stock dollar-delta per +1% spot = NetDelta(shares) × price × 1%. For a
 		// stock leg price = MarketValue/Quantity, so this is MarketValue × 0.01
@@ -319,6 +331,7 @@ func AggregateGreeks(ctx context.Context, positions []model.Position, opts Greek
 		key := keyOf(legs[i].Underlying)
 		g := addGroup(key)
 		if pl.skipped != nil {
+			g.MVUsd += pl.mvUsd
 			g.SkippedLegCount++
 			r.SkippedLegs = append(r.SkippedLegs, *pl.skipped)
 			continue
@@ -396,7 +409,29 @@ func mergeIVSource(g *GreeksGroup, src string) {
 }
 
 func skipFor(leg heldLeg, reason string) *SkippedLeg {
-	return &SkippedLeg{Symbol: leg.Symbol, Expiration: leg.Expiration, Right: leg.Right, Strike: leg.Strike, Reason: reason}
+	return &SkippedLeg{
+		Symbol: leg.Symbol, SecType: "OPT", Expiration: leg.Expiration,
+		Right: leg.Right, Strike: leg.Strike, Reason: reason,
+	}
+}
+
+func skipForPosition(p model.Position, reason string) SkippedLeg {
+	return SkippedLeg{
+		Symbol: strings.ToUpper(p.Symbol), SecType: p.SecType,
+		Expiration: p.Expiration, Right: p.Right, Strike: p.Strike,
+		Reason: reason,
+	}
+}
+
+func skippedPricedLeg(leg heldLeg, reason string) pricedLeg {
+	mvUsd := math.Abs(leg.MarketValue)
+	if mvUsd <= 0 {
+		mvUsd = math.Abs(effectiveOptionMark(leg) * leg.SignedQty * leg.Multiplier)
+	}
+	if math.IsNaN(mvUsd) || math.IsInf(mvUsd, 0) {
+		mvUsd = 0
+	}
+	return pricedLeg{mvUsd: mvUsd, skipped: skipFor(leg, reason)}
 }
 
 // priceOneLeg resolves IV, prices the leg, and converts to display-unit
@@ -404,18 +439,18 @@ func skipFor(leg heldLeg, reason string) *SkippedLeg {
 func priceOneLeg(ctx context.Context, leg heldLeg, chain *model.OptionChain, spot, r float64, pricer OptionPricer) pricedLeg {
 	if spot <= 0 {
 		// No chain spot; mark-derived pricing needs a spot too, so skip.
-		return pricedLeg{skipped: skipFor(leg, "no_mark")}
+		return skippedPricedLeg(leg, "no_mark")
 	}
 	iv, src, ok := resolveIV(ctx, leg, chain, spot, r, pricer)
 	if !ok {
-		return pricedLeg{skipped: skipFor(leg, "no_iv")}
+		return skippedPricedLeg(leg, "no_iv")
 	}
 	g, err := pricer.PriceOption(ctx, spot, leg.Strike, leg.TYears, r, iv, leg.OptionType)
 	if err != nil {
-		return pricedLeg{skipped: skipFor(leg, "price_error")}
+		return skippedPricedLeg(leg, "price_error")
 	}
 	if !allFinite(g) || g.Price < 0 {
-		return pricedLeg{skipped: skipFor(leg, "non_finite")}
+		return skippedPricedLeg(leg, "non_finite")
 	}
 	scale := leg.SignedQty * leg.Multiplier
 	basePrice := g.Price

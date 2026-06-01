@@ -223,6 +223,9 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	if leg.Key != "GOOGL" || leg.ShockKey != "GOOGL" || leg.Spot != 180 || leg.IV != 0.31 || leg.BasePrice != 4.25 {
 		t.Fatalf("StressOptionLeg = %+v, want GOOGL spot/IV/model base price", leg)
 	}
+	if math.Abs(leg.FallbackVega-40) > 1e-6 {
+		t.Fatalf("StressOptionLeg FallbackVega = %v, want 40", leg.FallbackVega)
+	}
 	data, err := json.Marshal(r)
 	if err != nil {
 		t.Fatalf("Marshal GreeksReport: %v", err)

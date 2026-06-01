@@ -14,6 +14,21 @@ above it.
 
 _No changes yet._
 
+## [0.7.22] - 2026-06-01
+
+Patch release for Gateway/TWS port consistency.
+
+### Fixed
+
+- Updated scheduler integration tests to default to the documented Gateway
+  live port (`OPTIX_IB_PORT=gateway` -> `4001`) while still accepting `tws` or
+  numeric port overrides (#111).
+- Fixed SQLite in-memory stores so pooled test connections share one migrated
+  schema, preventing scheduler integration tests from seeing empty databases.
+- Aligned test docs and Web UI help text with the four supported IBKR API
+  ports: Gateway live/paper `4001`/`4002`, TWS live/paper `7496`/`7497`
+  (#111).
+
 ## [0.7.21] - 2026-06-01
 
 Patch release for quieter IBKR CLI output.
@@ -1017,7 +1032,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.21...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.22...HEAD
+[0.7.22]: https://github.com/IS908/optix/compare/v0.7.21...v0.7.22
 [0.7.21]: https://github.com/IS908/optix/compare/v0.7.20...v0.7.21
 [0.7.20]: https://github.com/IS908/optix/compare/v0.7.19...v0.7.20
 [0.7.19]: https://github.com/IS908/optix/compare/v0.7.18...v0.7.19

@@ -370,7 +370,7 @@ background_jobs (任务执行记录)
 ### 前置条件
 
 - [ ] Python gRPC 服务器运行: `make py-server`
-- [ ] IBKR TWS 运行（端口 7496）
+- [ ] IBKR Gateway 或 TWS 运行并启用 API（Gateway: 4001/4002；TWS: 7496/7497）
 - [ ] Optix 服务器运行: `./bin/optix-server`
 
 ### 验证流程

@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.6] - 2026-06-01
+
+Patch release for portfolio stress transparency.
+
+### Fixed
+
+- **`portfolio stress` now carries and renders skipped option legs (#72).**
+  Stress reports include `skipped_leg_count`/`skipped_legs`, and text output
+  warns that stress may understate risk when Greeks excluded legs due to missing
+  IV, marks, pricing errors, or non-finite values.
+
 ## [0.7.5] - 2026-06-01
 
 Patch release for IBKR OI-chain spot correctness.
@@ -805,7 +816,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/IS908/optix/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/IS908/optix/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/IS908/optix/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/IS908/optix/compare/v0.7.2...v0.7.3

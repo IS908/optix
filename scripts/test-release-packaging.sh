@@ -98,6 +98,7 @@ test_skill_wrapper_adds_analysis_addr_for_python_commands() {
     local runtime="$TMPDIR/runtime"
     local fakebin="$TMPDIR/fake-nc"
     local argsfile="$TMPDIR/args.txt"
+    local cwdfile="$TMPDIR/cwd.txt"
 
     mkdir -p "$runtime/bin" "$runtime/python/.venv/bin" "$runtime/skills/commands/optix" "$runtime/data" "$fakebin"
     cp "$ROOT/skills/commands/optix/optix.sh" "$runtime/skills/commands/optix/optix.sh"
@@ -105,6 +106,7 @@ test_skill_wrapper_adds_analysis_addr_for_python_commands() {
 
     cat >"$runtime/bin/optix" <<EOF
 #!/usr/bin/env bash
+pwd >"$cwdfile"
 printf '%s\n' "\$@" >"$argsfile"
 EOF
     chmod +x "$runtime/bin/optix"
@@ -139,6 +141,7 @@ NC
         "$runtime/skills/commands/optix/optix.sh" portfolio stress --net-liq-usd 100000
     grep -qx -- "--analysis-addr" "$argsfile" || fail "portfolio stress missing --analysis-addr"
     grep -qx -- "localhost:59999" "$argsfile" || fail "portfolio stress missing skill analysis addr"
+    grep -qx -- "$runtime" "$cwdfile" || fail "skill wrapper did not run optix from runtime cwd"
 }
 
 test_build_release_includes_configs

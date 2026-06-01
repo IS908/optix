@@ -66,9 +66,17 @@ NEED_PY_SERVER=false
 EXTRA_ARGS=()
 
 case "${1:-}" in
-    analyze|dashboard)
+    analyze|dashboard|max-pain)
         NEED_PY_SERVER=true
         EXTRA_ARGS+=(--analysis-addr "$ANALYSIS_ADDR")
+        ;;
+    portfolio)
+        case "${2:-}" in
+            greeks|stress)
+                NEED_PY_SERVER=true
+                EXTRA_ARGS+=(--analysis-addr "$ANALYSIS_ADDR")
+                ;;
+        esac
         ;;
 esac
 

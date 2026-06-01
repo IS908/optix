@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-cli build-server tidy test test-integration clean proto py-server release release-all release-clean
+.PHONY: build build-cli build-server tidy test test-integration clean proto py-server release release-all release-smoke release-clean
 
 PYTHON := python/.venv/bin/python
 
@@ -80,6 +80,9 @@ release-all:
 		os=$${combo%/*} ; arch=$${combo#*/} ; \
 		$(MAKE) --no-print-directory release VERSION=$(VERSION) GOOS=$$os GOARCH=$$arch ; \
 	done
+
+release-smoke:
+	./scripts/test-release-packaging.sh
 
 release-clean:
 	rm -rf dist/

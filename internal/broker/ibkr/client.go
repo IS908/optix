@@ -492,21 +492,14 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 
 	// Get spot price to filter ATM strikes (±15% window).
 	quote, qErr := c.GetQuote(ctx, underlying)
-	if qErr != nil || quote == nil || quote.Last <= 0 {
-		// Fall back to using the median strike as a proxy.
-		log.Printf("ibkr: GetOptionChainWithOI %s: spot quote unavailable (%v) — using median strike", underlying, qErr)
-		if len(chain.Expirations) > 0 && len(chain.Expirations[0].Calls) > 0 {
-			strikes := chain.Expirations[0].Calls
-			median := strikes[len(strikes)/2].Strike
-			quote = &model.StockQuote{Last: median}
-		} else {
-			return chain, nil
-		}
+	spot, authoritativeSpot := spotForOIWindow(chain, quote)
+	if spot <= 0 {
+		return chain, nil
 	}
-
-	spot := quote.Last
-	if spot > 0 {
+	if authoritativeSpot {
 		chain.UnderlyingPrice = spot
+	} else {
+		log.Printf("ibkr: GetOptionChainWithOI %s: spot quote unavailable (%v) — using median strike for OI window only", underlying, qErr)
 	}
 	low := spot * (1 - oiStrikeWindowPct)
 	high := spot * (1 + oiStrikeWindowPct)
@@ -583,6 +576,18 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	wg.Wait()
 
 	return chain, nil
+}
+
+func spotForOIWindow(chain *model.OptionChain, quote *model.StockQuote) (float64, bool) {
+	if quote != nil && quote.Last > 0 {
+		return quote.Last, true
+	}
+	if chain == nil || len(chain.Expirations) == 0 || len(chain.Expirations[0].Calls) == 0 {
+		return 0, false
+	}
+
+	strikes := chain.Expirations[0].Calls
+	return strikes[len(strikes)/2].Strike, false
 }
 
 // fetchOIForContract issues a streaming reqMktData with generic tick 101 (Open

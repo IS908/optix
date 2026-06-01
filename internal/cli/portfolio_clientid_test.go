@@ -19,6 +19,7 @@ func TestPortfolioClientIDDistinct(t *testing.T) {
 	matrix := map[string]int{
 		"journal/trades/server (master)":              journalClientID, // const, value 0
 		"max-pain":                                    maxPainClientID, // const, value 8
+		"chain":                                       chainClientID,   // const, value 9
 		"quote (literal, quote.go:33)":                1,
 		"analyze (literal, analyze.go:82)":            2,
 		"dashboard (literal, dashboard.go:67)":        3,

@@ -27,8 +27,8 @@ type OIFetcher interface {
 }
 
 // ErrOINotSupported is returned by brokers that cannot provide per-contract
-// Open Interest (e.g., yfinance fallback).
-var ErrOINotSupported = errors.New("broker does not support per-contract Open Interest (requires IBKR)")
+// Open Interest.
+var ErrOINotSupported = errors.New("broker does not support per-contract Open Interest")
 
 // ErrExpiryNotAvailable is returned by GetOptionChainWithOI when the caller
 // requested a specific expiration that the broker does not offer for this

@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.11] - 2026-06-01
+
+Patch release for the option-chain CLI.
+
+### Fixed
+
+- **`optix chain` now fetches and renders real option-chain data (#77).** The
+  command no longer prints a stale "not implemented" success message; it uses
+  the existing IBKR/Yahoo Finance fallback broker path, supports
+  `--expiry YYYY-MM-DD`, and reports missing expirations with suggestions.
+
 ## [0.7.10] - 2026-06-01
 
 Patch release for release workflow Node 24 compatibility.

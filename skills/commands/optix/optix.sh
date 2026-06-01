@@ -49,7 +49,7 @@ IB_PORT_NUM=$(resolve_port "$IB_PORT")
 case "${1:-}" in
     quote|analyze|dashboard|chain)
         if ! nc -z "$IB_HOST" "$IB_PORT_NUM" 2>/dev/null; then
-            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — will use Yahoo Finance (delayed data, no options)" >&2
+            echo "ℹ️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — will use Yahoo Finance (delayed data)" >&2
         fi
         ;;
     positions|trades)

@@ -23,9 +23,9 @@ import (
 )
 
 // maxPainClientID is the IBKR ClientID used by `optix max-pain`. Distinct
-// from quote(1), analyze(2), dashboard(3), positions(4), trades(5),
-// `analyze --watchlist`(6), and journal(7). Scheduler workers start at 10
-// and the web pool starts at 30.
+// from journal/trades/server(0), quote(1), analyze(2), dashboard(3),
+// positions(4), portfolio(5), `analyze --watchlist`(6), and chain(9).
+// Scheduler workers start at 10 and the web pool starts at 30.
 const maxPainClientID = 8
 
 // validateSourceFlag accepts "ibkr", "yfinance", or "auto" (case-insensitive).

@@ -145,6 +145,7 @@ optix/
 | `./bin/optix dashboard` | Watchlist overview with quotes, technicals, recommendations |
 | `./bin/optix analyze <SYMBOL>` | Deep analysis: technicals + options + strategies |
 | `./bin/optix analyze <SYMBOL> --with-oi [--expiry YYYY-MM-DD]` | Same, plus per-contract Open Interest for Max Pain (needs OPRA subscription); `--expiry` picks a specific option expiration (default: nearest) |
+| `./bin/optix chain <SYMBOL> [--expiry YYYY-MM-DD]` | Option chain table via IBKR or delayed Yahoo Finance fallback |
 | `./bin/optix max-pain <SYMBOL> [--expiry] [--source ibkr\|yfinance\|auto]` | Standalone Max Pain query for one option expiration |
 | `./bin/optix quote <SYMBOL>` | Real-time stock quote |
 | `./bin/optix positions [--type stk\|opt]` | IBKR account holdings with mark-to-market P&L (requires IBKR; option marks need OPRA) |

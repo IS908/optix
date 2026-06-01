@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "美股期权分析工具 / US stock & options analysis: 查看股价行情、期权分析、策略推荐、自选股管理、看板总览、IBKR 账户持仓与交易记录、持仓集中度、组合 Greeks、Delta/Gamma/Vega/Theta、风险敞口 / position concentration, portfolio greeks, delta exposure。Use when user asks about stock prices, quotes, options strategies, market analysis, watchlist, dashboard, IBKR positions, or trade history."
+description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -45,6 +45,8 @@ bash bin/optix.sh quote <SYMBOL>
 ### Analyze a stock (technicals + options + strategy recommendations)
 ```bash
 bash bin/optix.sh analyze <SYMBOL>
+bash bin/optix.sh analyze <SYMBOL> --weeks 4 --capital 100000 --risk conservative
+bash bin/optix.sh analyze --watchlist --capital 100000
 ```
 
 ### Analyze with per-contract Open Interest (enables Max Pain)
@@ -115,20 +117,25 @@ bash bin/optix.sh journal sync --format json
 #### List persisted executions
 ```bash
 bash bin/optix.sh journal list --symbol AAPL --since 2026-05-01 --format json
+bash bin/optix.sh journal list --type opt --side SLD --limit 50 --no-sync --format json
 ```
 
 #### View round-trip P&L
 ```bash
 bash bin/optix.sh journal trips --status closed --format json
+bash bin/optix.sh journal trips --symbol AAPL --since 2026-05-01 --until 2026-05-31 --no-sync --format json
 ```
 
 #### Retrospective summary
 ```bash
 bash bin/optix.sh journal review --since 2026-05-01 --format json
+bash bin/optix.sh journal review --since 2026-05-01 --until 2026-05-31 --no-sync --format json
 ```
 
-Pass `--no-sync` to any read command to skip the IBKR round-trip and read
-SQLite only (useful when IBKR is unavailable or after a recent sync).
+Pass `--no-sync` to `journal list`, `journal trips`, or `journal review` to
+skip the best-effort IBKR round-trip and read SQLite only (useful when IBKR is
+unavailable or after a recent sync). `journal status` is always offline-safe
+and does not have a `--no-sync` flag.
 
 Exit codes: `0` success · `1` generic error · `2` IBKR unreachable · `3` SQLite error.
 
@@ -164,20 +171,24 @@ Account-level risk views across all holdings. **Requires IBKR** (no Yahoo Financ
 ```bash
 bash bin/optix.sh portfolio concentration --net-liq-usd <NLV>
 bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --json /tmp/conc.json
+bash bin/optix.sh portfolio concentration --net-liq-usd <NLV> --net-liq-sgd <NLV_SGD> --fx-usd-sgd <FX>
+bash bin/optix.sh portfolio concentration --threshold-warn 8 --threshold-red 18 --top-n 15
 ```
-Per-underlying and per-sector weights, Top-N, HHI diversification bucket, and threshold flags (default 10% yellow, 20% red). Non-USD holdings and closed-out residuals are excluded with a warning.
+Per-underlying and per-sector weights, Top-N, HHI diversification bucket, and threshold flags (default 10% yellow, 20% red). Non-USD holdings and closed-out residuals are excluded with a warning. `--sectors-file` overrides the ticker-to-sector map; `--portfolio-config` overrides the risk YAML config.
 
 #### Greeks (组合 Δ/Γ/Vega/Θ 聚合)
 ```bash
 bash bin/optix.sh portfolio greeks --by underlying --net-liq-usd <NLV>
 bash bin/optix.sh portfolio greeks --by sector --json /tmp/greeks.json
+bash bin/optix.sh portfolio greeks --risk-free-rate 0.043 --sectors-file configs/sectors.json
 ```
-Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%) and Θ/day in USD. IV comes from the option chain (falls back to inverting the mark). Legs with no resolvable IV are skipped and listed. Needs the Python analysis engine (auto-started by the skill).
+Net Δ = delta-adjusted shares; Dollar Δ = USD exposure per +1% spot; Vega(/1%) and Θ/day in USD. IV comes from the option chain (falls back to inverting the mark). Legs with no resolvable IV are skipped and listed. Needs the Python analysis engine (auto-started by the skill). `--portfolio-config` can supply the default risk-free rate and sector map.
 
 #### Stress test (场景压力测试)
 ```bash
 bash bin/optix.sh portfolio stress --net-liq-usd <NLV>
 bash bin/optix.sh portfolio stress --portfolio-config configs/portfolio.yaml --json /tmp/stress.json
+bash bin/optix.sh portfolio stress --risk-free-rate 0.043 --sectors-file configs/sectors.json
 ```
 Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scenarios are config-driven: SPY -3/-5/-10%, IV +5 points, QQQ -5%, and a tech-correlated SPY/IV shock. Text output shows total P&L, % NLV, and worst position per scenario; JSON is stable for cron/agent consumers.
 
@@ -190,6 +201,7 @@ Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scena
 - Connection pool (8 slots, ClientIDs 30–37) is managed automatically; TWS restart is handled gracefully
 - `analyze --with-oi` uses IBKR market-data ticks for Open Interest and requires a matching subscription (e.g. OPRA Top of Book); `max-pain --source yfinance` can use delayed Yahoo Finance OI without IBKR
 - `journal status` is offline-safe — does not require IBKR; useful for agents to decide whether to call `journal sync` first
+- `journal list`, `journal trips`, and `journal review` auto-sync best-effort before reading SQLite unless `--no-sync` is passed
 - `journal sync` requires IBKR; the `optix-server` web UI runs a 6h background sync ticker so users who keep the server running never accumulate gap warnings
 - `max-pain --source yfinance` works without IBKR; yfinance returns Open Interest inline, so no OPRA subscription is needed (delayed quotes, may differ slightly from IBKR's real-time chain)
 - `analyze --with-oi` and `max-pain` both surface a closest-first suggestion list when `--expiry` doesn't match — agents/users can copy-paste the "Did you mean" line

@@ -208,7 +208,7 @@ Default: `./data/optix.db` (relative to CWD). Override with `--db` flag. The SQL
 `skills/commands/optix/install.sh` installs the skill to a single canonical location (`~/.agents/skills/optix/`) and creates per-agent symlinks at `~/.<agent>/skills/optix`. Auto-detects two modes:
 
 - **dev mode** (source checkout, `.git` + `Makefile` present): `.runtime/` becomes a symlink to the source tree. `make build` edits take effect immediately.
-- **release mode** (extracted tarball, future): `.runtime/` is a real directory with bundled binary + on-machine Python venv.
+- **release mode** (extracted tarball): `.runtime/` is a real directory with bundled binary + on-machine Python venv.
 
 Source tree and `.runtime/` share the same internal layout (`bin/`, `python/`, `data/`, `skills/commands/optix/`), so the wrapper (`skill-wrapper.sh`) has no branching logic — runtime resolution is a single chain: `$OPTIX_HOME` → `<skill>/.runtime` → `command -v optix`.
 

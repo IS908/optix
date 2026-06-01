@@ -24,7 +24,7 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 Pick the latest release at <https://github.com/IS908/optix/releases> and download the tarball matching your OS/arch. The tarball contains a prebuilt binary, the Python engine source, the skill descriptor, and an `install.sh`.
 
 ```bash
-VERSION=v0.7.23
+VERSION=v0.7.24
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')        # darwin | linux
 ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 

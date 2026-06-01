@@ -55,8 +55,11 @@ The skill at $SKILL_DIR could not locate the optix runtime. Set up one of:
       export OPTIX_HOME=/path/to/optix
 
   • Install the release bundle:
-      curl -L https://github.com/IS908/optix/releases/latest/download/optix-skill-\$(uname -s | tr '[:upper:]' '[:lower:]')-\$(uname -m).tar.gz | tar xz
-      cd optix-skill-* && ./install.sh --agent claude
+      VERSION=vX.Y.Z  # replace with the latest release tag
+      OS=\$(uname -s | tr '[:upper:]' '[:lower:]')
+      ARCH=\$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+      curl -fL "https://github.com/IS908/optix/releases/download/\${VERSION}/optix-skill-\${VERSION}-\${OS}-\${ARCH}.tar.gz" | tar xz
+      cd "optix-skill-\${VERSION}-\${OS}-\${ARCH}" && ./install.sh --agent claude
 
   • Recreate the .runtime symlink (dev mode):
       ln -snf /path/to/optix "$SKILL_DIR/.runtime"

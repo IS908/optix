@@ -3,6 +3,7 @@ package portfolio
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,6 +125,63 @@ stress:
 	_, err := LoadConfig(path)
 	if err == nil {
 		t.Fatal("expected unknown stress key error")
+	}
+}
+
+func TestLoadConfigRejectsDuplicateStressScenarioID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte(`
+stress:
+  scenarios:
+    - id: duplicate
+      label: "First"
+      shocks:
+        - axis: spy_pct
+          magnitude: -0.03
+    - id: duplicate
+      label: "Second"
+      shocks:
+        - axis: iv_points
+          magnitude: 3
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), `duplicate stress scenario id "duplicate"`) {
+		t.Fatalf("expected duplicate scenario id error, got %v", err)
+	}
+}
+
+func TestLoadConfigRejectsDuplicateTopLevelSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte(`
+greeks:
+  risk_free_rate: 0.04
+greeks:
+  risk_free_rate: 0.05
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), `duplicate top-level portfolio config section "greeks"`) {
+		t.Fatalf("expected duplicate section error, got %v", err)
+	}
+}
+
+func TestLoadConfigRejectsTabIndentWithClearError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "portfolio.yaml")
+	if err := os.WriteFile(path, []byte("concentration:\n\twarn_pct: 12.5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "tabs are not allowed for indentation") {
+		t.Fatalf("expected tab indentation error, got %v", err)
 	}
 }
 

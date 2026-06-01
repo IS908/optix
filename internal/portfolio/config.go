@@ -70,11 +70,15 @@ func LoadConfig(path string) (PortfolioConfig, error) {
 func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 	section := ""
 	inScenarios := false
+	seenSections := map[string]bool{}
 	var current *StressScenario
 	for _, raw := range strings.Split(s, "\n") {
 		line := stripYAMLComment(raw)
 		if strings.TrimSpace(line) == "" {
 			continue
+		}
+		if hasLeadingTab(line) {
+			return fmt.Errorf("tabs are not allowed for indentation")
 		}
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 		trim := strings.TrimSpace(line)
@@ -93,6 +97,10 @@ func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 				default:
 					return fmt.Errorf("unknown top-level portfolio config key %q", section)
 				}
+				if seenSections[section] {
+					return fmt.Errorf("duplicate top-level portfolio config section %q", section)
+				}
+				seenSections[section] = true
 				inScenarios = false
 				current = nil
 				continue
@@ -193,6 +201,20 @@ func parsePortfolioYAML(s string, cfg *PortfolioConfig) error {
 	return validatePortfolioConfig(*cfg)
 }
 
+func hasLeadingTab(s string) bool {
+	for _, r := range s {
+		switch r {
+		case ' ':
+			continue
+		case '\t':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 func stripYAMLComment(s string) string {
 	inQuote := false
 	for i, r := range s {
@@ -278,10 +300,15 @@ func applyShockKV(sh *StressShock, kv string) error {
 
 func validatePortfolioConfig(cfg PortfolioConfig) error {
 	allowedAxes := map[string]bool{"spy_pct": true, "qqq_pct": true, "underlying_pct": true, "iv_points": true}
+	seenScenarioIDs := map[string]bool{}
 	for i, sc := range cfg.Stress.Scenarios {
 		if sc.ID == "" {
 			return fmt.Errorf("stress scenario %d missing id", i)
 		}
+		if seenScenarioIDs[sc.ID] {
+			return fmt.Errorf("duplicate stress scenario id %q", sc.ID)
+		}
+		seenScenarioIDs[sc.ID] = true
 		if sc.Label == "" {
 			return fmt.Errorf("stress scenario %q missing label", sc.ID)
 		}

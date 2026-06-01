@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+import optix_engine.options.implied_vol as implied_vol_module
 from optix_engine.options.pricing import (
     call_price, put_price, delta, gamma, theta, vega, rho, all_greeks,
 )
@@ -95,6 +96,27 @@ class TestImpliedVolatility:
     def test_zero_price_returns_not_converged(self):
         iv, converged = implied_volatility(0, self.S, self.K, self.T, self.r, "call")
         assert not converged
+
+    def test_newton_nonfinite_sigma_is_not_reported_converged(self, monkeypatch):
+        market_price = 1e300
+
+        def fake_price(S, K, T, r, sigma, option_type, q=0.0):
+            if np.isinf(sigma):
+                return market_price
+            return 0.0
+
+        def fake_vega(S, K, T, r, sigma, q=0.0):
+            return 1e-14
+
+        monkeypatch.setattr(implied_vol_module, "price", fake_price)
+        monkeypatch.setattr(implied_vol_module, "bs_vega", fake_vega)
+
+        iv, converged = implied_vol_module.implied_volatility(
+            market_price, self.S, self.K, self.T, self.r, "call"
+        )
+
+        assert iv == 0.0
+        assert converged is False
 
 
 class TestMaxPain:

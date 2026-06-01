@@ -45,9 +45,11 @@ def implied_volatility(
             break
         diff = market_price - p
         if abs(diff) < tol:
+            if not (np.isfinite(sigma) and 0 < sigma < 5.0):
+                break
             return sigma, True
         sigma += diff / v
-        if sigma <= 0:
+        if not (np.isfinite(sigma) and 0 < sigma < 5.0):
             break  # fall through to Brent's
 
     # Brent's method fallback

@@ -45,6 +45,27 @@ func TestRunStressUsesDollarDeltaDollarGammaAndIVPointShocks(t *testing.T) {
 	}
 }
 
+func TestRunStressCarriesSkippedLegsFromGreeksSnapshot(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "AAPL", DollarDelta: 100}},
+		SkippedLegs: []SkippedLeg{{
+			Symbol: "RKLB", Expiration: "20260619", Right: "C", Strike: 16, Reason: "no_iv",
+		}},
+	}
+
+	out := RunStress(report, []StressScenario{{
+		ID: "spy-down-3", Label: "SPY -3%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.03}},
+	}})
+
+	if out.SkippedLegCount != 1 {
+		t.Fatalf("SkippedLegCount = %d, want 1", out.SkippedLegCount)
+	}
+	if len(out.SkippedLegs) != 1 || out.SkippedLegs[0].Symbol != "RKLB" || out.SkippedLegs[0].Reason != "no_iv" {
+		t.Fatalf("SkippedLegs = %+v, want RKLB no_iv", out.SkippedLegs)
+	}
+}
+
 func TestRenderStressIncludesWorstTail(t *testing.T) {
 	report := RunStress(&GreeksReport{
 		NetLiqUSD: 100_000,
@@ -75,5 +96,26 @@ func TestRenderStressDoesNotSayPositiveTailCostsNLV(t *testing.T) {
 	}
 	if !strings.Contains(out, "Least favorable") || !strings.Contains(out, "gains 0.5%") {
 		t.Fatalf("positive stress scenario missing least-favorable gain summary:\n%s", out)
+	}
+}
+
+func TestRenderStressWarnsWhenLegsWereSkipped(t *testing.T) {
+	report := RunStress(&GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "AAPL", DollarDelta: 100}},
+		SkippedLegs: []SkippedLeg{{
+			Symbol: "RKLB", Expiration: "20260619", Right: "C", Strike: 16, Reason: "no_iv",
+		}},
+	}, []StressScenario{{
+		ID: "spy-down-3", Label: "SPY -3%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.03}},
+	}})
+
+	var b strings.Builder
+	RenderStress(report, &b)
+	out := b.String()
+	if !strings.Contains(out, "1 leg(s) excluded") ||
+		!strings.Contains(out, "stress may understate risk") ||
+		!strings.Contains(out, "RKLB 20260619 C16") {
+		t.Fatalf("stress skipped-leg warning missing expected detail:\n%s", out)
 	}
 }

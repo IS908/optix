@@ -36,9 +36,11 @@ type StressScenarioResult struct {
 }
 
 type StressReport struct {
-	SnapshotAt time.Time              `json:"snapshot_at"`
-	NetLiqUSD  float64                `json:"net_liq_usd"`
-	Scenarios  []StressScenarioResult `json:"scenarios"`
+	SnapshotAt      time.Time              `json:"snapshot_at"`
+	NetLiqUSD       float64                `json:"net_liq_usd"`
+	Scenarios       []StressScenarioResult `json:"scenarios"`
+	SkippedLegCount int                    `json:"skipped_leg_count,omitempty"`
+	SkippedLegs     []SkippedLeg           `json:"skipped_legs,omitempty"`
 }
 
 func DefaultStressScenarios() []StressScenario {
@@ -60,7 +62,12 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 	if len(scenarios) == 0 {
 		scenarios = DefaultStressScenarios()
 	}
-	r := &StressReport{SnapshotAt: g.SnapshotAt, NetLiqUSD: g.NetLiqUSD}
+	r := &StressReport{
+		SnapshotAt:      g.SnapshotAt,
+		NetLiqUSD:       g.NetLiqUSD,
+		SkippedLegCount: len(g.SkippedLegs),
+		SkippedLegs:     append([]SkippedLeg(nil), g.SkippedLegs...),
+	}
 	for _, sc := range scenarios {
 		res := StressScenarioResult{ID: sc.ID, Label: sc.Label, Shocks: append([]StressShock(nil), sc.Shocks...)}
 		pricePct, ivPoints := stressAxes(sc.Shocks)
@@ -123,6 +130,12 @@ func RenderStress(r *StressReport, w io.Writer) {
 			fmt.Fprintf(w, "\nLeast favorable: %s gains %.1f%% of NLV\n", worst.Label, worst.PctNLV)
 		default:
 			fmt.Fprintf(w, "\nLeast favorable: %s is flat vs NLV\n", worst.Label)
+		}
+	}
+	if len(r.SkippedLegs) > 0 {
+		fmt.Fprintf(w, "\n⚠️  %d leg(s) excluded from stress; stress may understate risk:\n", len(r.SkippedLegs))
+		for _, s := range r.SkippedLegs {
+			fmt.Fprintf(w, "   %s %s %s%.0f (%s)\n", s.Symbol, s.Expiration, s.Right, s.Strike, s.Reason)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package portfolio
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -64,6 +65,82 @@ func TestRunStressScalesBroadIndexShockBySymbolBeta(t *testing.T) {
 	}
 	if got["KO"] != -5000 {
 		t.Fatalf("KO P&L = %v, want -5000 with beta 0.5", got["KO"])
+	}
+}
+
+func TestRunStressPrefersHistoricalBetaProvider(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "TSLA", DollarDelta: 1000}},
+	}
+	provider := StaticStressBetaProvider(map[string]StressBetaSource{
+		"TSLA": {Key: "TSLA", Beta: 2.0, Source: "historical_cache", Observations: 60},
+	})
+
+	out := RunStressWithBetaProvider(report, []StressScenario{{
+		ID: "spy-down-10", Label: "SPY -10%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.10}},
+	}}, provider)
+
+	got := pnlByKey(out.Scenarios[0].Positions)
+	if got["TSLA"] != -20000 {
+		t.Fatalf("TSLA P&L = %v, want -20000 with beta 2.0", got["TSLA"])
+	}
+	if len(out.BetaSources) != 1 || out.BetaSources[0].Source != "historical_cache" || out.BetaSources[0].Beta != 2.0 {
+		t.Fatalf("BetaSources = %+v, want historical beta 2.0", out.BetaSources)
+	}
+}
+
+func TestRunStressUsesNonPositiveHistoricalBetaProvider(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "HEDGE", DollarDelta: 1000}},
+	}
+	provider := StaticStressBetaProvider(map[string]StressBetaSource{
+		"HEDGE": {Key: "HEDGE", Beta: -0.5, Source: "historical_computed", Observations: 60},
+	})
+
+	out := RunStressWithBetaProvider(report, []StressScenario{{
+		ID: "spy-down-10", Label: "SPY -10%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.10}},
+	}}, provider)
+
+	got := pnlByKey(out.Scenarios[0].Positions)
+	if got["HEDGE"] != 5000 {
+		t.Fatalf("HEDGE P&L = %v, want +5000 with beta -0.5", got["HEDGE"])
+	}
+	if len(out.BetaSources) != 1 || out.BetaSources[0].Beta != -0.5 {
+		t.Fatalf("BetaSources = %+v, want historical beta -0.5", out.BetaSources)
+	}
+}
+
+func TestRunStressReportsStaticFallbackBetaSource(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "KO", DollarDelta: 1000}},
+	}
+
+	out := RunStress(report, []StressScenario{{
+		ID: "spy-down-10", Label: "SPY -10%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.10}},
+	}})
+
+	if len(out.BetaSources) != 1 || out.BetaSources[0].Source != "static_fallback" || out.BetaSources[0].Beta != 0.5 {
+		t.Fatalf("BetaSources = %+v, want static KO beta 0.5", out.BetaSources)
+	}
+}
+
+func TestRunStressFallbackBetaJSONOmitsFreshnessTimestamps(t *testing.T) {
+	out := RunStress(&GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "KO", DollarDelta: 1000}},
+	}, []StressScenario{{
+		ID: "spy-down-10", Label: "SPY -10%", Shocks: []StressShock{{Axis: "spy_pct", Magnitude: -0.10}},
+	}})
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(data), "as_of") || strings.Contains(string(data), "updated_at") {
+		t.Fatalf("fallback beta JSON should omit freshness timestamps: %s", data)
 	}
 }
 

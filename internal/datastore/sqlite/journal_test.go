@@ -117,3 +117,79 @@ func TestSyncStateRoundTrip(t *testing.T) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
+
+func TestSymbolBetaRoundTripAndFreshness(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	want := model.SymbolBeta{
+		Symbol: "AAPL", Beta: 1.23, Observations: 60,
+		AsOf: now.Add(-24 * time.Hour), UpdatedAt: now,
+	}
+
+	if err := s.UpsertSymbolBeta(ctx, want); err != nil {
+		t.Fatalf("UpsertSymbolBeta: %v", err)
+	}
+	got, ok, err := s.GetFreshSymbolBeta(ctx, "aapl", 7*24*time.Hour, now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("GetFreshSymbolBeta: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected fresh beta")
+	}
+	if got.Symbol != "AAPL" || got.Beta != want.Beta || got.Observations != want.Observations || !got.AsOf.Equal(want.AsOf) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	_, ok, err = s.GetFreshSymbolBeta(ctx, "AAPL", time.Hour, now.Add(2*time.Hour))
+	if err != nil {
+		t.Fatalf("GetFreshSymbolBeta stale: %v", err)
+	}
+	if ok {
+		t.Fatal("expected stale beta to miss")
+	}
+}
+
+func TestSymbolBetaFreshnessRequiresRecentAsOf(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	err := s.UpsertSymbolBeta(ctx, model.SymbolBeta{
+		Symbol: "AAPL", Beta: 1.23, Observations: 60,
+		AsOf: now.Add(-30 * 24 * time.Hour), UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSymbolBeta: %v", err)
+	}
+
+	_, ok, err := s.GetFreshSymbolBeta(ctx, "AAPL", 7*24*time.Hour, now)
+	if err != nil {
+		t.Fatalf("GetFreshSymbolBeta: %v", err)
+	}
+	if ok {
+		t.Fatal("expected stale as_of to miss")
+	}
+}
+
+func TestSymbolBetaFreshnessRejectsUnparseableTimestamps(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	if err := s.UpsertSymbolBeta(ctx, model.SymbolBeta{
+		Symbol: "AAPL", Beta: 1.23, Observations: 60,
+		AsOf: now.Add(-24 * time.Hour), UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertSymbolBeta: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE symbol_beta SET updated_at = 'not-a-timestamp' WHERE symbol = 'AAPL'`); err != nil {
+		t.Fatalf("corrupt timestamp: %v", err)
+	}
+
+	_, ok, err := s.GetFreshSymbolBeta(ctx, "AAPL", 7*24*time.Hour, now)
+	if err != nil {
+		t.Fatalf("GetFreshSymbolBeta: %v", err)
+	}
+	if ok {
+		t.Fatal("expected unparseable timestamp to miss")
+	}
+}

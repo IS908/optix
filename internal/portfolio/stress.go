@@ -39,8 +39,38 @@ type StressReport struct {
 	SnapshotAt      time.Time              `json:"snapshot_at"`
 	NetLiqUSD       float64                `json:"net_liq_usd"`
 	Scenarios       []StressScenarioResult `json:"scenarios"`
+	BetaSources     []StressBetaSource     `json:"beta_sources,omitempty"`
 	SkippedLegCount int                    `json:"skipped_leg_count,omitempty"`
 	SkippedLegs     []SkippedLeg           `json:"skipped_legs,omitempty"`
+}
+
+type StressBetaSource struct {
+	Key          string     `json:"key"`
+	Beta         float64    `json:"beta"`
+	Source       string     `json:"source"`
+	Observations int        `json:"observations,omitempty"`
+	AsOf         *time.Time `json:"as_of,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
+}
+
+type StressBetaProvider interface {
+	BetaForStress(key string) (StressBetaSource, bool)
+}
+
+type StaticStressBetaProvider map[string]StressBetaSource
+
+func (p StaticStressBetaProvider) BetaForStress(key string) (StressBetaSource, bool) {
+	b, ok := p[strings.ToUpper(key)]
+	if !ok {
+		b, ok = p[key]
+	}
+	if !ok {
+		return StressBetaSource{}, false
+	}
+	if b.Key == "" {
+		b.Key = strings.ToUpper(key)
+	}
+	return b, true
 }
 
 func DefaultStressScenarios() []StressScenario {
@@ -59,6 +89,10 @@ func DefaultStressScenarios() []StressScenario {
 // shock; Vega models explicit IV-point shocks. A later version can swap in full per-leg repricing
 // while preserving this report shape and CLI contract.
 func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
+	return RunStressWithBetaProvider(g, scenarios, nil)
+}
+
+func RunStressWithBetaProvider(g *GreeksReport, scenarios []StressScenario, betas StressBetaProvider) *StressReport {
 	if len(scenarios) == 0 {
 		scenarios = DefaultStressScenarios()
 	}
@@ -68,10 +102,11 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 		SkippedLegCount: len(g.SkippedLegs),
 		SkippedLegs:     append([]SkippedLeg(nil), g.SkippedLegs...),
 	}
+	betaSources := map[string]StressBetaSource{}
 	for _, sc := range scenarios {
 		res := StressScenarioResult{ID: sc.ID, Label: sc.Label, Shocks: append([]StressShock(nil), sc.Shocks...)}
 		for _, grp := range g.Groups {
-			pricePct, ivPoints := stressAxesForGroup(grp.Key, sc.Shocks)
+			pricePct, ivPoints := stressAxesForGroup(grp.Key, sc.Shocks, betas, betaSources)
 			pnl := grp.DollarDelta*(pricePct*100) + 0.5*grp.DollarGamma*math.Pow(pricePct*100, 2) + grp.Vega*ivPoints
 			pos := StressPositionPnL{Key: grp.Key, PnLUSD: pnl}
 			res.Positions = append(res.Positions, pos)
@@ -92,19 +127,27 @@ func RunStress(g *GreeksReport, scenarios []StressScenario) *StressReport {
 		r.Scenarios = append(r.Scenarios, res)
 	}
 	sort.Slice(r.Scenarios, func(i, j int) bool { return r.Scenarios[i].TotalPnLUSD < r.Scenarios[j].TotalPnLUSD })
+	for _, src := range betaSources {
+		r.BetaSources = append(r.BetaSources, src)
+	}
+	sort.Slice(r.BetaSources, func(i, j int) bool { return r.BetaSources[i].Key < r.BetaSources[j].Key })
 	return r
 }
 
-func stressAxesForGroup(key string, shocks []StressShock) (pricePct float64, ivPoints float64) {
+func stressAxesForGroup(key string, shocks []StressShock, provider StressBetaProvider, used map[string]StressBetaSource) (pricePct float64, ivPoints float64) {
 	for _, sh := range shocks {
 		switch sh.Axis {
 		case "underlying_pct":
 			pricePct += sh.Magnitude
 		case "spy_pct":
-			pricePct += sh.Magnitude * stressBeta(key)
+			src := stressBeta(key, provider)
+			used[src.Key] = src
+			pricePct += sh.Magnitude * src.Beta
 		case "qqq_pct":
 			if isQQQShockTarget(key) {
-				pricePct += sh.Magnitude * stressBeta(key)
+				src := stressBeta(key, provider)
+				used[src.Key] = src
+				pricePct += sh.Magnitude * src.Beta
 			}
 		case "iv_points":
 			ivPoints += sh.Magnitude
@@ -113,11 +156,20 @@ func stressAxesForGroup(key string, shocks []StressShock) (pricePct float64, ivP
 	return pricePct, ivPoints
 }
 
-func stressBeta(key string) float64 {
-	if beta, ok := defaultStressBetas[strings.ToUpper(key)]; ok {
-		return beta
+func stressBeta(key string, provider StressBetaProvider) StressBetaSource {
+	if provider != nil {
+		if b, ok := provider.BetaForStress(key); ok && !math.IsNaN(b.Beta) && !math.IsInf(b.Beta, 0) {
+			if b.Key == "" {
+				b.Key = strings.ToUpper(key)
+			}
+			return b
+		}
 	}
-	return 1
+	normalized := strings.ToUpper(key)
+	if beta, ok := defaultStressBetas[strings.ToUpper(key)]; ok {
+		return StressBetaSource{Key: normalized, Beta: beta, Source: "static_fallback"}
+	}
+	return StressBetaSource{Key: normalized, Beta: 1, Source: "static_fallback"}
 }
 
 func isQQQShockTarget(key string) bool {

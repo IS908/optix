@@ -105,7 +105,8 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 				return cliExit(fmt.Errorf("aggregate greeks: %w", err), exitGenericErr)
 			}
 
-			report := portfolio.RunStress(greeks, cfg.Stress.Scenarios)
+			betaProvider := buildStressBetaProvider(ctx, store, market, greeks.Groups, time.Now().UTC(), os.Stderr)
+			report := portfolio.RunStressWithBetaProvider(greeks, cfg.Stress.Scenarios, betaProvider)
 			portfolio.RenderStress(report, os.Stdout)
 
 			if jsonOut != "" {

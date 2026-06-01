@@ -14,6 +14,19 @@ above it.
 
 _No changes yet._
 
+## [0.7.13] - 2026-06-01
+
+Patch release for portfolio stress beta freshness.
+
+### Fixed
+
+- **`portfolio stress` now prefers historical per-symbol beta over static
+  fallback values (#86).** Stress runs compute beta from the latest aligned
+  daily returns versus SPY, cache the result in SQLite with observations and
+  freshness metadata, and include beta sources in JSON reports so broad-index
+  shocks show whether they used fresh cache, newly computed history, or static
+  fallback values.
+
 ## [0.7.12] - 2026-06-01
 
 Patch release for IBKR quote day-change correctness.

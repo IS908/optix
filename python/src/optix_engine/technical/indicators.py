@@ -1,6 +1,5 @@
 """Technical indicators: MA, RSI, MACD, Bollinger Bands."""
 
-import numpy as np
 import pandas as pd
 
 

@@ -3,8 +3,6 @@
 import numpy as np
 import pandas as pd
 
-from optix_engine.technical.indicators import sma
-
 
 def find_pivot_points(
     df: pd.DataFrame,
@@ -81,12 +79,12 @@ def classify_levels(
 
     Returns: (support_levels, resistance_levels), each sorted by distance to current price.
     """
-    support = [l for l in levels if l["price"] < current_price]
-    resistance = [l for l in levels if l["price"] > current_price]
+    support = [level for level in levels if level["price"] < current_price]
+    resistance = [level for level in levels if level["price"] > current_price]
 
     # Sort: nearest first
-    support.sort(key=lambda l: current_price - l["price"])
-    resistance.sort(key=lambda l: l["price"] - current_price)
+    support.sort(key=lambda level: current_price - level["price"])
+    resistance.sort(key=lambda level: level["price"] - current_price)
 
     return support, resistance
 

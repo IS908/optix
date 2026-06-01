@@ -24,7 +24,7 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 Pick the latest release at <https://github.com/IS908/optix/releases> and download the tarball matching your OS/arch. The tarball contains a prebuilt binary, the Python engine source, the skill descriptor, and an `install.sh`.
 
 ```bash
-VERSION=v0.1.0
+VERSION=v0.7.23
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')        # darwin | linux
 ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 
@@ -61,14 +61,14 @@ To uninstall later (you don't need to keep the original tarball):
 ### Build from source (developers)
 
 ```bash
-# Prerequisites: Go 1.22+, Python 3.11+ (3.14 recommended), IBKR TWS or Gateway
+# Prerequisites: Go 1.26+, Python 3.11+ (3.14 recommended), IBKR Gateway or TWS
 
 git clone https://github.com/IS908/optix.git
 cd optix
 
 # Python dependencies
 python3 -m venv python/.venv
-python/.venv/bin/pip install -e python/
+python/.venv/bin/pip install -e 'python/[dev]'
 
 # Build Go binaries
 make build
@@ -290,7 +290,7 @@ docs: add contributing guide
 ### Code Style
 
 - **Go**: Standard `gofmt` formatting
-- **Python**: Format with `ruff` (`python/.venv/bin/ruff check python/`)
+- **Python**: Check with `ruff` (`make lint-python` after installing `python/[dev]`)
 - **Protobuf**: Follow [Buf style guide](https://buf.build/docs/best-practices/style-guide/)
 
 ## Releases

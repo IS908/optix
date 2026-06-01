@@ -10,7 +10,7 @@ from pathlib import Path
 
 import grpc
 
-import optix_engine.gen  # fixes sys.path for proto imports
+import optix_engine.gen  # noqa: F401  # fixes sys.path for proto imports
 from optix.analysis.v1 import analysis_pb2_grpc
 
 from optix_engine.grpc_server.analysis_servicer import AnalysisServicer

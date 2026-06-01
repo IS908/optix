@@ -18,7 +18,7 @@ Optix is a **US stock & options strategy analysis tool** that helps identify sel
 ```bash
 # 1. Install Python dependencies (REQUIRED before first run)
 python3 -m venv python/.venv  # requires Python 3.11+
-python/.venv/bin/pip install -e python/
+python/.venv/bin/pip install -e 'python/[dev]'
 
 # 2. Build Go binaries
 make build

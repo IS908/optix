@@ -1,6 +1,6 @@
 """AnalysisService gRPC servicer implementation."""
 
-import optix_engine.gen  # fixes sys.path for proto imports
+import optix_engine.gen  # noqa: F401  # fixes sys.path for proto imports
 
 from optix.analysis.v1 import analysis_pb2, analysis_pb2_grpc, types_pb2
 from optix.marketdata.v1 import types_pb2 as md_types
@@ -8,7 +8,7 @@ from optix.marketdata.v1 import types_pb2 as md_types
 from optix_engine.options import pricing as bs
 from optix_engine.options.implied_vol import implied_volatility
 from optix_engine.options.max_pain import calculate_max_pain
-from optix_engine.options.open_interest import find_oi_walls, put_call_ratio, detect_unusual_activity
+from optix_engine.options.open_interest import find_oi_walls, put_call_ratio
 from optix_engine.technical.indicators import compute_all_indicators
 from optix_engine.technical.support_resistance import find_all_levels
 from optix_engine.strategy.recommender import AnalysisContext, recommend_strategies, StrategyRecommendation
@@ -521,12 +521,12 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
         opts = request.options_analysis
 
         support = [
-            {"price": l.price, "source": l.source, "strength": l.strength}
-            for l in tech.support_levels
+            {"price": level.price, "source": level.source, "strength": level.strength}
+            for level in tech.support_levels
         ]
         resistance = [
-            {"price": l.price, "source": l.source, "strength": l.strength}
-            for l in tech.resistance_levels
+            {"price": level.price, "source": level.source, "strength": level.strength}
+            for level in tech.resistance_levels
         ]
 
         ctx = AnalysisContext(
@@ -572,12 +572,20 @@ class AnalysisServicer(analysis_pb2_grpc.AnalysisServiceServicer):
 
         return analysis_pb2.SupportResistanceResponse(
             support_levels=[
-                types_pb2.PriceLevel(price=l["price"], source=l["source"], strength=l["strength"])
-                for l in support[:10]
+                types_pb2.PriceLevel(
+                    price=level["price"],
+                    source=level["source"],
+                    strength=level["strength"],
+                )
+                for level in support[:10]
             ],
             resistance_levels=[
-                types_pb2.PriceLevel(price=l["price"], source=l["source"], strength=l["strength"])
-                for l in resistance[:10]
+                types_pb2.PriceLevel(
+                    price=level["price"],
+                    source=level["source"],
+                    strength=level["strength"],
+                )
+                for level in resistance[:10]
             ],
         )
 

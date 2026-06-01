@@ -17,7 +17,7 @@ func (p GreeksPricer) PriceOption(ctx context.Context, spot, strike, tYears, r, 
 	if err != nil {
 		return model.Greeks{}, err
 	}
-	return model.Greeks{Delta: res.Delta, Gamma: res.Gamma, Theta: res.Theta, Vega: res.Vega, Rho: res.Rho}, nil
+	return model.Greeks{Price: res.Price, Delta: res.Delta, Gamma: res.Gamma, Theta: res.Theta, Vega: res.Vega, Rho: res.Rho}, nil
 }
 
 func (p GreeksPricer) ImpliedVol(ctx context.Context, mark, spot, strike, tYears, r float64, ot model.OptionType) (float64, bool, error) {

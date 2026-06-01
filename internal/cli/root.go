@@ -14,12 +14,12 @@ import (
 )
 
 var (
-	cfgFile    string
-	dbPath     string
-	ibHost     string
-	ibPortRaw  string
-	ibPort     int
-	pythonBin  string
+	cfgFile   string
+	dbPath    string
+	ibHost    string
+	ibPortRaw string
+	ibPort    int
+	pythonBin string
 )
 
 // resolveIBPort maps port aliases to numeric values.
@@ -65,14 +65,26 @@ func initSignalHandler() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-ch
+		sig := <-ch
 		runCleanup()
-		os.Exit(0)
+		os.Exit(signalExitCode(sig))
 	}()
 }
 
+func signalExitCode(sig os.Signal) int {
+	switch sig {
+	case syscall.SIGINT:
+		return 130
+	case syscall.SIGTERM:
+		return 143
+	default:
+		return 1
+	}
+}
+
 // version is set by main() via SetVersion. Build-time via:
-//   go build -ldflags="-X main.version=v1.2.3"
+//
+//	go build -ldflags="-X main.version=v1.2.3"
 var version = "dev"
 
 // SetVersion lets cmd/optix-cli/main.go pass through its build-time version

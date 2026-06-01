@@ -177,6 +177,38 @@ func TestRunStressWithRepricingFallsBackToTaylorWhenRepriceFails(t *testing.T) {
 	}
 }
 
+func TestRunStressWithRepricingCircuitBreaksAfterFirstRepriceFailure(t *testing.T) {
+	report := &GreeksReport{
+		NetLiqUSD: 100_000,
+		Groups:    []GreeksGroup{{Key: "AAPL"}},
+		StressOptionLegs: []StressOptionLeg{
+			{
+				Key: "AAPL", ShockKey: "AAPL", Spot: 100, Strike: 100, TYears: 0.25,
+				RiskFreeRate: 0.04, IV: 0.20, BasePrice: 10, SignedQty: 1, Multiplier: 100,
+				OptionType: model.OptionTypeCall, FallbackDollarDelta: 100,
+			},
+			{
+				Key: "AAPL", ShockKey: "AAPL", Spot: 100, Strike: 100, TYears: 0.25,
+				RiskFreeRate: 0.04, IV: 0.20, BasePrice: 10, SignedQty: 1, Multiplier: 100,
+				OptionType: model.OptionTypeCall, FallbackDollarDelta: 200,
+			},
+		},
+	}
+	pricer := &fakeStressRepricePricer{err: errors.New("repricer down")}
+
+	out := RunStressWithRepricing(context.Background(), report, []StressScenario{{
+		ID: "underlying-up", Label: "Underlying up", Shocks: []StressShock{{Axis: "underlying_pct", Magnitude: 0.01}},
+	}}, nil, pricer)
+
+	if len(pricer.calls) != 1 {
+		t.Fatalf("PriceOption calls = %d, want 1 before Taylor circuit breaker", len(pricer.calls))
+	}
+	got := pnlByKey(out.Scenarios[0].Positions)
+	if got["AAPL"] != 300 {
+		t.Fatalf("AAPL P&L = %v, want both legs via Taylor fallback", got["AAPL"])
+	}
+}
+
 func TestRunStressReportsStaticFallbackBetaSource(t *testing.T) {
 	report := &GreeksReport{
 		NetLiqUSD: 100_000,

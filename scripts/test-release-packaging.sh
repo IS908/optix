@@ -30,6 +30,7 @@ fi
 if [[ "${1:-}" == "-c" ]]; then
     case "${2:-}" in
         *sys.version_info*) exit 0 ;;
+        *optix_engine*) exit 0 ;;
         *) exit 1 ;;
     esac
 fi
@@ -43,6 +44,68 @@ exit 0
 PIP
     chmod +x "$target/bin/pip"
     ln -sf "$(command -v python3.14)" "$target/bin/python"
+    exit 0
+fi
+
+exit 0
+PY
+    chmod +x "$fakebin/python3.14"
+}
+
+write_fake_host_python_with_failing_pip() {
+    local fakebin="$1"
+    cat >"$fakebin/python3.14" <<'PY'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+    echo "Python 3.14.0"
+    exit 0
+fi
+
+if [[ "${1:-}" == "-c" ]]; then
+    case "${2:-}" in
+        *sys.version_info*) exit 0 ;;
+        *numpy*) exit 0 ;;
+        *optix_engine*) exit 1 ;;
+        *) exit 0 ;;
+    esac
+fi
+
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
+    exit 1
+fi
+
+exit 0
+PY
+    chmod +x "$fakebin/python3.14"
+}
+
+write_fake_host_python_with_working_pip() {
+    local fakebin="$1"
+    cat >"$fakebin/python3.14" <<'PY'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+    echo "Python 3.14.0"
+    exit 0
+fi
+
+if [[ "${1:-}" == "-c" ]]; then
+    case "${2:-}" in
+        *sys.version_info*) exit 0 ;;
+        *numpy*) exit 0 ;;
+        *optix_engine*) test -f "${FAKE_OPTIX_ENGINE_MARKER:?}" ;;
+        *) exit 0 ;;
+    esac
+fi
+
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
+    printf '%s\n' "$*" >"${FAKE_OPTIX_ENGINE_PIP_ARGS:?}"
+    case "$*" in
+        *" -e "*) touch "${FAKE_OPTIX_ENGINE_MARKER:?}" ;;
+    esac
     exit 0
 fi
 
@@ -92,6 +155,63 @@ test_release_installer_copies_configs() {
         fail "installer did not copy portfolio.yaml into .runtime/configs"
     test -f "$home/.agents/skills/optix/.runtime/configs/sectors.json" ||
         fail "installer did not copy sectors.json into .runtime/configs"
+}
+
+test_release_installer_fails_when_optix_engine_install_fails() {
+    local bundle="$TMPDIR/bad-python-bundle"
+    local fakebin="$TMPDIR/bad-python-fakebin"
+    local home="$TMPDIR/bad-python-home"
+
+    mkdir -p "$bundle/bin" "$bundle/python/src" "$bundle/skills/commands/optix" "$bundle/configs" "$fakebin" "$home"
+    cp "$ROOT/skills/commands/optix/install.sh" "$bundle/install.sh"
+    cp "$ROOT/skills/commands/optix/SKILL.md" "$bundle/SKILL.md"
+    cp "$ROOT/skills/commands/optix/skill-wrapper.sh" "$bundle/skill-wrapper.sh"
+    cp "$ROOT/skills/commands/optix/optix.sh" "$bundle/skills/commands/optix/optix.sh"
+    cp "$ROOT/python/pyproject.toml" "$bundle/python/pyproject.toml"
+    cp "$ROOT/configs/portfolio.yaml" "$bundle/configs/portfolio.yaml"
+    cp "$ROOT/configs/sectors.json" "$bundle/configs/sectors.json"
+    cat >"$bundle/bin/optix" <<'OPTIX'
+#!/usr/bin/env bash
+exit 0
+OPTIX
+    chmod +x "$bundle/install.sh" "$bundle/skill-wrapper.sh" "$bundle/skills/commands/optix/optix.sh" "$bundle/bin/optix"
+
+    write_fake_host_python_with_failing_pip "$fakebin"
+
+    if HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null 2>&1; then
+        fail "installer succeeded even though optix_engine could not be installed"
+    fi
+}
+
+test_release_installer_accepts_host_python_when_engine_imports() {
+    local bundle="$TMPDIR/good-host-python-bundle"
+    local fakebin="$TMPDIR/good-host-python-fakebin"
+    local home="$TMPDIR/good-host-python-home"
+    local marker="$TMPDIR/good-host-python-installed"
+    local pip_args="$TMPDIR/good-host-python-pip-args"
+
+    mkdir -p "$bundle/bin" "$bundle/python/src" "$bundle/skills/commands/optix" "$bundle/configs" "$fakebin" "$home"
+    cp "$ROOT/skills/commands/optix/install.sh" "$bundle/install.sh"
+    cp "$ROOT/skills/commands/optix/SKILL.md" "$bundle/SKILL.md"
+    cp "$ROOT/skills/commands/optix/skill-wrapper.sh" "$bundle/skill-wrapper.sh"
+    cp "$ROOT/skills/commands/optix/optix.sh" "$bundle/skills/commands/optix/optix.sh"
+    cp "$ROOT/python/pyproject.toml" "$bundle/python/pyproject.toml"
+    cp "$ROOT/configs/portfolio.yaml" "$bundle/configs/portfolio.yaml"
+    cp "$ROOT/configs/sectors.json" "$bundle/configs/sectors.json"
+    cat >"$bundle/bin/optix" <<'OPTIX'
+#!/usr/bin/env bash
+exit 0
+OPTIX
+    chmod +x "$bundle/install.sh" "$bundle/skill-wrapper.sh" "$bundle/skills/commands/optix/optix.sh" "$bundle/bin/optix"
+
+    write_fake_host_python_with_working_pip "$fakebin"
+
+    HOME="$home" PATH="$fakebin:$PATH" FAKE_OPTIX_ENGINE_MARKER="$marker" FAKE_OPTIX_ENGINE_PIP_ARGS="$pip_args" \
+        "$bundle/install.sh" --agent generic >/dev/null
+    test -L "$home/.agents/skills/optix/.runtime/python/.venv/bin/python" ||
+        fail "host-Python path did not create thin shim python symlink"
+    test -f "$marker" || fail "host-Python path did not install optix_engine"
+    grep -q -- "-e" "$pip_args" || fail "host-Python path did not invoke editable optix_engine install"
 }
 
 test_skill_wrapper_adds_analysis_addr_for_python_commands() {
@@ -146,6 +266,8 @@ NC
 
 test_build_release_includes_configs
 test_release_installer_copies_configs
+test_release_installer_fails_when_optix_engine_install_fails
+test_release_installer_accepts_host_python_when_engine_imports
 test_skill_wrapper_adds_analysis_addr_for_python_commands
 
 echo "release packaging smoke tests passed"

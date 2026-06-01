@@ -201,9 +201,9 @@ func TestAggregate_OptionLegFromChainIV(t *testing.T) {
 	if math.Abs(g.DollarGamma-6.48) > 1e-6 {
 		t.Errorf("DollarGamma = %v, want 6.48", g.DollarGamma)
 	}
-	// Vega display = (0.2*2*100) / 100 = 0.4
-	if math.Abs(g.Vega-0.4) > 1e-6 {
-		t.Errorf("Vega = %v, want 0.4", g.Vega)
+	// Python vega is already per +1 IV point, so position Vega scales by contracts * multiplier.
+	if math.Abs(g.Vega-40) > 1e-6 {
+		t.Errorf("Vega = %v, want 40", g.Vega)
 	}
 	// Theta display = -0.05*2*100 = -10
 	if math.Abs(g.Theta-(-10)) > 1e-6 {

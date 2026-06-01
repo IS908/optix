@@ -61,3 +61,42 @@ func TestPickRequestedExpiryEmptyReturnsNearest(t *testing.T) {
 		t.Errorf("got expiry %s, want 20260520 (first)", exp.Expiration)
 	}
 }
+
+func TestSpotForOIWindowUsesQuoteAsAuthoritative(t *testing.T) {
+	chain := &model.OptionChain{}
+
+	spot, authoritative := spotForOIWindow(chain, &model.StockQuote{Last: 123.45})
+
+	if spot != 123.45 {
+		t.Fatalf("spot = %v, want 123.45", spot)
+	}
+	if !authoritative {
+		t.Fatal("quote-derived spot should be authoritative")
+	}
+}
+
+func TestSpotForOIWindowMedianFallbackIsNotAuthoritative(t *testing.T) {
+	chain := &model.OptionChain{
+		Expirations: []model.OptionChainExpiry{
+			{
+				Calls: []model.OptionQuote{
+					{Strike: 90},
+					{Strike: 100},
+					{Strike: 110},
+				},
+			},
+		},
+	}
+
+	spot, authoritative := spotForOIWindow(chain, nil)
+
+	if spot != 100 {
+		t.Fatalf("spot = %v, want median strike 100", spot)
+	}
+	if authoritative {
+		t.Fatal("median-strike fallback must not be treated as authoritative spot")
+	}
+	if chain.UnderlyingPrice != 0 {
+		t.Fatalf("UnderlyingPrice = %v, want unset", chain.UnderlyingPrice)
+	}
+}

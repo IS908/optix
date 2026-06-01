@@ -14,6 +14,17 @@ above it.
 
 _No changes yet._
 
+## [0.7.5] - 2026-06-01
+
+Patch release for IBKR OI-chain spot correctness.
+
+### Fixed
+
+- **IBKR OI-chain median-strike fallback no longer fabricates authoritative
+  underlying prices (#76).** When spot quote lookup fails, the median strike is
+  used only to bound the OI fetch window; `UnderlyingPrice` remains unset so
+  downstream backfill/caching paths do not persist a plausible but fake spot.
+
 ## [0.7.4] - 2026-06-01
 
 Patch release for implied-volatility solver correctness.
@@ -794,7 +805,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/IS908/optix/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/IS908/optix/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/IS908/optix/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/IS908/optix/compare/v0.7.1...v0.7.2

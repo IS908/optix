@@ -158,6 +158,7 @@ optix/
 | `./bin/optix watch list` | List watchlist symbols |
 | `./bin/optix watch add <SYMBOL>` | Add symbol to watchlist |
 | `./bin/optix watch remove <SYMBOL>` | Remove symbol from watchlist |
+| `./bin/optix pulse [--view premarket\|intraday\|postclose]` | Multi-asset market snapshot (indices/futures/yields/vol/FX, no IBKR required) |
 | `./bin/optix server` | Start web UI server |
 
 ### Web UI

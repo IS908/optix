@@ -26,6 +26,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 交易记录、近期成交 / Recent executions, trade history (e.g., "最近的交易", "近 7 天成交记录", "show recent trades", "trade history")
 - 交易日记、复盘、长期成交记录 / Trade journal, retrospective, long-term execution history (e.g., "复盘最近一周的交易", "我这个月的胜率", "show my journal", "trade retrospective")
 - Max Pain、指定到期日 / Max Pain for a specific expiration (e.g., "GOOGL 5/22 的 max pain 是多少?", "max pain for AAPL this Friday", "本周五的 max pain", "用 yfinance 算 max pain")
+- 市场快照、盘前看盘、隔夜行情、多资产总览 / Market pulse, premarket overview, multi-asset snapshot (e.g., "现在大盘怎么样?", "盘前看盘", "隔夜期货", "market pulse", "premarket snapshot", "overnight futures")
 
 ## Commands
 

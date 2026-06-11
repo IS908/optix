@@ -198,7 +198,7 @@ func renderPulseText(snap *marketdata.PulseSnapshot, inferred bool) {
 	// proxy note: one line per pct-only asset (Price unavailable, ChangePct only).
 	for _, a := range snap.Assets {
 		if a.PctOnly {
-			fmt.Printf("note: %s = %s (via proxy, approx), 涨跌幅代理, 无点位\n", a.Ref.ID, a.Label)
+			fmt.Printf("note: %s = %s, 涨跌幅代理, 无点位\n", a.Ref.ID, a.Label)
 		}
 	}
 	if len(snap.Warnings) > 0 {

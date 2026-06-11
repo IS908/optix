@@ -20,7 +20,7 @@ const (
 	ClassFuture AssetClass = "future" // =F 族（ES/NQ/CL/GC/2YY…）— 将来切 IBKR CME 的类
 	ClassStock  AssetClass = "stock"  // 个股/ADR/ETF 代理
 	ClassFX     AssetClass = "fx"
-	ClassYield  AssetClass = "yield" // 收益率指数（^TNX 等, 值÷10）
+	ClassYield  AssetClass = "yield" // 收益率指数（^TNX 等，Yahoo 直接报百分数，无缩放）
 	ClassVol    AssetClass = "vol"   // ^VIX9D/^VIX3M/^OVX
 )
 

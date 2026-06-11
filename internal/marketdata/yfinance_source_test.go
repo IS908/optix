@@ -5,21 +5,16 @@ import (
 	"testing"
 )
 
-// TODO(M1-Task6): enable when viewCompositions lands (same PR).
-// viewCompositions is defined in pulse.go (Commit 4); this test pins mapping
-// completeness — every business ID used by a view composition table must have
-// a Yahoo mapping. Uncomment verbatim once pulse.go exists.
-//
-// // 每个组合表用到的业务 ID 必须有 Yahoo 映射 —— 钉死映射完整性。
-// func TestYahooMappingCoversAllCompositions(t *testing.T) {
-// 	for view, refs := range viewCompositions {
-// 		for _, ref := range refs {
-// 			if _, ok := yahooAssets[ref.ID]; !ok {
-// 				t.Errorf("view %s: asset %q has no yahoo mapping", view, ref.ID)
-// 			}
-// 		}
-// 	}
-// }
+// 每个组合表用到的业务 ID 必须有 Yahoo 映射 —— 钉死映射完整性。
+func TestYahooMappingCoversAllCompositions(t *testing.T) {
+	for view, refs := range viewCompositions {
+		for _, ref := range refs {
+			if _, ok := yahooAssets[ref.ID]; !ok {
+				t.Errorf("view %s: asset %q has no yahoo mapping", view, ref.ID)
+			}
+		}
+	}
+}
 
 func TestParseBatchQuotes_MixedSuccessAndMissing(t *testing.T) {
 	// US10Y(^TNX) 在 payload 中缺席（取数失败），SPX 正常，US5Y 走 ÷10 scale。

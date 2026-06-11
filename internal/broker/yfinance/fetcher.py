@@ -192,6 +192,58 @@ def fetch_option_chain(symbol: str, expiration: str = "") -> dict:
     return {"underlying": symbol, "expirations": expirations_out}
 
 
+def fetch_batch_quotes(symbols: list) -> dict:
+    """One process, N symbols. Failures are ABSENT from the result (not errors),
+    matching the Go side's missing-not-error contract."""
+    import yfinance as yf
+    out = {}
+    for sym in symbols:
+        try:
+            fi = yf.Ticker(sym).fast_info
+            price = _safe_float(getattr(fi, "last_price", None))
+            prev = _safe_float(getattr(fi, "previous_close", None))
+            if price <= 0:
+                continue
+            change = price - prev if prev > 0 else 0.0
+            change_pct = (change / prev * 100.0) if prev > 0 else 0.0
+            out[sym] = {"price": price, "change": change, "change_pct": change_pct}
+        except Exception:
+            continue
+    return out
+
+
+def fetch_batch_bars(symbols: list, interval: str, period: str) -> dict:
+    """Multi-symbol intraday bars via one yf.download call.
+    Returns {sym: [{ts, open, high, low, close, volume}, ...]}; failed symbols absent."""
+    import yfinance as yf
+    df = yf.download(
+        " ".join(symbols), interval=interval, period=period,
+        group_by="ticker", progress=False, prepost=True, threads=True,
+    )
+    out = {}
+    for sym in symbols:
+        try:
+            sub = df[sym] if len(symbols) > 1 else df
+            rows = []
+            for ts, r in sub.iterrows():
+                close = _safe_float(r.get("Close"))
+                if close <= 0:
+                    continue
+                rows.append({
+                    "ts": ts.isoformat(),
+                    "open": _safe_float(r.get("Open")),
+                    "high": _safe_float(r.get("High")),
+                    "low": _safe_float(r.get("Low")),
+                    "close": close,
+                    "volume": _safe_int(r.get("Volume")),
+                })
+            if rows:
+                out[sym] = rows
+        except Exception:
+            continue
+    return out
+
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: fetcher.py <quote|bars|option_chain> <SYMBOL> [args...]", file=sys.stderr)
@@ -212,6 +264,13 @@ def main():
         elif command == "option_chain":
             expiration = sys.argv[3] if len(sys.argv) > 3 else ""
             result = fetch_option_chain(symbol, expiration)
+        elif command == "batch_quotes":
+            # argv[2] = comma-joined Yahoo symbols (upper-cased by the shared path)
+            result = fetch_batch_quotes([s for s in symbol.split(",") if s])
+        elif command == "batch_bars":
+            interval = sys.argv[3] if len(sys.argv) > 3 else "5m"
+            period = sys.argv[4] if len(sys.argv) > 4 else "1d"
+            result = fetch_batch_bars([s for s in symbol.split(",") if s], interval, period)
         else:
             print(f"Unknown command: {command}", file=sys.stderr)
             sys.exit(1)

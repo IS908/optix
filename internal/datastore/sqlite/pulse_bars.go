@@ -8,6 +8,10 @@ import (
 	"github.com/IS908/optix/pkg/model"
 )
 
+// PulseBarRetention 是 market_pulse_bars 的滚动保留窗口（2 天）：
+// sparkline 只需要当前 + 前一交易日。
+const PulseBarRetention = 48 * time.Hour
+
 // UpsertPulseBars 幂等写入 sparkline bar（INSERT OR REPLACE on (asset_id, ts)）。
 func (s *Store) UpsertPulseBars(ctx context.Context, assetID string, bars []model.OHLCV) error {
 	if len(bars) == 0 {

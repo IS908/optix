@@ -518,9 +518,11 @@ func (s *Store) PruneStaleData(ctx context.Context) (int64, error) {
 
 	// Market Intel pulse bars: 2-day rolling window (sparklines only need
 	// the current + previous session).
-	if n, err := s.PrunePulseBars(ctx, 48*time.Hour); err == nil {
-		totalDeleted += n
+	n, err := s.PrunePulseBars(ctx, PulseBarRetention)
+	if err != nil {
+		return totalDeleted, fmt.Errorf("prune pulse bars: %w", err)
 	}
+	totalDeleted += n
 
 	return totalDeleted, nil
 }

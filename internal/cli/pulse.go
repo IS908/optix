@@ -99,12 +99,23 @@ listed in missing[] without failing the whole snapshot.`,
 				return fmt.Errorf("invalid --view %q: use premarket|intraday|postclose|event|shock", viewFlag)
 			}
 
+			// 子进程取数（yfinance）整体受超时约束，避免 hang 住命令；
+			// 2 分钟与 dashboard 的批量分析超时（120s）对齐。
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
 			store, err := sqlite.New(dbPath)
 			if err != nil {
 				return cliExit(fmt.Errorf("open database: %w", err), exitSQLiteErr)
 			}
 			RegisterCleanup(store)
 			defer store.Close()
+
+			// 机会式清理：独立运行的 optix pulse 不经过 server 调度器，
+			// 在这里 best-effort 强制 2 天滚动窗口；失败仅告警，不影响命令。
+			if _, err := store.PrunePulseBars(ctx, sqlite.PulseBarRetention); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: prune pulse bars: %v\n", err)
+			}
 
 			router := marketdata.NewRouter()
 			yf := marketdata.NewYFinanceSource(pythonBin)
@@ -116,7 +127,7 @@ listed in missing[] without failing the whole snapshot.`,
 			}
 			svc := marketdata.NewPulseService(router, store)
 
-			snap, err := svc.Snapshot(context.Background(), view, withSpark)
+			snap, err := svc.Snapshot(ctx, view, withSpark)
 			if err != nil {
 				return cliExit(fmt.Errorf("pulse snapshot: %w", err), exitGenericErr)
 			}

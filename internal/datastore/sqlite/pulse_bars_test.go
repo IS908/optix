@@ -48,6 +48,34 @@ func TestPulseBarsUpsertAndIncrementalRead(t *testing.T) {
 	}
 }
 
+// PruneStaleData 必须把 market_pulse_bars 纳入清理（PulseBarRetention 窗口），
+// 且删除数计入返回值 —— 钉死 PruneStaleData→PrunePulseBars 接线。
+func TestPruneStaleDataCoversPulseBars(t *testing.T) {
+	s := pulseStore(t)
+	ctx := context.Background()
+	old := time.Now().UTC().Add(-PulseBarRetention - 24*time.Hour)
+	fresh := time.Now().UTC().Add(-1 * time.Hour)
+	if err := s.UpsertPulseBars(ctx, "ES", []model.OHLCV{
+		{Timestamp: old, Close: 1}, {Timestamp: fresh, Close: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.PruneStaleData(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 1 {
+		t.Fatalf("deleted count = %d, want >= 1 (must include pruned pulse bar)", n)
+	}
+	got, err := s.GetPulseBars(ctx, "ES", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Close != 2 {
+		t.Fatalf("got=%+v, want only the fresh bar (close=2)", got)
+	}
+}
+
 func TestPulseBarsPruneKeeps2Days(t *testing.T) {
 	s := pulseStore(t)
 	ctx := context.Background()

@@ -2,6 +2,7 @@ package marketdata
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -12,6 +13,19 @@ func TestYahooMappingCoversAllCompositions(t *testing.T) {
 			if _, ok := yahooAssets[ref.ID]; !ok {
 				t.Errorf("view %s: asset %q has no yahoo mapping", view, ref.ID)
 			}
+		}
+	}
+}
+
+// fetcher.py main() 对 argv[2] 做 `.upper()` 再拆分，而 Go 解析端按原样
+// `ya.symbol` 取回包键 —— 整条链路成立的前提是映射里的 Yahoo 符号本身
+// 全部大写。钉死该大小写稳定性不变量，防止新增小写符号悄悄破坏匹配。
+func TestYahooSymbolsAreUpperCaseStable(t *testing.T) {
+	for id, ya := range yahooAssets {
+		if strings.ToUpper(ya.symbol) != ya.symbol {
+			t.Errorf("asset %q: yahoo symbol %q is not upper-case stable; "+
+				"fetcher.py upper-cases argv and responses are keyed by the exact symbol",
+				id, ya.symbol)
 		}
 	}
 }

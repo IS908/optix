@@ -390,7 +390,7 @@ func RunFetcher(ctx context.Context, pythonBin string, args ...string) ([]byte, 
 	}
 	cmdArgs := append([]string{fetcher}, args...)
 	cmd := exec.CommandContext(ctx, pythonBin, cmdArgs...)
-	// WaitDelay closes the stdout pipe 5s after ctx expires, so an orphaned
+	// WaitDelay closes the stdout/stderr pipes 5s after ctx expires, so an orphaned
 	// grandchild (e.g. fetcher.py's _ensure_yfinance pip install) cannot hold
 	// the write-end open and cause cmd.Output() to block indefinitely.
 	cmd.WaitDelay = 5 * time.Second

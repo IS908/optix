@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"github.com/IS908/optix/pkg/model"
 )
 
 type View string
@@ -76,6 +77,18 @@ type PulseSnapshot struct {
 	Warnings   []string
 }
 
+// batchBarsSource is the optional bulk-bars capability. PulseService prefers
+// it (one subprocess per source for all stale assets); sources without it
+// fall back to per-asset Bars.
+type batchBarsSource interface {
+	BatchBars(ctx context.Context, refs []AssetRef, interval string, lookback time.Duration) (map[string][]model.OHLCV, error)
+}
+
+// sparkStaleAfter: yahoo 5m bars run ~15min delayed, so a just-refilled
+// asset's newest bar is already 15-25min old — a threshold below the feed
+// delay would refetch on every cache miss. 30min ≈ delay + one TTL window.
+const sparkStaleAfter = 30 * time.Minute
+
 type PulseService struct {
 	router *Router
 	store  *sqlite.Store // nil 容忍（测试/无库场景跳过 sparkline）
@@ -101,14 +114,16 @@ func (s *PulseService) Snapshot(ctx context.Context, view View, withSpark bool) 
 		return cached, nil
 	}
 	v, err, _ := s.cache.sf.Do(key, func() (any, error) {
-		return s.build(ctx, view, refs, withSpark), nil
+		// set 在闭包内：恰好一个 goroutine 构建并写缓存，等待者只取结果
+		//（M2 把 PulseService 嵌入常驻 web server，避免 stale-over-fresh 竞态）。
+		snap := s.build(ctx, view, refs, withSpark)
+		s.cache.set(key, snap)
+		return snap, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	snap := v.(*PulseSnapshot)
-	s.cache.set(key, snap)
-	return snap, nil
+	return v.(*PulseSnapshot), nil
 }
 
 func (s *PulseService) build(ctx context.Context, view View, refs []AssetRef, withSpark bool) *PulseSnapshot {
@@ -139,6 +154,13 @@ func (s *PulseService) build(ctx context.Context, view View, refs []AssetRef, wi
 		}
 	}
 
+	// sparkline 补数：先批量（一个 source 一个子进程），装配环节只读库。
+	withBars := withSpark && s.store != nil
+	if withBars {
+		_, lookback := sparkWindow(view)
+		s.refillStaleSparkBars(ctx, refs, lookback)
+	}
+
 	// 组合表顺序输出 + 视图级 basis 调整。
 	for _, ref := range refs {
 		q, present := got[ref.ID]
@@ -147,8 +169,8 @@ func (s *PulseService) build(ctx context.Context, view View, refs []AssetRef, wi
 		}
 		q.Basis = adjustBasis(view, ref.Class, q.Basis)
 		asset := PulseAsset{Quote: q}
-		if withSpark && s.store != nil {
-			asset.Spark, asset.SparkWindow = s.sparkFor(ctx, view, ref)
+		if withBars {
+			asset.Spark, asset.SparkWindow = s.sparkFromStore(ctx, view, ref)
 		}
 		snap.Assets = append(snap.Assets, asset)
 	}
@@ -169,25 +191,54 @@ func adjustBasis(view View, class AssetClass, b Basis) Basis {
 	return b
 }
 
-// sparkFor：读库存 sparkline；过期(>10min)且 source 可补则增量补。
-// bar 失败永不阻塞报价（旧数据照用）。
-func (s *PulseService) sparkFor(ctx context.Context, view View, ref AssetRef) ([]float64, string) {
-	window := "session"
-	lookback := 8 * time.Hour
+// sparkWindow：view → 窗口名与回看时长（premarket 看隔夜，其余看日内）。
+func sparkWindow(view View) (string, time.Duration) {
 	if view == ViewPremarket {
-		window = "overnight"
-		lookback = 18 * time.Hour
+		return "overnight", 18 * time.Hour
 	}
-	since := time.Now().UTC().Add(-lookback)
+	return "session", 8 * time.Hour
+}
 
-	last, _ := s.store.LastPulseBarTS(ctx, ref.ID)
-	if time.Since(last) > 10*time.Minute {
-		if src, ok := s.router.routes[ref.Class]; ok {
+// refillStaleSparkBars 预扫描 LastPulseBarTS 过期(>sparkStaleAfter)的资产，
+// 按路由 source 分组批量补数：实现 batchBarsSource 的 source 一组一次调用
+// （一个子进程），不支持的退化为逐资产 Bars。bar 失败永不阻塞报价（旧数据照用）。
+func (s *PulseService) refillStaleSparkBars(ctx context.Context, refs []AssetRef, lookback time.Duration) {
+	staleBySource := map[Source][]AssetRef{}
+	for _, ref := range refs {
+		src, ok := s.router.routes[ref.Class]
+		if !ok {
+			continue
+		}
+		last, _ := s.store.LastPulseBarTS(ctx, ref.ID)
+		if time.Since(last) > sparkStaleAfter {
+			staleBySource[src] = append(staleBySource[src], ref)
+		}
+	}
+	for src, stale := range staleBySource {
+		if bb, ok := src.(batchBarsSource); ok {
+			barsByID, err := bb.BatchBars(ctx, stale, "5m", lookback)
+			if err != nil {
+				continue
+			}
+			for id, bars := range barsByID {
+				if len(bars) > 0 {
+					_ = s.store.UpsertPulseBars(ctx, id, bars)
+				}
+			}
+			continue
+		}
+		for _, ref := range stale {
 			if bars, err := src.Bars(ctx, ref, "5m", lookback); err == nil && len(bars) > 0 {
 				_ = s.store.UpsertPulseBars(ctx, ref.ID, bars)
 			}
 		}
 	}
+}
+
+// sparkFromStore 只读 SQLite 取 sparkline（补数已由 refillStaleSparkBars 批量完成）。
+func (s *PulseService) sparkFromStore(ctx context.Context, view View, ref AssetRef) ([]float64, string) {
+	window, lookback := sparkWindow(view)
+	since := time.Now().UTC().Add(-lookback)
 	bars, err := s.store.GetPulseBars(ctx, ref.ID, since)
 	if err != nil || len(bars) == 0 {
 		return nil, ""

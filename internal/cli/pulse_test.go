@@ -37,6 +37,9 @@ func TestInferView_ClockMapping(t *testing.T) {
 		// EST 冬令时（2026-01-15 为 EST）—— 锁定 DST 两侧行为一致
 		{"EST premarket 8am", time.Date(2026, 1, 15, 8, 0, 0, 0, ny), marketdata.ViewPremarket},
 		{"EST intraday 10:00", time.Date(2026, 1, 15, 10, 0, 0, 0, ny), marketdata.ViewIntraday},
+		// DST 切换日验证（spring-forward 2026-03-08，fall-back 2026-11-01）
+		{"DST spring-forward 9:30 intraday", time.Date(2026, 3, 8, 9, 30, 0, 0, ny), marketdata.ViewIntraday},
+		{"DST fall-back 03:00 premarket", time.Date(2026, 11, 1, 3, 0, 0, 0, ny), marketdata.ViewPremarket},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

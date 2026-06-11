@@ -85,6 +85,11 @@ listed in missing[] without failing the whole snapshot.`,
   optix pulse --view premarket --format json
   optix pulse --format json --with-sparkline`,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
+
 			view := marketdata.View(viewFlag)
 			inferred := false
 			if viewFlag == "" {
@@ -117,7 +122,11 @@ listed in missing[] without failing the whole snapshot.`,
 			}
 			// snap 是缓存共享对象（指针）—— 只读，不得在渲染/JSON 路径修改。
 			if strict && len(snap.Assets) == 0 {
-				return cliExit(fmt.Errorf("no assets available: %s", strings.Join(snap.Warnings, "; ")), exitGenericErr)
+				msg := "no assets available"
+				if len(snap.Warnings) > 0 {
+					msg += ": " + strings.Join(snap.Warnings, "; ")
+				}
+				return cliExit(fmt.Errorf("%s", msg), exitGenericErr)
 			}
 
 			if format == "json" {
@@ -129,7 +138,7 @@ listed in missing[] without failing the whole snapshot.`,
 	}
 	cmd.Flags().StringVar(&viewFlag, "view", "", "View: premarket|intraday|postclose|event|shock (default: clock-inferred)")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
-	cmd.Flags().BoolVar(&withSpark, "with-sparkline", false, "Include 5m sparkline series in output")
+	cmd.Flags().BoolVar(&withSpark, "with-sparkline", false, "Fetch 5m sparkline bars and include spark[] in JSON output (JSON only; ignored by text renderer)")
 	cmd.Flags().BoolVar(&strict, "strict", false, "Exit non-zero when no asset data is available")
 	return cmd
 }
@@ -146,6 +155,7 @@ func isValidView(v marketdata.View) bool {
 func writePulseJSON(snap *marketdata.PulseSnapshot, inferred bool) error {
 	out := pulseJSON{
 		SnapshotAt: snap.SnapshotAt, View: string(snap.View), ViewInferred: inferred,
+		Assets:  make([]pulseAssetJSON, 0, len(snap.Assets)),
 		Missing: snap.Missing, Warnings: snap.Warnings,
 	}
 	for _, a := range snap.Assets {
@@ -185,7 +195,16 @@ func renderPulseText(snap *marketdata.PulseSnapshot, inferred bool) {
 	for _, id := range snap.Missing {
 		fmt.Printf("%-10s %12s %8s   %-8s\n", id, "—", "—", "missing")
 	}
-	for _, w := range snap.Warnings {
-		fmt.Printf("\n⚠ %s\n", w)
+	// proxy note: one line per pct-only asset (Price unavailable, ChangePct only).
+	for _, a := range snap.Assets {
+		if a.PctOnly {
+			fmt.Printf("note: %s = %s (via proxy, approx), 涨跌幅代理, 无点位\n", a.Ref.ID, a.Label)
+		}
+	}
+	if len(snap.Warnings) > 0 {
+		fmt.Println()
+		for _, w := range snap.Warnings {
+			fmt.Printf("⚠ %s\n", w)
+		}
 	}
 }

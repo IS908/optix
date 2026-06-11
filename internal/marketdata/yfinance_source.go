@@ -13,11 +13,10 @@ import (
 
 // yahooAsset 描述一个业务 ID 在 Yahoo 侧的取数与变换规则。
 type yahooAsset struct {
-	symbol  string  // Yahoo 符号
-	label   string  // 渲染标签
-	scale   float64 // 价格缩放（^TNX 族 ÷10 → 0.1；0 视为 1）
-	basis   Basis   // 静态基础口径（视图级 frozen 调整在 PulseService）
-	pctOnly bool    // 只代理涨跌幅（SOX_PROXY）
+	symbol  string // Yahoo 符号
+	label   string // 渲染标签
+	basis   Basis  // 静态基础口径（视图级 frozen 调整在 PulseService）
+	pctOnly bool   // 只代理涨跌幅（SOX_PROXY）
 }
 
 // yahooAssets：业务 ID → Yahoo 规则。实现期逐符号在 yahoo 验证过再入表；
@@ -39,10 +38,11 @@ var yahooAssets = map[string]yahooAsset{
 	"BRENT": {symbol: "BZ=F", label: "Brent", basis: BasisDelayed},
 	"GOLD":  {symbol: "GC=F", label: "黄金", basis: BasisDelayed},
 	"US2Y":  {symbol: "2YY=F", label: "US 2Y", basis: BasisDelayed},
-	// 收益率指数（值÷10 还原百分数 → approx）
-	"US10Y": {symbol: "^TNX", label: "US 10Y", scale: 0.1, basis: BasisApprox},
-	"US5Y":  {symbol: "^FVX", label: "US 5Y", scale: 0.1, basis: BasisApprox},
-	"US13W": {symbol: "^IRX", label: "US 13W", scale: 0.1, basis: BasisApprox},
+	// 收益率指数（Yahoo fast_info + chart API 实测：^TNX/^FVX/^IRX 直接返回百分数形式的收益率，
+	// 如 ^TNX=4.467、^FVX=4.19、^IRX=3.62，CBOE ×10 惯例在此不适用；无需缩放，直接使用原值 → approx）
+	"US10Y": {symbol: "^TNX", label: "US 10Y", basis: BasisApprox},
+	"US5Y":  {symbol: "^FVX", label: "US 5Y", basis: BasisApprox},
+	"US13W": {symbol: "^IRX", label: "US 13W", basis: BasisApprox},
 	// vol 族
 	"VIX9D": {symbol: "^VIX9D", label: "VIX9D", basis: BasisDelayed},
 	"VIX3M": {symbol: "^VIX3M", label: "VIX3M", basis: BasisDelayed},
@@ -91,7 +91,7 @@ type rawQuote struct {
 	ChangePct float64 `json:"change_pct"`
 }
 
-// parseBatchQuotes 把 Yahoo 符号键的 payload 映射回业务 ID 并应用 scale/basis。
+// parseBatchQuotes 把 Yahoo 符号键的 payload 映射回业务 ID 并应用 basis。
 // payload 中缺席的符号 → 结果缺席（上游失败即缺席契约）。
 func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 	var bySymbol map[string]rawQuote
@@ -109,17 +109,13 @@ func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 		if !present {
 			continue
 		}
-		scale := ya.scale
-		if scale == 0 {
-			scale = 1
-		}
 		q := Quote{
 			Ref:       ref,
 			Label:     ya.label,
-			Price:     rq.Price * scale,
+			Price:     rq.Price,
 			PctOnly:   ya.pctOnly,
-			Change:    rq.Change * scale,
-			ChangePct: rq.ChangePct, // 百分比不缩放
+			Change:    rq.Change,
+			ChangePct: rq.ChangePct,
 			AsOf:      now,
 			Basis:     ya.basis,
 		}

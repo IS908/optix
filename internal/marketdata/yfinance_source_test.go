@@ -17,10 +17,11 @@ func TestYahooMappingCoversAllCompositions(t *testing.T) {
 }
 
 func TestParseBatchQuotes_MixedSuccessAndMissing(t *testing.T) {
-	// US10Y(^TNX) 在 payload 中缺席（取数失败），SPX 正常，US5Y 走 ÷10 scale。
+	// US10Y(^TNX) 在 payload 中缺席（取数失败），SPX 正常，US5Y 直接透传收益率原值。
+	// Yahoo fast_info + chart API 实测：^FVX 返回直接百分数（如 4.19），无需缩放。
 	raw := []byte(`{
-		"^GSPC": {"price": 6012.24, "change": -18.5, "change_pct": -0.31},
-		"^FVX":  {"price": 41.2,   "change": 0.5,   "change_pct": 1.2}
+		"^GSPC": {"price": 6012.24, "change": -18.5,  "change_pct": -0.31},
+		"^FVX":  {"price": 4.19,   "change": -0.074, "change_pct": -1.74}
 	}`)
 	refs := []AssetRef{
 		{ID: "SPX", Class: ClassIndex},
@@ -37,13 +38,13 @@ func TestParseBatchQuotes_MixedSuccessAndMissing(t *testing.T) {
 	if q := quotes["SPX"]; math.Abs(q.Price-6012.24) > 1e-9 || q.Basis != BasisDelayed {
 		t.Errorf("SPX = %+v", q)
 	}
-	// ^FVX 41.2 ÷ 10 = 4.12%，yield 标 approx
-	if q := quotes["US5Y"]; math.Abs(q.Price-4.12) > 1e-9 || q.Basis != BasisApprox {
-		t.Errorf("US5Y = %+v (want scaled 4.12, approx)", q)
+	// ^FVX 直接透传：4.19（不缩放），basis=approx（CBOE 指数仍为国债收益率代理）。
+	if q := quotes["US5Y"]; math.Abs(q.Price-4.19) > 1e-9 || q.Basis != BasisApprox {
+		t.Errorf("US5Y = %+v (want direct yield 4.19, approx)", q)
 	}
-	// Change 跟随缩放（0.5 → 0.05），ChangePct 不缩放（1.2 保持 1.2）。
-	if q := quotes["US5Y"]; math.Abs(q.Change-0.05) > 1e-9 || math.Abs(q.ChangePct-1.2) > 1e-9 {
-		t.Errorf("US5Y Change=%v ChangePct=%v, want 0.05 / 1.2", q.Change, q.ChangePct)
+	// Price/Change/ChangePct 均直接透传，无缩放。
+	if q := quotes["US5Y"]; math.Abs(q.Change-(-0.074)) > 1e-9 || math.Abs(q.ChangePct-(-1.74)) > 1e-9 {
+		t.Errorf("US5Y Change=%v ChangePct=%v, want -0.074 / -1.74", q.Change, q.ChangePct)
 	}
 }
 

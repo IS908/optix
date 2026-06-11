@@ -520,7 +520,8 @@ func (s *Store) PruneStaleData(ctx context.Context) (int64, error) {
 	// the current + previous session).
 	n, err := s.PrunePulseBars(ctx, PulseBarRetention)
 	if err != nil {
-		return totalDeleted, fmt.Errorf("prune pulse bars: %w", err)
+		// PrunePulseBars 已带 "prune pulse bars" 前缀，这里用通用前缀避免叠词。
+		return totalDeleted, fmt.Errorf("prune: %w", err)
 	}
 	totalDeleted += n
 

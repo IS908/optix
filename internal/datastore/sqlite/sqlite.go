@@ -29,6 +29,9 @@ var migration003SQL string
 //go:embed migrations/004_symbol_beta.sql
 var migration004SQL string
 
+//go:embed migrations/005_market_pulse_bars.sql
+var migration005SQL string
+
 // Store implements data persistence using SQLite.
 type Store struct {
 	db *sql.DB
@@ -109,6 +112,11 @@ func (s *Store) migrate() error {
 
 	if _, err := s.db.Exec(migration004SQL); err != nil {
 		return fmt.Errorf("migration 004: %w", err)
+	}
+
+	// Migration 005: Market Intel pulse bars (idempotent via IF NOT EXISTS)
+	if _, err := s.db.Exec(migration005SQL); err != nil {
+		return fmt.Errorf("migration 005: %w", err)
 	}
 
 	// Idempotent schema additions — error is swallowed when column already exists.
@@ -479,6 +487,7 @@ func (s *Store) DeleteBackgroundJobs(ctx context.Context, symbol string) error {
 //   - ohlcv_bars: remove bars for symbols not in watchlist
 //   - watchlist_snapshots: keep only last 90 days
 //   - option_quotes: remove all rows with non-UTC snapshot_time (legacy cleanup)
+//   - market_pulse_bars: keep only last 2 days (sparkline rolling window)
 //
 // Safe to call periodically (e.g., daily from the scheduler).
 func (s *Store) PruneStaleData(ctx context.Context) (int64, error) {
@@ -504,6 +513,12 @@ func (s *Store) PruneStaleData(ctx context.Context) (int64, error) {
 			return totalDeleted, fmt.Errorf("prune: %w", err)
 		}
 		n, _ := result.RowsAffected()
+		totalDeleted += n
+	}
+
+	// Market Intel pulse bars: 2-day rolling window (sparklines only need
+	// the current + previous session).
+	if n, err := s.PrunePulseBars(ctx, 48*time.Hour); err == nil {
 		totalDeleted += n
 	}
 

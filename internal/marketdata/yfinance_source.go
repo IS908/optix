@@ -113,7 +113,7 @@ func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 		if scale == 0 {
 			scale = 1
 		}
-		out[ref.ID] = Quote{
+		q := Quote{
 			Ref:       ref,
 			Label:     ya.label,
 			Price:     rq.Price * scale,
@@ -123,6 +123,13 @@ func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 			AsOf:      now,
 			Basis:     ya.basis,
 		}
+		if ya.pctOnly {
+			// 代理资产只代理涨跌幅：把代理标的自身的价格清零，防止粗心的
+			// 消费方把 SOXX 的 ETF 价格当成 SOX 指数点位渲染出去。
+			q.Price = 0
+			q.Change = 0
+		}
+		out[ref.ID] = q
 	}
 	return out, nil
 }

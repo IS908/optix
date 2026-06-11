@@ -46,6 +46,30 @@ func TestParseBatchQuotes_MixedSuccessAndMissing(t *testing.T) {
 	if q := quotes["US5Y"]; math.Abs(q.Price-4.12) > 1e-9 || q.Basis != BasisApprox {
 		t.Errorf("US5Y = %+v (want scaled 4.12, approx)", q)
 	}
+	// Change 跟随缩放（0.5 → 0.05），ChangePct 不缩放（1.2 保持 1.2）。
+	if q := quotes["US5Y"]; math.Abs(q.Change-0.05) > 1e-9 || math.Abs(q.ChangePct-1.2) > 1e-9 {
+		t.Errorf("US5Y Change=%v ChangePct=%v, want 0.05 / 1.2", q.Change, q.ChangePct)
+	}
+}
+
+// pctOnly 代理资产（SOX_PROXY via SOXX）：只代理涨跌幅，Price/Change 必须清零 —
+// 防止消费方把 SOXX 的 ETF 价格当 SOX 指数点位渲染。
+func TestParseBatchQuotes_PctOnlyZeroesPrice(t *testing.T) {
+	raw := []byte(`{"SOXX": {"price": 231.5, "change": -3.2, "change_pct": -1.38}}`)
+	quotes, err := parseBatchQuotes(raw, []AssetRef{{ID: "SOX_PROXY", Class: ClassStock}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, present := quotes["SOX_PROXY"]
+	if !present {
+		t.Fatal("SOX_PROXY should be present")
+	}
+	if !q.PctOnly || q.Price != 0 || q.Change != 0 {
+		t.Errorf("pctOnly proxy must zero Price/Change: %+v", q)
+	}
+	if math.Abs(q.ChangePct-(-1.38)) > 1e-9 {
+		t.Errorf("ChangePct = %v, want -1.38", q.ChangePct)
+	}
 }
 
 func TestParseBatchBars(t *testing.T) {

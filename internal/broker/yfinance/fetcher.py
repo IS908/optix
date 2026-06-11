@@ -216,6 +216,7 @@ def fetch_batch_bars(symbols: list, interval: str, period: str) -> dict:
     """Multi-symbol intraday bars via one yf.download call.
     Returns {sym: [{ts, open, high, low, close, volume}, ...]}; failed symbols absent."""
     import yfinance as yf
+    import pandas as pd
     df = yf.download(
         " ".join(symbols), interval=interval, period=period,
         group_by="ticker", progress=False, prepost=True, threads=True,
@@ -223,7 +224,11 @@ def fetch_batch_bars(symbols: list, interval: str, period: str) -> dict:
     out = {}
     for sym in symbols:
         try:
-            sub = df[sym] if len(symbols) > 1 else df
+            # Branch on the actual DataFrame shape, NOT symbol count: modern
+            # yfinance builds MultiIndex (ticker, field) columns even for a
+            # single symbol, so an arity-based branch silently yields zero
+            # rows on the one-symbol path (the Go Bars() sparkline refill).
+            sub = df[sym] if isinstance(df.columns, pd.MultiIndex) else df
             rows = []
             for ts, r in sub.iterrows():
                 close = _safe_float(r.get("Close"))
@@ -246,7 +251,7 @@ def fetch_batch_bars(symbols: list, interval: str, period: str) -> dict:
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: fetcher.py <quote|bars|option_chain> <SYMBOL> [args...]", file=sys.stderr)
+        print("Usage: fetcher.py <quote|bars|option_chain|batch_quotes|batch_bars> <SYMBOL[,SYMBOL...]> [args...]", file=sys.stderr)
         sys.exit(1)
 
     _ensure_yfinance()

@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口。"
+description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、隔夜行情 / market pulse, premarket overview, overnight futures。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -176,6 +176,24 @@ decide directional bias at a glance.
 
 Exit codes: `0` success · `1` generic error or bad flags · `2` broker
 unreachable · `3` SQLite error.
+
+### Market Pulse (市场快照 / 盘前看盘)
+
+Multi-asset market snapshot: indices, futures proxies, FX, yields, vol family.
+**No IBKR and no Python gRPC engine required** — uses free delayed sources
+(the skill's bundled venv already includes yfinance).
+
+```bash
+bash bin/optix.sh pulse --format json
+bash bin/optix.sh pulse --view premarket --format json
+bash bin/optix.sh pulse --format json --with-sparkline
+```
+
+View defaults to clock inference (premarket/intraday/postclose, America/New_York);
+`event`/`shock` views via explicit `--view`. Each asset carries a `basis` label
+(delayed/approx/frozen); failed assets appear in `missing[]` without failing the
+command. Exit codes: 0 success (even with warnings) · 1 with --strict when no
+data · 3 SQLite error.
 
 ### Portfolio Risk (持仓风险 / 组合 Greeks)
 

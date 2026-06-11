@@ -13,6 +13,7 @@ dependencies = [
     "grpcio-tools>=1.60",
     "protobuf>=4.25",
     "matplotlib>=3.8",
+    "yfinance>=0.2",
 ]
 
 [project.optional-dependencies]

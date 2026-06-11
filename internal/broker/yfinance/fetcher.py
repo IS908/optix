@@ -206,7 +206,7 @@ def fetch_batch_quotes(symbols: list) -> dict:
                 continue
             change = price - prev if prev > 0 else 0.0
             change_pct = (change / prev * 100.0) if prev > 0 else 0.0
-            out[sym] = {"price": price, "change": change, "change_pct": change_pct}
+            out[sym] = {"price": round(price, 4), "change": round(change, 4), "change_pct": round(change_pct, 4)}
         except Exception:
             continue
     return out

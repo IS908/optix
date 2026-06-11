@@ -117,7 +117,10 @@ func (s *PulseService) Snapshot(ctx context.Context, view View, withSpark bool) 
 		// set 在闭包内：恰好一个 goroutine 构建并写缓存，等待者只取结果
 		//（M2 把 PulseService 嵌入常驻 web server，避免 stale-over-fresh 竞态）。
 		snap := s.build(ctx, view, refs, withSpark)
-		s.cache.set(key, snap)
+		// M2 防缓存投毒：ctx 已死的快照不进缓存
+		if ctx.Err() == nil {
+			s.cache.set(key, snap)
+		}
 		return snap, nil
 	})
 	if err != nil {

@@ -127,6 +127,8 @@ listed in missing[] without failing the whole snapshot.`,
 			}
 			svc := marketdata.NewPulseService(router, store)
 
+			// --with-sparkline is JSON-only; skip the bars subprocess in text mode.
+			withSpark = withSpark && format == "json"
 			snap, err := svc.Snapshot(ctx, view, withSpark)
 			if err != nil {
 				return cliExit(fmt.Errorf("pulse snapshot: %w", err), exitGenericErr)

@@ -195,8 +195,9 @@ func (s *batchableSource) BatchBars(_ context.Context, refs []AssetRef, _ string
 // blockingSource：首调 BatchQuotes 阻塞直到 ctx 取消；后续调用返回好数据。
 // 用于复现「首调 ctx 死亡 → singleflight waiter 拿到降级快照」的 M2 防护场景。
 type blockingSource struct {
-	mu    sync.Mutex
-	calls int
+	mu      sync.Mutex
+	calls   int
+	entered chan struct{} // 首调开始阻塞时 close，供测试确定性同步
 }
 
 func (b *blockingSource) Name() string { return "blocking" }
@@ -207,7 +208,8 @@ func (b *blockingSource) BatchQuotes(ctx context.Context, refs []AssetRef) (map[
 	first := b.calls == 1
 	b.mu.Unlock()
 	if first {
-		<-ctx.Done() // 卡住直到首调 ctx 取消
+		close(b.entered) // 通知测试：首调已进入阻塞
+		<-ctx.Done()     // 卡住直到首调 ctx 取消
 		return nil, ctx.Err()
 	}
 	out := map[string]Quote{}
@@ -222,7 +224,7 @@ func (b *blockingSource) Bars(context.Context, AssetRef, string, time.Duration) 
 }
 
 func TestSnapshot_RedispatchAfterDeadCtxBuilder(t *testing.T) {
-	src := &blockingSource{}
+	src := &blockingSource{entered: make(chan struct{})}
 	r := NewRouter()
 	for _, c := range []AssetClass{ClassIndex, ClassFuture, ClassStock, ClassFX, ClassYield, ClassVol} {
 		r.Register(c, src)
@@ -235,7 +237,7 @@ func TestSnapshot_RedispatchAfterDeadCtxBuilder(t *testing.T) {
 		snap, _ := svc.Snapshot(ctxA, ViewIntraday, false)
 		done <- snap
 	}()
-	time.Sleep(50 * time.Millisecond) // 让 A 进入 build 并卡在 BatchQuotes
+	<-src.entered // A 已进入 build 并卡在 BatchQuotes（确定性同步，替代 sleep）
 
 	// B：健康 ctx，与 A 同 key 并发等待
 	type result struct{ snap *PulseSnapshot }

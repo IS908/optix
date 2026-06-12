@@ -26,7 +26,7 @@ func PhaseAt(t time.Time) Phase {
 	mins := et.Hour()*60 + et.Minute()
 	closeM := 16 * 60
 	if ec, half := earlyCloseAt(et); half {
-		closeM = ec.Hour() * 60
+		closeM = ec.Hour()*60 + ec.Minute()
 	}
 	switch {
 	case mins >= 4*60 && mins < 9*60+30:
@@ -55,7 +55,7 @@ func NextTransition(t time.Time) (time.Time, Phase) {
 	return time.Time{}, PhaseClosed // 不可达（周末降级判定下每周必有交易日）
 }
 
-// dayBoundaries：day 当日的时段边界（非交易日无边界）。
+// dayBoundaries：day 当日的时段边界（非交易日无边界）。day 须为 ET。
 func dayBoundaries(day time.Time) []time.Time {
 	if !isTradingDay(day) {
 		return nil

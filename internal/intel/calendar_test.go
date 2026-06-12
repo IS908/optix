@@ -72,4 +72,8 @@ func TestCalendarStale(t *testing.T) {
 	if !CalendarStale(dET(2028, 1, 3, 12, 0)) {
 		t.Error("2028 beyond table → stale")
 	}
+	// 表滚出后真实假日（2028-07-04 周二）降级为「仅周末」判定 → 视为交易日。
+	if !isTradingDay(dET(2028, 7, 4, 12, 0)) {
+		t.Error("2028 beyond table must degrade to weekend-only judgment")
+	}
 }

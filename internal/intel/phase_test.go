@@ -63,6 +63,9 @@ func TestNextTransition(t *testing.T) {
 		// 半日 11:00 → 13:00 postclose
 		{"half day → 13:00", dET(2026, 11, 27, 11, 0), dET(2026, 11, 27, 13, 0), PhasePostclose},
 		{"half day postclose → 17:00 closed", dET(2026, 11, 27, 14, 0), dET(2026, 11, 27, 17, 0), PhaseClosed},
+		// DST 切换跨扫描（spring-forward 2026-03-08、fall-back 2026-11-01 均为周日）
+		{"spans spring-forward", dET(2026, 3, 6, 21, 0), dET(2026, 3, 9, 4, 0), PhasePremarket},
+		{"spans fall-back", dET(2026, 10, 30, 21, 0), dET(2026, 11, 2, 4, 0), PhasePremarket},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

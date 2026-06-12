@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"github.com/IS908/optix/internal/intel"
+	"github.com/IS908/optix/web"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -174,6 +177,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/journal/trips", s.handleAPIJournalTrips)
 	s.mux.HandleFunc("GET /api/journal/review", s.handleAPIJournalReview)
 	s.mux.HandleFunc("POST /api/journal/sync", s.handleAPIJournalSync)
+
+	// Market Intel SPA（go:embed；未构建时为占位页）。
+	// "GET /intel/" 子树模式自带 /intel → /intel/ 301。
+	distFS, _ := fs.Sub(web.DistFS, "dist")
+	s.mux.Handle("GET /intel/", spaHandler(distFS))
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -212,4 +220,20 @@ func writeErrorJSON(w http.ResponseWriter, msg string, code int) {
 func writeErrorPage(w http.ResponseWriter, msg string, code int) {
 	w.WriteHeader(code)
 	renderPage(w, "error.html", map[string]any{"Error": msg, "Code": code})
+}
+
+// AttachIntel 把 Market Intel API（/api/intel/*）挂上服务器 mux。须在 Start 前调用。
+func (s *Server) AttachIntel(h *intel.Handlers) { h.Register(s.mux) }
+
+// spaHandler 服务 embed 的 SPA 产物：hash 资产永久缓存，入口页 no-cache。
+func spaHandler(dist fs.FS) http.Handler {
+	files := http.StripPrefix("/intel/", http.FileServer(http.FS(dist)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/intel/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		files.ServeHTTP(w, r)
+	})
 }

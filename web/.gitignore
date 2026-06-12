@@ -1,0 +1,5 @@
+node_modules/
+# 根 .gitignore 有裸 dist/ 规则；此处重包含目录，再排除构建产物、白名单占位页。
+!dist/
+dist/*
+!dist/index.html

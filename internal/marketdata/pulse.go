@@ -99,6 +99,13 @@ func NewPulseService(router *Router, store *sqlite.Store) *PulseService {
 	return &PulseService{router: router, store: store, cache: newPulseCache()}
 }
 
+// sfBuilt 是 singleflight 闭包的返回载体：valid=false 表示构建者 ctx 在完成时
+// 已死亡（产物是降级快照且未入缓存），健康 ctx 的等待者应重发一次。
+type sfBuilt struct {
+	snap  *PulseSnapshot
+	valid bool
+}
+
 // Snapshot 返回 view 的市场快照。单资产失败=缺席；源整体失败=全缺席+warning；
 // 函数级 error 仅保留给"组合表不存在"这类编程错误。
 func (s *PulseService) Snapshot(ctx context.Context, view View, withSpark bool) (*PulseSnapshot, error) {
@@ -113,20 +120,25 @@ func (s *PulseService) Snapshot(ctx context.Context, view View, withSpark bool) 
 	if cached := s.cache.get(key); cached != nil {
 		return cached, nil
 	}
-	v, err, _ := s.cache.sf.Do(key, func() (any, error) {
-		// set 在闭包内：恰好一个 goroutine 构建并写缓存，等待者只取结果
-		//（M2 把 PulseService 嵌入常驻 web server，避免 stale-over-fresh 竞态）。
+	build := func() (any, error) {
+		// set 在闭包内：恰好一个 goroutine 构建并写缓存，等待者只取结果。
 		snap := s.build(ctx, view, refs, withSpark)
-		// M2 防缓存投毒：ctx 已死的快照不进缓存
-		if ctx.Err() == nil {
+		valid := ctx.Err() == nil
+		if valid { // 防缓存投毒：ctx 已死的快照不进缓存
 			s.cache.set(key, snap)
 		}
-		return snap, nil
-	})
-	if err != nil {
-		return nil, err
+		return sfBuilt{snap: snap, valid: valid}, nil
 	}
-	return v.(*PulseSnapshot), nil
+	v, _, _ := s.cache.sf.Do(key, build)
+	res := v.(sfBuilt)
+	if !res.valid && ctx.Err() == nil {
+		// 首调 ctx 死亡产出降级快照，本调用方健康：重发一次（首轮 Do 已结束，
+		// 此轮会真正重建；并发的健康等待者自然合流到同一次重建）。
+		if v2, _, _ := s.cache.sf.Do(key, build); v2 != nil {
+			res = v2.(sfBuilt)
+		}
+	}
+	return res.snap, nil
 }
 
 func (s *PulseService) build(ctx context.Context, view View, refs []AssetRef, withSpark bool) *PulseSnapshot {

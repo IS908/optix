@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口。"
+description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、隔夜行情 / market pulse, premarket overview, overnight futures。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -26,6 +26,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 交易记录、近期成交 / Recent executions, trade history (e.g., "最近的交易", "近 7 天成交记录", "show recent trades", "trade history")
 - 交易日记、复盘、长期成交记录 / Trade journal, retrospective, long-term execution history (e.g., "复盘最近一周的交易", "我这个月的胜率", "show my journal", "trade retrospective")
 - Max Pain、指定到期日 / Max Pain for a specific expiration (e.g., "GOOGL 5/22 的 max pain 是多少?", "max pain for AAPL this Friday", "本周五的 max pain", "用 yfinance 算 max pain")
+- 市场快照、盘前看盘、隔夜行情、多资产总览 / Market pulse, premarket overview, multi-asset snapshot (e.g., "现在大盘怎么样?", "盘前看盘", "隔夜期货", "market pulse", "premarket snapshot", "overnight futures")
 
 ## Commands
 
@@ -176,6 +177,24 @@ decide directional bias at a glance.
 
 Exit codes: `0` success · `1` generic error or bad flags · `2` broker
 unreachable · `3` SQLite error.
+
+### Market Pulse (市场快照 / 盘前看盘)
+
+Multi-asset market snapshot: indices, futures proxies, FX, yields, vol family.
+**No IBKR and no Python gRPC engine required** — uses free delayed sources
+(the skill's bundled venv already includes yfinance).
+
+```bash
+bash bin/optix.sh pulse --format json
+bash bin/optix.sh pulse --view premarket --format json
+bash bin/optix.sh pulse --format json --with-sparkline
+```
+
+View defaults to clock inference (premarket/intraday/postclose, America/New_York);
+`event`/`shock` views via explicit `--view`. Each asset carries a `basis` label
+(delayed/approx/frozen); failed assets appear in `missing[]` without failing the
+command. Exit codes: 0 success (even with warnings) · 1 with --strict when no
+data · 3 SQLite error.
 
 ### Portfolio Risk (持仓风险 / 组合 Greeks)
 

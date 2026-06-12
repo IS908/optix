@@ -26,6 +26,7 @@ func TestSQLiteOpenFailuresUseDocumentedExitCode(t *testing.T) {
 		{name: "watch list", cmd: newWatchListCmd},
 		{name: "server", cmd: newServerCmd},
 		{name: "max-pain", cmd: newMaxPainCmd, args: []string{"AAPL", "--source", "yfinance"}},
+		{name: "pulse", cmd: newPulseCmd},
 	}
 
 	for _, tc := range tests {

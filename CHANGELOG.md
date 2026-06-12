@@ -12,7 +12,21 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **`optix pulse` — multi-asset market snapshot (Market Intel M1, #121).**
+  New `internal/marketdata` package: business-ID asset refs (SPX/ES/US10Y)
+  routed by class to pluggable sources (free yfinance to start — including
+  Yahoo's free delayed CME futures `ES=F` family, yield indices (`^TNX`
+  family quoted by Yahoo as direct percent — no scaling), and the VIX index
+  family), batch-first fetching (one Python subprocess for
+  N symbols), two-tier caching (60s memory TTL + SQLite `market_pulse_bars`
+  with 2-day rolling prune, migration 005). Per-view compositions
+  (premarket/intraday/postclose/event/shock) with honest `basis` labeling
+  (delayed/approx/frozen) and absent-not-error semantics (`missing[]` +
+  `warnings[]`). The first command whose code path never touches IBKR; view clock-inferred
+  (America/New_York, DST-safe). Foundation for the Market Intel phase-view
+  dashboard (epic #120).
 
 ## [0.7.25] - 2026-06-01
 

@@ -376,14 +376,24 @@ func (r rawOptionRow) toQuote(underlying, expiration string, kind model.OptionTy
 	}
 }
 
-// runFetcher executes the Python fetcher script and returns its stdout.
-func (c *Client) runFetcher(ctx context.Context, args ...string) ([]byte, error) {
+// RunFetcher executes the embedded fetcher.py with the given args via
+// pythonBin, returning stdout. Exported for internal/marketdata, which reuses
+// the same staged script for batch market-data fetches. Dependency direction
+// is one-way (marketdata → yfinance); broker code never imports marketdata.
+func RunFetcher(ctx context.Context, pythonBin string, args ...string) ([]byte, error) {
+	if pythonBin == "" {
+		pythonBin = "python3"
+	}
 	fetcher, err := resolveFetcher()
 	if err != nil {
 		return nil, err
 	}
 	cmdArgs := append([]string{fetcher}, args...)
-	cmd := exec.CommandContext(ctx, c.cfg.PythonBin, cmdArgs...)
+	cmd := exec.CommandContext(ctx, pythonBin, cmdArgs...)
+	// WaitDelay closes the stdout/stderr pipes 5s after ctx expires, so an orphaned
+	// grandchild (e.g. fetcher.py's _ensure_yfinance pip install) cannot hold
+	// the write-end open and cause cmd.Output() to block indefinitely.
+	cmd.WaitDelay = 5 * time.Second
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -393,4 +403,8 @@ func (c *Client) runFetcher(ctx context.Context, args ...string) ([]byte, error)
 		return nil, err
 	}
 	return out, nil
+}
+
+func (c *Client) runFetcher(ctx context.Context, args ...string) ([]byte, error) {
+	return RunFetcher(ctx, c.cfg.PythonBin, args...)
 }

@@ -111,6 +111,10 @@ make clean  # Removes bin/ and data/optix.db
 - `client.go`: Go wrapper for `AnalysisService` (PriceOption, GetMaxPain, AnalyzeStock, BatchQuickAnalysis)
 - Integration tests require Python server running
 
+**`marketdata/`**: Multi-asset market snapshot layer (indices/futures/yields/vol/FX)
+- Business-ID `AssetRef` + `Source`/`Router` abstraction routes by `AssetClass` to pluggable sources (currently all via yfinance; zero IBKR dependency)
+- `PulseService` with 60s in-memory TTL + SQLite `market_pulse_bars` two-tier cache (migration 005, 2-day rolling prune)
+
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
 - Schema in `migrations/001_initial.sql`
@@ -130,7 +134,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

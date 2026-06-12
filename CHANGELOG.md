@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.8.0] - 2026-06-12
+
+Minor release: Market Intel M1 — the data foundation for the phase-view
+dashboard (epic #120).
+
 ### Added
 
 - **`optix pulse` — multi-asset market snapshot (Market Intel M1, #121).**

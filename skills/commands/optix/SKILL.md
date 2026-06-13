@@ -202,6 +202,74 @@ launch `optix-server` and open `http://127.0.0.1:8080/intel/` in a browser for
 the Pulse bar + phase-following view skeleton (M3–M7 slots). It ships inside the
 server binary — no separate build needed.
 
+### Market Intel — 判断日记检查点工作流 (judgment journal)
+
+A closed judgment loop: at daily checkpoints an agent writes narrative prose and
+registers **falsifiable directional judgments**; optix captures the registration
+price, settles expired judgments against price history, and tracks hit-rate.
+**No IBKR and no Python gRPC engine required** — `judge` uses the skill venv's
+yfinance to capture the registration price; everything else is pure SQLite.
+
+Triggers: 写剧本/复盘/对账、登记判断、检查点叙事、命中率, "write the playbook",
+"register a judgment", "reconcile", "checkpoint narrative", "hit rate".
+
+**Four daily checkpoints (America/New_York), plus ad-hoc `interrupt`:**
+
+| Checkpoint     | ET    | 含义 | Action |
+| -------------- | ----- | ---- | ------ |
+| `script`       | 08:00 | 剧本 | premarket playbook narrative |
+| `first_check`  | 10:30 | 首验 | first read of the open; register judgments |
+| `set_tone`     | 15:00 | 定调 | late-session tone; register/supersede judgments |
+| `reconcile`    | 16:30 | 对账 | settlement step — run `intel reconcile` |
+| `interrupt`    | ad-hoc | 突发 | unscheduled narrative on a shock |
+
+**Fill-slot flow at each checkpoint:**
+
+```bash
+# 1. orient: where are we in the day + today's hit-rate so far
+bash bin/optix.sh intel status --format json
+
+# 2. read the market (zero IBKR/gRPC; delayed sources)
+bash bin/optix.sh pulse --format json
+
+# 3. write the checkpoint narrative (append-only; body truncated to 8KB)
+bash bin/optix.sh intel narrative --kind script --body "..." --format json
+
+# 4. register a falsifiable judgment — optix captures the price
+bash bin/optix.sh intel judge --asset SPX --direction up --threshold 0.5 \
+  --confidence 75 --expiry reconcile --rationale "..." --format json
+
+# 5. at 16:30 (对账): settle every expired judgment against price history
+bash bin/optix.sh intel reconcile --format json
+
+# review a trading day's full timeline (narratives + judgments + reconciliation)
+bash bin/optix.sh intel read --date 2026-06-12 --format json
+```
+
+**Judgment discipline (the third pillar — guards against unfalsifiable claims):**
+
+- `judge` requires a **structured, falsifiable assertion**: an asset
+  (`--asset`, must be a registered AssetRef like SPX/ES/VIX), a `--direction`
+  (`up|down|flat`), a `--threshold` %, a `--confidence` (0–100), and an
+  `--expiry` checkpoint (`first_check|set_tone|reconcile`) that is **later than
+  now** on the same trading day. Subjective color ("情绪谨慎") belongs in the
+  narrative, never in a judgment.
+- optix **captures the registration price** at `judge` time and **owns the
+  verdict** at `reconcile`; the agent never supplies either. If the asset price
+  cannot be captured, the judgment is **rejected and not written** (exit code 1)
+  — never register a judgment that cannot be settled.
+- To revise a call, register a new judgment with `--supersedes <judgment_id>`.
+  Supersede **does not erase** the original — both stay in the append-only
+  record; the superseded judgment is greyed in the panel and still counts toward
+  the audit trail.
+- M3 settles **same-day** expiries only; a judgment registered at `reconcile`
+  has no later checkpoint to expire into and is rejected (16:30 is the
+  settlement step, not a registration step).
+
+The stored journal renders read-only at `http://127.0.0.1:8080/intel/`
+(intraday 叙事流 panel) via `GET /api/intel/journal`. Writes go only through the
+CLI; the server reads; cross-process concurrency uses SQLite WAL.
+
 ### Portfolio Risk (持仓风险 / 组合 Greeks)
 
 Account-level risk views across all holdings. **Requires IBKR** (no Yahoo Finance fallback).

@@ -127,10 +127,12 @@ Examples:
 				Store:   store,
 			})
 
-			// 4b. Market Intel API：phase 状态机 + pulse 快照（零 IBKR，yfinance 路由）
+			// 4b. Market Intel API：phase 状态机 + pulse 快照 + judgment journal（零 IBKR，yfinance 路由）
 			// HTTP pulse 路径跑在 r.Context() 下，受服务器 120s WriteTimeout 约束，无需 CLI 式 2 分钟 ctx。
+			intelPulse := marketdata.NewPulseService(marketdata.NewYFinanceRouter(pythonBin), store)
 			srv.AttachIntel(&intel.Handlers{
-				Pulse: marketdata.NewPulseService(marketdata.NewYFinanceRouter(pythonBin), store),
+				Pulse:   intelPulse,
+				Journal: intel.NewIntelJournal(store, intelPulse),
 			})
 
 			// 5. Initialize and start background scheduler

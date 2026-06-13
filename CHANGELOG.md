@@ -12,7 +12,20 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Market Intel judgment journal (`optix intel`) — M3 of epic #120.** The
+  narrative plane of the three-layer architecture: at daily checkpoints
+  (08:00 剧本 / 10:30 首验 / 15:00 定调 / 16:30 对账) an agent writes
+  narrative prose and registers falsifiable directional judgments via
+  `optix intel {narrative,judge}`; optix captures the registration price,
+  settles expired judgments against market price history
+  (`optix intel reconcile`), and tracks hit-rate — all pure compute, zero
+  LLM. New `GET /api/intel/journal` read endpoint and an SPA narrative panel
+  (`/intel/` intraday view) render the stored journal. Three append-only
+  SQLite tables (migration 006); writes go through the CLI, the server reads,
+  concurrency via SQLite WAL. `optix intel` needs no IBKR and no Python gRPC
+  engine.
 
 ## [0.9.0] - 2026-06-13
 

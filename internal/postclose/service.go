@@ -86,26 +86,32 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 }
 
 func (s *Service) ReadAcross(ctx context.Context, watchlist []string) (ReadAcrossDTO, error) {
+	movers, _ := s.Movers(ctx, watchlist)
+	return s.readAcrossFromMovers(movers, true), nil
+}
+
+func (s *Service) readAcrossFromMovers(movers MoversDTO, includeMoverWarnings bool) ReadAcrossDTO {
 	out := ReadAcrossDTO{
 		AsOf:         s.now().UTC(),
 		SectorSource: s.sectorSource,
 		Edges:        []ReadAcrossEdge{},
 	}
-	movers, _ := s.Movers(ctx, watchlist)
 	all := append(append([]Mover{}, movers.Gainers...), movers.Losers...)
-	out.Warnings = append(out.Warnings, movers.Warnings...)
+	if includeMoverWarnings {
+		out.Warnings = append(out.Warnings, movers.Warnings...)
+	}
 	out.Edges = BuildReadAcrossEdges(all, s.sectors)
 	if len(out.Edges) == 0 {
 		out.Warnings = append(out.Warnings, "read_across: 未触发同板块传导边")
 	}
-	return out, nil
+	return out
 }
 
 func (s *Service) Timeline(ctx context.Context, watchlist []string) (TimelineDTO, error) {
 	out := TimelineDTO{AsOf: s.now().UTC(), Events: []TimelineEvent{}}
 	earnings, _ := s.Earnings(ctx, watchlist)
 	movers, _ := s.Movers(ctx, watchlist)
-	readAcross, _ := s.ReadAcross(ctx, watchlist)
+	readAcross := s.readAcrossFromMovers(movers, false)
 	out.Warnings = append(out.Warnings, earnings.Warnings...)
 	out.Warnings = append(out.Warnings, movers.Warnings...)
 	out.Warnings = append(out.Warnings, readAcross.Warnings...)
@@ -120,7 +126,7 @@ func (s *Service) Timeline(ctx context.Context, watchlist []string) (TimelineDTO
 func (s *Service) Bundle(ctx context.Context, watchlist []string) (BundleDTO, error) {
 	earnings, _ := s.Earnings(ctx, watchlist)
 	movers, _ := s.Movers(ctx, watchlist)
-	readAcross, _ := s.ReadAcross(ctx, watchlist)
+	readAcross := s.readAcrossFromMovers(movers, true)
 	timeline := TimelineDTO{AsOf: s.now().UTC(), Events: []TimelineEvent{}}
 	allMoves := append(append([]Mover{}, movers.Gainers...), movers.Losers...)
 	timeline.Events = BuildTimeline(s.now().UTC(), earnings.Reports, allMoves, readAcross.Edges)

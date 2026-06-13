@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -163,16 +165,20 @@ func (s *Store) ListIntelReconciliations(ctx context.Context, judgmentIDs []stri
 // PulseCloseNear 返回 asset 在 [at-tolerance, at] 内最近（最大 ts ≤ at）bar 的收盘价。
 // reconcile 取到期价用；无 bar → ok=false（调用方判 void）。
 func (s *Store) PulseCloseNear(ctx context.Context, assetID string, at time.Time, tolerance time.Duration) (float64, time.Time, bool, error) {
-	var close float64
+	var closePx float64
 	var tsStr string
 	err := s.db.QueryRowContext(ctx, `
         SELECT close, ts FROM market_pulse_bars
         WHERE asset_id = ? AND ts <= ? AND ts >= ?
         ORDER BY ts DESC LIMIT 1`,
 		assetID, at.UTC().Format(time.RFC3339),
-		at.Add(-tolerance).UTC().Format(time.RFC3339)).Scan(&close, &tsStr)
-	if err != nil {
-		return 0, time.Time{}, false, nil // sql.ErrNoRows 或其它 → ok=false（不区分，缺价即 void）
+		at.Add(-tolerance).UTC().Format(time.RFC3339)).Scan(&closePx, &tsStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, time.Time{}, false, nil // 容差内无 bar → 缺价（调用方判 void）
 	}
-	return close, parseTimeOrLog(tsStr, "market_pulse_bars.ts"), true, nil
+	if err != nil {
+		// 真实 DB 错误不当缺价：传播，避免瞬时故障把判断永久误判 void。
+		return 0, time.Time{}, false, fmt.Errorf("pulse close near %s: %w", assetID, err)
+	}
+	return closePx, parseTimeOrLog(tsStr, "market_pulse_bars.ts"), true, nil
 }

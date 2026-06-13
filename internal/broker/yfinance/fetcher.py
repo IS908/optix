@@ -33,6 +33,17 @@ def _safe_int(v) -> int:
     return int(_safe_float(v))
 
 
+def _optional_float(v):
+    """Coerce finite numeric values; preserve missing/NaN as None."""
+    try:
+        f = float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+    if f is None or not math.isfinite(f):
+        return None
+    return f
+
+
 def _ensure_yfinance():
     try:
         import yfinance  # noqa: F401
@@ -273,9 +284,9 @@ def fetch_earnings_dates(symbols: list, limit: int = 12) -> dict:
                         "symbol": sym,
                         "event_time": event_time,
                         "timing": timing,
-                        "eps_estimate": _safe_float(r.get("EPS Estimate")) if r.get("EPS Estimate") is not None else None,
-                        "eps_reported": _safe_float(r.get("Reported EPS")) if r.get("Reported EPS") is not None else None,
-                        "eps_surprise_pct": _safe_float(r.get("Surprise(%)")) if r.get("Surprise(%)") is not None else None,
+                        "eps_estimate": _optional_float(r.get("EPS Estimate")),
+                        "eps_reported": _optional_float(r.get("Reported EPS")),
+                        "eps_surprise_pct": _optional_float(r.get("Surprise(%)")),
                     })
         except Exception:
             rows = []

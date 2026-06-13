@@ -11,6 +11,7 @@ import (
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"github.com/IS908/optix/internal/eventintel"
 	"github.com/IS908/optix/internal/intel"
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/internal/postclose"
@@ -141,6 +142,7 @@ Examples:
 				Journal:   intel.NewIntelJournal(store, intelPulse),
 				Premarket: premarket.NewService(premarket.NewMarketAdapter(pythonBin), store),
 				Postclose: postcloseSvc,
+				Event:     eventintel.NewDefaultService(pythonBin),
 				Watchlist: func(ctx context.Context) ([]string, error) {
 					items, err := store.GetWatchlist(ctx)
 					return watchlistSymbols(items), err

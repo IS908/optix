@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/IS908/optix/internal/eventintel"
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
@@ -20,9 +21,10 @@ type PulseProvider interface {
 // （state 端点纯本地计算，永远可用）。Now 为 nil 时用 time.Now（测试注入）。
 type Handlers struct {
 	Pulse     PulseProvider
-	Journal   *IntelJournal      // nil → /api/intel/journal 回 503
-	Premarket *premarket.Service // nil → /api/intel/premarket/* 回 503
-	Postclose *postclose.Service // nil → /api/intel/postclose/* 回 503
+	Journal   *IntelJournal       // nil → /api/intel/journal 回 503
+	Premarket *premarket.Service  // nil → /api/intel/premarket/* 回 503
+	Postclose *postclose.Service  // nil → /api/intel/postclose/* 回 503
+	Event     *eventintel.Service // nil → /api/intel/event/* 回 503
 	Watchlist func(ctx context.Context) ([]string, error)
 	Now       func() time.Time
 }
@@ -47,6 +49,10 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/postclose/timeline", h.handlePCTimeline)
 	mux.HandleFunc("GET /api/intel/postclose/read-across", h.handlePCReadAcross)
 	mux.HandleFunc("GET /api/intel/postclose/movers", h.handlePCMovers)
+	mux.HandleFunc("GET /api/intel/event/rates", h.handleEventRates)
+	mux.HandleFunc("GET /api/intel/event/diff", h.handleEventDiff)
+	mux.HandleFunc("GET /api/intel/event/patterns", h.handleEventPatterns)
+	mux.HandleFunc("GET /api/intel/event/sensitivity", h.handleEventSensitivity)
 }
 
 type stateJSON struct {
@@ -219,6 +225,58 @@ func (h *Handlers) handlePCMovers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dto, err := h.Postclose.Movers(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleEventRates(w http.ResponseWriter, r *http.Request) {
+	if h.Event == nil {
+		writeError(w, "event service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Event.Rates(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleEventDiff(w http.ResponseWriter, r *http.Request) {
+	if h.Event == nil {
+		writeError(w, "event service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Event.Diff(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleEventPatterns(w http.ResponseWriter, r *http.Request) {
+	if h.Event == nil {
+		writeError(w, "event service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Event.Patterns(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleEventSensitivity(w http.ResponseWriter, r *http.Request) {
+	if h.Event == nil {
+		writeError(w, "event service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Event.Sensitivity(r.Context())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

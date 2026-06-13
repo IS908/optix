@@ -27,6 +27,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 交易日记、复盘、长期成交记录 / Trade journal, retrospective, long-term execution history (e.g., "复盘最近一周的交易", "我这个月的胜率", "show my journal", "trade retrospective")
 - Max Pain、指定到期日 / Max Pain for a specific expiration (e.g., "GOOGL 5/22 的 max pain 是多少?", "max pain for AAPL this Friday", "本周五的 max pain", "用 yfinance 算 max pain")
 - 市场快照、盘前看盘、隔夜行情、多资产总览 / Market pulse, premarket overview, multi-asset snapshot (e.g., "现在大盘怎么样?", "盘前看盘", "隔夜期货", "market pulse", "premarket snapshot", "overnight futures")
+- 隔夜传导、跳空回补、盘前异动、情绪定位 / Overnight chain, gap fill, premarket movers, sentiment positioning
 
 ## Commands
 
@@ -202,6 +203,23 @@ launch `optix-server` and open `http://127.0.0.1:8080/intel/` in a browser for
 the Pulse bar + phase-following view skeleton (M3–M7 slots). It ships inside the
 server binary — no separate build needed.
 
+### Premarket View (盘前四卡 / M4)
+
+Four pure-compute premarket cards: overnight transmission chain, implied open
+plus historical SPX gap-fill statistics, premarket movers plus volume ratio, and
+sentiment positioning (Put/Call + VIX term premium). **No IBKR and no Python
+gRPC engine required** — uses yfinance subprocesses and local SQLite for cached
+gap-fill distributions.
+
+```bash
+bash bin/optix.sh premarket
+bash bin/optix.sh premarket --format json
+```
+
+Agents should read `premarket --format json` at the 08:00 剧本 checkpoint before
+writing the playbook narrative. It complements `pulse --format json`: `pulse`
+gives the multi-asset board; `premarket` gives the four-card premarket read.
+
 ### Market Intel — 判断日记检查点工作流 (judgment journal)
 
 A closed judgment loop: at daily checkpoints an agent writes narrative prose and
@@ -231,6 +249,7 @@ bash bin/optix.sh intel status --format json
 
 # 2. read the market (zero IBKR/gRPC; delayed sources)
 bash bin/optix.sh pulse --format json
+bash bin/optix.sh premarket --format json
 
 # 3. write the checkpoint narrative (append-only; body truncated to 8KB)
 bash bin/optix.sh intel narrative --kind script --body "..." --format json

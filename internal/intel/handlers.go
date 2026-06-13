@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/premarket"
 )
 
 // PulseProvider 是 handlers 对 PulseService 的最小依赖面（测试注入 fake）。
@@ -17,9 +18,11 @@ type PulseProvider interface {
 // Handlers 承载 /api/intel/* 端点。Pulse 为 nil 时 pulse 端点回 503
 // （state 端点纯本地计算，永远可用）。Now 为 nil 时用 time.Now（测试注入）。
 type Handlers struct {
-	Pulse   PulseProvider
-	Journal *IntelJournal // nil → /api/intel/journal 回 503
-	Now     func() time.Time
+	Pulse     PulseProvider
+	Journal   *IntelJournal      // nil → /api/intel/journal 回 503
+	Premarket *premarket.Service // nil → /api/intel/premarket/* 回 503
+	Watchlist func(ctx context.Context) ([]string, error)
+	Now       func() time.Time
 }
 
 func (h *Handlers) now() time.Time {
@@ -34,6 +37,10 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/state", h.handleState)
 	mux.HandleFunc("GET /api/intel/pulse", h.handlePulse)
 	mux.HandleFunc("GET /api/intel/journal", h.handleJournal)
+	mux.HandleFunc("GET /api/intel/premarket/overnight", h.handlePMOvernight)
+	mux.HandleFunc("GET /api/intel/premarket/gaps", h.handlePMGaps)
+	mux.HandleFunc("GET /api/intel/premarket/movers", h.handlePMMovers)
+	mux.HandleFunc("GET /api/intel/premarket/sentiment", h.handlePMSentiment)
 }
 
 type stateJSON struct {
@@ -103,6 +110,62 @@ func (h *Handlers) handleJournal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, snap)
+}
+
+func (h *Handlers) handlePMOvernight(w http.ResponseWriter, r *http.Request) {
+	if h.Premarket == nil {
+		writeError(w, "premarket service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Premarket.Overnight(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePMGaps(w http.ResponseWriter, r *http.Request) {
+	if h.Premarket == nil {
+		writeError(w, "premarket service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Premarket.Gaps(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePMMovers(w http.ResponseWriter, r *http.Request) {
+	if h.Premarket == nil {
+		writeError(w, "premarket service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var watchlist []string
+	if h.Watchlist != nil {
+		watchlist, _ = h.Watchlist(r.Context())
+	}
+	dto, err := h.Premarket.Movers(r.Context(), watchlist)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePMSentiment(w http.ResponseWriter, r *http.Request) {
+	if h.Premarket == nil {
+		writeError(w, "premarket service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Premarket.Sentiment(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

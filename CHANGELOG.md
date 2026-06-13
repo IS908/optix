@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.9.0] - 2026-06-13
+
+Minor release: Market Intel M2 — embedded SPA skeleton + four-phase market
+clock (epic #120).
+
 ### Added
 
 - **Market Intel SPA (`/intel/`) — M2 of epic #120.** New `web/` Vite + React
@@ -1119,7 +1126,9 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.7.25...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/IS908/optix/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/IS908/optix/compare/v0.7.25...v0.8.0
 [0.7.25]: https://github.com/IS908/optix/compare/v0.7.24...v0.7.25
 [0.7.24]: https://github.com/IS908/optix/compare/v0.7.23...v0.7.24
 [0.7.23]: https://github.com/IS908/optix/compare/v0.7.22...v0.7.23

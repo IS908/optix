@@ -14,6 +14,18 @@ above it.
 
 _No changes yet._
 
+## [0.12.1] - 2026-06-13
+
+Patch release for Market Intel M5 postclose cleanup.
+
+### Fixed
+
+- Reused the already computed postclose movers when building timeline and
+  bundled read-across output, avoiding duplicate yfinance bar fetches for the
+  same request.
+- Marked the tracked M5 implementation plan checklist as completed so release
+  review no longer reads as unfinished work.
+
 ## [0.12.0] - 2026-06-13
 
 Minor release: Market Intel M5 — the postclose view of epic #120.
@@ -1176,7 +1188,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/IS908/optix/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/IS908/optix/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/IS908/optix/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/IS908/optix/compare/v0.9.0...v0.10.0

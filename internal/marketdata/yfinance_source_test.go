@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 每个组合表用到的业务 ID 必须有 Yahoo 映射 —— 钉死映射完整性。
@@ -84,16 +85,43 @@ func TestParseBatchQuotes_PctOnlyZeroesPrice(t *testing.T) {
 
 func TestParseBatchBars(t *testing.T) {
 	raw := []byte(`{"ES=F": [
-		{"ts": "2026-06-01T08:00:00-04:00", "open": 6010, "high": 6015, "low": 6008, "close": 6012.5, "volume": 1200}
+		{"ts": "2026-06-01T08:00:00-04:00", "open": 6010, "high": 6015, "low": 6008, "close": 6012.5, "volume": 1200},
+		{"ts": "2026-06-02T00:00:00", "open": 6020, "high": 6025, "low": 6018, "close": 6022.5, "volume": 1300}
 	]}`)
 	bars, err := parseBatchBars(raw, map[string]string{"ES=F": "ES"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bars["ES"]) != 1 || bars["ES"][0].Close != 6012.5 {
+	if len(bars["ES"]) != 2 || bars["ES"][0].Close != 6012.5 || bars["ES"][1].Close != 6022.5 {
 		t.Fatalf("bars = %+v", bars)
 	}
-	if bars["ES"][0].Timestamp.IsZero() {
+	if bars["ES"][0].Timestamp.IsZero() || bars["ES"][1].Timestamp.IsZero() {
 		t.Fatalf("timestamp not parsed")
+	}
+	if got := bars["ES"][1].Timestamp.Format(time.RFC3339); got != "2026-06-02T00:00:00Z" {
+		t.Fatalf("timezone-less daily timestamp = %s, want UTC", got)
+	}
+}
+
+func TestBatchBarsPeriodForLookback(t *testing.T) {
+	tests := []struct {
+		name     string
+		lookback time.Duration
+		want     string
+	}{
+		{name: "intraday sparkline", lookback: 8 * time.Hour, want: "1d"},
+		{name: "multi day sparkline", lookback: 72 * time.Hour, want: "5d"},
+		{name: "one month", lookback: 20 * 24 * time.Hour, want: "1mo"},
+		{name: "three months", lookback: 80 * 24 * time.Hour, want: "3mo"},
+		{name: "six months", lookback: 150 * 24 * time.Hour, want: "6mo"},
+		{name: "one year", lookback: 300 * 24 * time.Hour, want: "1y"},
+		{name: "event window history", lookback: 540 * 24 * time.Hour, want: "2y"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := batchBarsPeriod(tt.lookback); got != tt.want {
+				t.Fatalf("period = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -14,6 +14,21 @@ above it.
 
 _No changes yet._
 
+## [0.13.0] - 2026-06-13
+
+Minor release: Market Intel M6 — the event-day view of epic #120.
+
+### Added
+
+- **Market Intel event view (`optix event`, `/intel/` event cards) — M6 of
+  epic #120.** Four source-backed cards: rate/yield proxy repricing,
+  deterministic FOMC statement wording diff, historical FOMC/CPI event-day
+  pattern aggregation, and a signed cross-asset sensitivity matrix. New
+  `optix event` CLI bundle and four `GET /api/intel/event/*` endpoints with
+  explicit source/basis/as_of/warnings labels. M6 v1 is free-source-first via
+  yfinance plus local statement/calendar fixtures; IBKR exact contract mapping
+  is left as a future adapter.
+
 ## [0.12.1] - 2026-06-13
 
 Patch release for Market Intel M5 postclose cleanup.
@@ -1188,7 +1203,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/IS908/optix/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/IS908/optix/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/IS908/optix/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/IS908/optix/compare/v0.10.0...v0.11.0

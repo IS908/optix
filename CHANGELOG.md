@@ -12,7 +12,15 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Market Intel postclose view (`optix postclose`, `/intel/` postclose cards)
+  — M5 of epic #120.** Four pure-compute cards: earnings quick read vs free
+  yfinance EPS consensus, structured postclose timeline, same-sector
+  read-across edges from the embedded sector map, and combined regular-session
+  plus after-hours movers. New `optix postclose` CLI bundle (agent 16:30
+  checkpoint context) and four `GET /api/intel/postclose/*` endpoints with
+  independent per-card failure isolation. No IBKR and no Python gRPC engine.
 
 ## [0.11.0] - 2026-06-13
 

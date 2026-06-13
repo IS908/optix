@@ -12,6 +12,21 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-06-14
+
+Patch release for Market Intel M7 option stress.
+
+### Added
+
+- Add M7 Shock option-stress metrics from broker/yfinance option chains for
+  SPY/QQQ/IWM/VIXY ETF proxies, including source/basis/as_of labels and
+  put-call ATM IV skew evidence in the Shock fingerprint card.
+
+### Fixed
+
+- Contain long degraded-data warning text in WebUI cards so IBKR/Yahoo fallback
+  errors do not overflow the layout.
+
 ## [0.14.2] - 2026-06-13
 
 Patch release for Market Intel M7 IBKR shock market depth.

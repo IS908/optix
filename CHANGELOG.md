@@ -12,6 +12,20 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-06-13
+
+Patch release for Market Intel M7 IBKR shock market depth.
+
+### Added
+
+- Add an IBKR SMART market-depth adapter for M7 Shock liquidity so broker
+  market depth can fill top bid/ask levels when IBKR depth data is available.
+
+### Fixed
+
+- Cap M7 fallback quote fetches so rate-limited yfinance or broker fallback
+  paths degrade into visible warnings instead of leaving Shock cards loading.
+
 ## [0.14.1] - 2026-06-13
 
 Patch release for Market Intel data transparency and degraded-data behavior.

@@ -74,4 +74,4 @@ Spec: `docs/superpowers/specs/2026-06-13-market-intel-m6-event-design.md`
 - [x] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, and `cd web && npm run build -- --outDir /tmp/optix-web-dist-m6-verify`.
 - [x] Start local server and capture `/intel/` Event view screenshot.
 - [x] Self-review diff and fix bugs with tests first.
-- [ ] Commit, push, open PR closing #132, merge, tag `v0.13.0`, create GitHub Release.
+- [x] Commit, push, open PR closing #132, merge, tag `v0.13.0`, create GitHub Release.

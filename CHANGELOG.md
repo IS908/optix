@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-06-13
+
+Patch release for Market Intel data transparency and degraded-data behavior.
+
 ### Fixed
 
 - Surface Market Intel Event/Shock data-source warnings in the WebUI and keep

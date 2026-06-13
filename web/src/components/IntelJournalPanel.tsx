@@ -43,7 +43,7 @@ export function IntelJournalPanel() {
   }
   const hr = data.hit_rate
   const denom = hr.hit + hr.miss
-  // 每检查点最新叙事按 checkpoint 排序展示;默认展开最后一条
+  // narratives 已按 created_at 升序（后端每检查点取最新版）→ 展开全局最新一条。
   const latestBody = data.narratives.length > 0 ? data.narratives[data.narratives.length - 1] : null
 
   return (

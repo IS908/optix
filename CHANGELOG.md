@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-13
+
+Minor release: Market Intel M7 — the shock view of epic #120.
+
 ### Added
 
 - **Market Intel shock view (`optix shock`, `/intel/` shock cards) — M7 of

@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.10.0] - 2026-06-13
+
+Minor release: Market Intel M3 — the judgment-journal closed loop (the
+narrative plane of epic #120).
+
 ### Added
 
 - **Market Intel judgment journal (`optix intel`) — M3 of epic #120.** The
@@ -1139,7 +1146,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/IS908/optix/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/IS908/optix/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/IS908/optix/compare/v0.7.25...v0.8.0
 [0.7.25]: https://github.com/IS908/optix/compare/v0.7.24...v0.7.25

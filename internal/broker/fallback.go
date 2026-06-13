@@ -143,6 +143,19 @@ func (fb *FallbackBroker) GetOptionChainWithOI(ctx context.Context, underlying s
 	return nil, ErrOINotSupported
 }
 
+// GetMarketDepth delegates to the active broker if it implements
+// MarketDepthFetcher. Returns ErrMarketDepthNotSupported when running on a
+// fallback or broker that cannot supply order-book depth.
+func (fb *FallbackBroker) GetMarketDepth(ctx context.Context, symbol string, levels int) (*model.MarketDepth, error) {
+	if fb.active == nil {
+		return nil, fmt.Errorf("broker: not connected")
+	}
+	if f, ok := fb.active.(MarketDepthFetcher); ok {
+		return f.GetMarketDepth(ctx, symbol, levels)
+	}
+	return nil, ErrMarketDepthNotSupported
+}
+
 // GetPositions delegates to the active broker if it implements AccountReader.
 // Returns ErrAccountNotSupported when the active broker is the yfinance
 // fallback (which has no account concept).

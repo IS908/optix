@@ -101,6 +101,42 @@ func TestBrokerQuoteAdapterOverlaysBrokerQuotes(t *testing.T) {
 	}
 }
 
+func TestBrokerQuoteAdapterDepthUsesBrokerMarketDepth(t *testing.T) {
+	now := fixedShockNow()
+	adapter := NewBrokerQuoteAdapter(
+		func(context.Context) (broker.Broker, string, error) {
+			return testBroker{depth: map[string]*model.MarketDepth{
+				"SPY": {
+					Symbol:    "SPY",
+					Timestamp: now,
+					Levels: []model.MarketDepthLevel{
+						{Side: "bid", Position: 0, Price: 499.9, Size: 1000},
+						{Side: "bid", Position: 1, Price: 499.8, Size: 800},
+						{Side: "ask", Position: 0, Price: 500.1, Size: 900},
+						{Side: "ask", Position: 1, Price: 500.2, Size: 850},
+					},
+				},
+			}}, "IBKR", nil
+		},
+		staticFallbackSource{},
+	)
+
+	depth, err := adapter.Depth(context.Background(), []string{"SPY"}, 5)
+	if err != nil {
+		t.Fatalf("Depth error = %v", err)
+	}
+	spy := depth["SPY"]
+	if spy.Source != "ibkr" || spy.Basis != "realtime_or_delayed" {
+		t.Fatalf("SPY depth source/basis = %q/%q, want ibkr/realtime_or_delayed", spy.Source, spy.Basis)
+	}
+	if len(spy.Levels) != 4 {
+		t.Fatalf("SPY depth levels = %d, want 4", len(spy.Levels))
+	}
+	if spy.Levels[0].Side != "bid" || spy.Levels[0].Size != 1000 || spy.Levels[2].Side != "ask" || spy.Levels[2].Price != 500.1 {
+		t.Fatalf("SPY depth levels not preserved: %#v", spy.Levels)
+	}
+}
+
 func TestServiceWarnsWhenBrokerPreferredQuotesUseFallback(t *testing.T) {
 	now := fixedShockNow()
 	adapter := NewBrokerQuoteAdapter(
@@ -188,6 +224,32 @@ func TestServiceCapsBrokerOverlayWhenFallbackQuotesExist(t *testing.T) {
 	}
 }
 
+func TestBrokerQuoteAdapterCapsFallbackQuotesWhenBrokerOverlayCanRecover(t *testing.T) {
+	now := fixedShockNow()
+	adapter := NewBrokerQuoteAdapter(
+		func(context.Context) (broker.Broker, string, error) {
+			return testBroker{quotes: map[string]*model.StockQuote{
+				"SPY": {Symbol: "SPY", Last: 501, Bid: 500.9, Ask: 501.1, Change: -14, ChangePct: -2.72, Timestamp: now},
+			}}, "IBKR", nil
+		},
+		blockingFallbackSource{},
+	)
+	adapter.overlayTimeout = 10 * time.Millisecond
+
+	start := time.Now()
+	quotes, err := adapter.Quotes(context.Background(), []string{"SPY"})
+	elapsed := time.Since(start)
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("Quotes elapsed = %s, want fallback quotes capped", elapsed)
+	}
+	if err == nil || !strings.Contains(err.Error(), "fallback quotes degraded") || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("Quotes error = %v, want fallback timeout warning", err)
+	}
+	if quotes["SPY"].Source != "ibkr" || quotes["SPY"].Bid != 500.9 || quotes["SPY"].Ask != 501.1 {
+		t.Fatalf("SPY not recovered from broker overlay: %#v", quotes["SPY"])
+	}
+}
+
 type fakeShockSource struct {
 	quoteErr  error
 	barErr    error
@@ -271,8 +333,28 @@ func (staticFallbackSource) OptionMetrics(context.Context, []string) (map[string
 	return map[string]OptionStress{}, nil
 }
 
+type blockingFallbackSource struct{}
+
+func (blockingFallbackSource) Quotes(ctx context.Context, _ []string) (map[string]ShockQuote, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (blockingFallbackSource) Bars(context.Context, []string, string, time.Duration) (map[string][]model.OHLCV, error) {
+	return map[string][]model.OHLCV{}, nil
+}
+
+func (blockingFallbackSource) Depth(context.Context, []string, int) (map[string]DepthSnapshot, error) {
+	return map[string]DepthSnapshot{}, nil
+}
+
+func (blockingFallbackSource) OptionMetrics(context.Context, []string) (map[string]OptionStress, error) {
+	return map[string]OptionStress{}, nil
+}
+
 type testBroker struct {
 	quotes map[string]*model.StockQuote
+	depth  map[string]*model.MarketDepth
 }
 
 func (b testBroker) Connect(context.Context) error { return nil }
@@ -294,4 +376,11 @@ func (b testBroker) GetHistoricalBars(context.Context, string, string, string, s
 
 func (b testBroker) GetOptionChain(context.Context, string, string) (*model.OptionChain, error) {
 	return nil, nil
+}
+
+func (b testBroker) GetMarketDepth(_ context.Context, symbol string, _ int) (*model.MarketDepth, error) {
+	if d, ok := b.depth[symbol]; ok {
+		return d, nil
+	}
+	return nil, errors.New("missing depth")
 }

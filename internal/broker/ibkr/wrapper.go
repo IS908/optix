@@ -2,6 +2,7 @@ package ibkr
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/IS908/optix/pkg/model"
@@ -126,6 +127,88 @@ func (po *pendingOI) snapshot() oiSnapshot {
 	}
 }
 
+// pendingDepth accumulates market depth rows from UpdateMktDepth /
+// UpdateMktDepthL2 callbacks. IB reports side 0 as ask and side 1 as bid;
+// operation 2 deletes a level, while 0/1 insert or update it.
+type pendingDepth struct {
+	mu     sync.Mutex
+	levels map[string]model.MarketDepthLevel
+	want   int
+	done   chan struct{}
+	once   sync.Once
+}
+
+func (pd *pendingDepth) update(position, operation, side int64, price float64, size ibapi.Decimal) {
+	sideName := depthSide(side)
+	if sideName == "" {
+		return
+	}
+	pos := int(position)
+	key := fmt.Sprintf("%s:%d", sideName, pos)
+
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+
+	if operation == 2 || price <= 0 || size.Float() <= 0 {
+		delete(pd.levels, key)
+		return
+	}
+	pd.levels[key] = model.MarketDepthLevel{
+		Side:     sideName,
+		Position: pos,
+		Price:    price,
+		Size:     size.Float(),
+	}
+	if pd.completeLocked() {
+		pd.once.Do(func() { close(pd.done) })
+	}
+}
+
+func (pd *pendingDepth) snapshot() []model.MarketDepthLevel {
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+
+	out := make([]model.MarketDepthLevel, 0, len(pd.levels))
+	for _, level := range pd.levels {
+		out = append(out, level)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Side != out[j].Side {
+			return out[i].Side == "bid"
+		}
+		return out[i].Position < out[j].Position
+	})
+	return out
+}
+
+func (pd *pendingDepth) completeLocked() bool {
+	var bid, ask int
+	for _, level := range pd.levels {
+		switch level.Side {
+		case "bid":
+			bid++
+		case "ask":
+			ask++
+		}
+	}
+	want := pd.want
+	if want <= 0 {
+		want = 1
+	}
+	return bid >= want && ask >= want
+}
+
+func depthSide(side int64) string {
+	switch side {
+	case 0:
+		return "ask"
+	case 1:
+		return "bid"
+	default:
+		return ""
+	}
+}
+
 // pendingBars accumulates historical bars for a single request.
 // `once` guards `done` so the End and Error paths can both attempt to
 // close idempotently — see #28.
@@ -189,6 +272,7 @@ type IbWrapper struct {
 	optParams       map[int64]*pendingOptParams
 	contractDetails map[int64]*pendingContractDetails
 	oi              map[int64]*pendingOI
+	depth           map[int64]*pendingDepth
 	positions       *pendingPositions // singleton — ReqPositions has no reqID
 	executions      map[int64]*pendingExecutions
 	errors          map[int64]chan error
@@ -210,6 +294,7 @@ func newIbWrapper() *IbWrapper {
 		optParams:       make(map[int64]*pendingOptParams),
 		contractDetails: make(map[int64]*pendingContractDetails),
 		oi:              make(map[int64]*pendingOI),
+		depth:           make(map[int64]*pendingDepth),
 		executions:      make(map[int64]*pendingExecutions),
 		errors:          make(map[int64]chan error),
 		nextValidID:     make(chan int64, 1),
@@ -264,6 +349,18 @@ func (w *IbWrapper) registerOI(reqID int64) *pendingOI {
 	return po
 }
 
+func (w *IbWrapper) registerDepth(reqID int64, levels int) *pendingDepth {
+	pd := &pendingDepth{
+		done:   make(chan struct{}),
+		levels: make(map[string]model.MarketDepthLevel),
+		want:   levels,
+	}
+	w.mu.Lock()
+	w.depth[reqID] = pd
+	w.mu.Unlock()
+	return pd
+}
+
 func (w *IbWrapper) registerPositions() *pendingPositions {
 	pp := &pendingPositions{done: make(chan struct{})}
 	w.mu.Lock()
@@ -301,6 +398,7 @@ func (w *IbWrapper) unregister(reqID int64) {
 	delete(w.optParams, reqID)
 	delete(w.contractDetails, reqID)
 	delete(w.oi, reqID)
+	delete(w.depth, reqID)
 	delete(w.executions, reqID)
 	delete(w.errors, reqID)
 	w.mu.Unlock()
@@ -314,6 +412,29 @@ func (w *IbWrapper) NextValidID(reqID int64) {
 	case w.nextValidID <- reqID:
 	default:
 	}
+}
+
+// UpdateMktDepth receives aggregated order-book rows.
+func (w *IbWrapper) UpdateMktDepth(reqID ibapi.TickerID, position int64, operation int64, side int64, price float64, size ibapi.Decimal) {
+	w.mu.Lock()
+	pd, ok := w.depth[reqID]
+	w.mu.Unlock()
+	if !ok {
+		return
+	}
+	pd.update(position, operation, side, price, size)
+}
+
+// UpdateMktDepthL2 receives exchange/market-maker order-book rows. For M7's
+// liquidity state we only need normalized side/position/price/size levels.
+func (w *IbWrapper) UpdateMktDepthL2(reqID ibapi.TickerID, position int64, _ string, operation int64, side int64, price float64, size ibapi.Decimal, _ bool) {
+	w.mu.Lock()
+	pd, ok := w.depth[reqID]
+	w.mu.Unlock()
+	if !ok {
+		return
+	}
+	pd.update(position, operation, side, price, size)
 }
 
 // TickPrice is called for BID, ASK, LAST, CLOSE price ticks during a snapshot.

@@ -26,9 +26,19 @@ type OIFetcher interface {
 	GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error)
 }
 
+// MarketDepthFetcher is an optional interface for brokers that can return a
+// bounded top-of-book market depth snapshot.
+type MarketDepthFetcher interface {
+	GetMarketDepth(ctx context.Context, symbol string, levels int) (*model.MarketDepth, error)
+}
+
 // ErrOINotSupported is returned by brokers that cannot provide per-contract
 // Open Interest.
 var ErrOINotSupported = errors.New("broker does not support per-contract Open Interest")
+
+// ErrMarketDepthNotSupported is returned by brokers that cannot provide
+// top-of-book market depth.
+var ErrMarketDepthNotSupported = errors.New("broker does not support market depth")
 
 // ErrExpiryNotAvailable is returned by GetOptionChainWithOI when the caller
 // requested a specific expiration that the broker does not offer for this

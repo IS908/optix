@@ -135,6 +135,29 @@ func TestWrapperQuoteAccumulatorCapturesDelayedPrices(t *testing.T) {
 	}
 }
 
+func TestWrapperMarketDepthAccumulatorCapturesBidAskLevels(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(1004)
+	pd := w.registerDepth(reqID, 5)
+	defer w.unregister(reqID)
+
+	w.UpdateMktDepth(reqID, 0, 0, 1, 499.90, ibapi.StringToDecimal("1000"))
+	w.UpdateMktDepth(reqID, 1, 0, 1, 499.80, ibapi.StringToDecimal("800"))
+	w.UpdateMktDepth(reqID, 0, 0, 0, 500.10, ibapi.StringToDecimal("900"))
+	w.UpdateMktDepth(reqID, 1, 0, 0, 500.20, ibapi.StringToDecimal("850"))
+
+	levels := pd.snapshot()
+	if len(levels) != 4 {
+		t.Fatalf("levels = %d, want 4: %#v", len(levels), levels)
+	}
+	if levels[0].Side != "bid" || levels[0].Position != 0 || levels[0].Price != 499.90 || levels[0].Size != 1000 {
+		t.Fatalf("bid level 0 mismatch: %#v", levels[0])
+	}
+	if levels[2].Side != "ask" || levels[2].Position != 0 || levels[2].Price != 500.10 || levels[2].Size != 900 {
+		t.Fatalf("ask level 0 mismatch: %#v", levels[2])
+	}
+}
+
 func TestQuoteChangeSupportsNegativeAndMidpoint(t *testing.T) {
 	change, pct := quoteChange(95, 100)
 	if change != -5 {

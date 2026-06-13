@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { EventSensitivityDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 function score(v: number) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`
@@ -38,6 +39,7 @@ export function EventSensitivityCard() {
         ))}
       </div>
       <div className="mt-3 text-[10px] text-zinc-600">{data.source}</div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

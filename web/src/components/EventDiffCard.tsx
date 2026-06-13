@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { EventDiffDTO, EventStatementSentence } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 function topSentences(rows: EventStatementSentence[]) {
   return rows.slice(0, 2)
@@ -37,6 +38,7 @@ export function EventDiffCard() {
         ))}
       </div>
       <div className="mt-3 text-[10px] text-zinc-600">{data.source}</div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

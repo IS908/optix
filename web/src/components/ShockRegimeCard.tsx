@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { ShockRegimeDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 function pct(v: number) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
@@ -41,6 +42,7 @@ export function ShockRegimeCard() {
           </div>
         ))}
       </div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

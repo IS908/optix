@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { EventRatePathRow, EventRatesDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 function pct(v: number) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
@@ -58,6 +59,7 @@ export function EventRatesCard() {
           <RateRow key={row.id} row={row} />
         ))}
       </div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

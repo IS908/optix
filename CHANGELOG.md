@@ -12,6 +12,13 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Surface Market Intel Event/Shock data-source warnings in the WebUI and keep
+  M7 IBKR quote fallback warnings visible when yfinance fallback data is used.
+- Cap M7 shock broker quote overlays when fallback quotes are already available
+  so the Shock view degrades quickly instead of staying in loading state.
+
 ## [0.14.0] - 2026-06-13
 
 Minor release: Market Intel M7 — the shock view of epic #120.

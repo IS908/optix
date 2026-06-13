@@ -34,4 +34,27 @@ describe('ShockRegimeCard', () => {
     expect(screen.getByText('VIX')).toBeInTheDocument()
     expect(screen.getByText('+35.00%')).toBeInTheDocument()
   })
+
+  it('renders shock source warnings inline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '2026-06-13T15:30:00Z',
+          source: 'yfinance',
+          state: 'watch',
+          score: 32,
+          vix_sigma: 1.3,
+          confirmations: [],
+          warnings: ['quotes: broker quotes degraded: ibkr offline'],
+        }),
+      }),
+    )
+
+    render(<ShockRegimeCard />)
+
+    await waitFor(() => expect(screen.getByText('警告 1')).toBeInTheDocument())
+    expect(screen.getByText('quotes: broker quotes degraded: ibkr offline')).toBeInTheDocument()
+  })
 })

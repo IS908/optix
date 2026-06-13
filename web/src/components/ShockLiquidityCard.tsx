@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { ShockLiquidityDTO, ShockLiquidityRow } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 function LiquidityRowView({ row }: { row: ShockLiquidityRow }) {
   if (row.missing) {
@@ -47,6 +48,7 @@ export function ShockLiquidityCard() {
           <LiquidityRowView key={row.id} row={row} />
         ))}
       </div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

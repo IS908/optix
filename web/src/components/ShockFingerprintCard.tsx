@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { ShockFingerprintDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 export function ShockFingerprintCard() {
   const { data } = usePoll<ShockFingerprintDTO>('/api/intel/shock/fingerprint', 60_000)
@@ -25,6 +26,7 @@ export function ShockFingerprintCard() {
           </div>
         ))}
       </div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

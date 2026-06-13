@@ -82,13 +82,14 @@ func (s *Service) quotes(ctx context.Context, ids []string) (map[string]ShockQuo
 		return map[string]ShockQuote{}, []string{"quotes: shock source unavailable"}
 	}
 	quotes, err := s.src.Quotes(ctx, ids)
+	var warnings []string
 	if err != nil {
-		return map[string]ShockQuote{}, []string{"quotes: " + err.Error()}
+		warnings = append(warnings, "quotes: "+err.Error())
 	}
 	if quotes == nil {
 		quotes = map[string]ShockQuote{}
 	}
-	return quotes, nil
+	return quotes, warnings
 }
 
 func shockQuoteIDs() []string {

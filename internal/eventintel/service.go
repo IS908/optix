@@ -116,6 +116,10 @@ func (s *Service) Bundle(ctx context.Context) (BundleDTO, error) {
 	return BundleDTO{Rates: rates, Diff: diff, Patterns: patterns, Sensitivity: sensitivity}, nil
 }
 
+func (s *Service) EventDates(ctx context.Context) ([]EventDate, []string) {
+	return s.eventDates(ctx)
+}
+
 func (s *Service) eventDates(ctx context.Context) ([]EventDate, []string) {
 	if s.src == nil {
 		return nil, []string{"event calendar unavailable"}

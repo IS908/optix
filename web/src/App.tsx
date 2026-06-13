@@ -9,10 +9,11 @@ import { SlotGrid } from './views/SlotGrid'
 export default function App() {
   const state = usePoll<IntelState>('/api/intel/state', 60_000)
   const [manualView, setManualView] = useState<ViewName | null>(null)
-  // 自动跟随状态机；手动点击后锁定，直到「跟随时钟」回位。
+  // 自动跟随后端 resolver；手动点击后锁定，直到「跟随自动」回位。
   const autoView: ViewName = state.data?.view ?? 'intraday'
   const view = manualView ?? autoView
   const pulse = usePoll<PulseResponse>(`/api/intel/pulse?view=${view}`, 30_000)
+  const overrideReason = manualView === null ? state.data?.view_override?.reason : undefined
 
   return (
     <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100">
@@ -21,7 +22,9 @@ export default function App() {
         <PulseBar pulse={pulse.data} stale={pulse.stale} />
         <ViewTabs
           active={view}
+          autoView={autoView}
           locked={manualView !== null}
+          overrideReason={overrideReason}
           onSelect={(v) => setManualView(v)}
           onFollow={() => setManualView(null)}
         />

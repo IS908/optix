@@ -2,10 +2,17 @@
 export type ViewName = 'premarket' | 'intraday' | 'postclose' | 'event' | 'shock'
 export type PhaseName = 'premarket' | 'intraday' | 'postclose' | 'closed'
 
+export interface ViewOverride {
+  source: string
+  reason: string
+}
+
 export interface IntelState {
   now: string
   phase: PhaseName
   view: ViewName
+  base_view?: ViewName
+  view_override?: ViewOverride
   is_trading_day: boolean
   early_close: boolean
   next_transition: string

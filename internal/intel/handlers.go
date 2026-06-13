@@ -62,25 +62,30 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 }
 
 type stateJSON struct {
-	Now            time.Time `json:"now"`
-	Phase          string    `json:"phase"`
-	View           string    `json:"view"`
-	IsTradingDay   bool      `json:"is_trading_day"`
-	EarlyClose     bool      `json:"early_close"`
-	NextTransition time.Time `json:"next_transition"`
-	NextPhase      string    `json:"next_phase"`
-	CalendarStale  bool      `json:"calendar_stale"`
+	Now            time.Time     `json:"now"`
+	Phase          string        `json:"phase"`
+	View           string        `json:"view"`
+	BaseView       string        `json:"base_view,omitempty"`
+	ViewOverride   *viewOverride `json:"view_override,omitempty"`
+	IsTradingDay   bool          `json:"is_trading_day"`
+	EarlyClose     bool          `json:"early_close"`
+	NextTransition time.Time     `json:"next_transition"`
+	NextPhase      string        `json:"next_phase"`
+	CalendarStale  bool          `json:"calendar_stale"`
 }
 
-func (h *Handlers) handleState(w http.ResponseWriter, _ *http.Request) {
+func (h *Handlers) handleState(w http.ResponseWriter, r *http.Request) {
 	now := h.now().In(nyLoc)
 	phase := PhaseAt(now)
+	resolved := h.resolveAutoView(r.Context(), now, phase)
 	nt, np := NextTransition(now)
 	_, early := earlyCloseAt(now)
 	writeJSON(w, stateJSON{
 		Now:            now,
 		Phase:          string(phase),
-		View:           string(ViewFor(phase)),
+		View:           string(resolved.View),
+		BaseView:       string(resolved.BaseView),
+		ViewOverride:   resolved.Override,
 		IsTradingDay:   isTradingDay(now),
 		EarlyClose:     early,
 		NextTransition: nt.In(nyLoc),
@@ -97,7 +102,8 @@ func (h *Handlers) handlePulse(w http.ResponseWriter, r *http.Request) {
 	view := marketdata.View(r.URL.Query().Get("view"))
 	inferred := false
 	if view == "" {
-		view = ViewFor(PhaseAt(h.now()))
+		now := h.now()
+		view = h.resolveAutoView(r.Context(), now, PhaseAt(now)).View
 		inferred = true
 	} else if !ValidView(view) {
 		writeError(w, "invalid view: use premarket|intraday|postclose|event|shock", http.StatusBadRequest)

@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IS908/optix/internal/eventintel"
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/shockintel"
 )
 
 type fakePulse struct {
@@ -26,6 +28,12 @@ func (f *fakePulse) Snapshot(_ context.Context, v marketdata.View, spark bool) (
 
 func newTestMux(p PulseProvider, now time.Time) *http.ServeMux {
 	h := &Handlers{Pulse: p, Now: func() time.Time { return now }}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	return mux
+}
+
+func newTestMuxWithHandlers(h *Handlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	h.Register(mux)
 	return mux
@@ -75,6 +83,47 @@ func TestStateClosedWeekend(t *testing.T) {
 	}
 }
 
+func TestStateEventOverride(t *testing.T) {
+	eventSvc := eventintel.NewService(staticEventSource{})
+	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
+	eventSvc.Now = func() time.Time { return now }
+	mux := newTestMuxWithHandlers(&Handlers{Event: eventSvc, Now: func() time.Time { return now }})
+
+	rec, body := get(t, mux, "/api/intel/state")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if body["view"] != "event" || body["base_view"] != "intraday" {
+		t.Fatalf("view override = view:%v base:%v body=%v", body["view"], body["base_view"], body)
+	}
+	override := body["view_override"].(map[string]any)
+	if override["source"] != "event_calendar" || !strings.Contains(override["reason"].(string), "Jun CPI") {
+		t.Fatalf("override = %#v", override)
+	}
+}
+
+func TestStateShockOverrideTakesPriorityOverEvent(t *testing.T) {
+	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
+	eventSvc := eventintel.NewService(staticEventSource{})
+	eventSvc.Now = func() time.Time { return now }
+	shockSvc := shockintel.NewService(staticShockSource{})
+	shockSvc.Now = func() time.Time { return now }
+	mux := newTestMuxWithHandlers(&Handlers{
+		Event: eventSvc,
+		Shock: shockSvc,
+		Now:   func() time.Time { return now },
+	})
+
+	_, body := get(t, mux, "/api/intel/state")
+	if body["view"] != "shock" || body["base_view"] != "intraday" {
+		t.Fatalf("shock override should win, got body=%v", body)
+	}
+	override := body["view_override"].(map[string]any)
+	if override["source"] != "shock_regime" || !strings.Contains(override["reason"].(string), "shock") {
+		t.Fatalf("override = %#v", override)
+	}
+}
+
 func TestPulseEndpoint(t *testing.T) {
 	price := 100.0
 	fp := &fakePulse{snap: &marketdata.PulseSnapshot{
@@ -112,6 +161,52 @@ func TestPulseEndpoint(t *testing.T) {
 	}
 	if body["missing"].([]any)[0] != "US10Y" {
 		t.Errorf("missing = %v", body["missing"])
+	}
+}
+
+func TestPulseDefaultUsesResolvedOverride(t *testing.T) {
+	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
+	eventSvc := eventintel.NewService(staticEventSource{})
+	eventSvc.Now = func() time.Time { return now }
+	fp := &fakePulse{snap: &marketdata.PulseSnapshot{View: marketdata.ViewEvent}}
+	mux := newTestMuxWithHandlers(&Handlers{
+		Pulse: fp,
+		Event: eventSvc,
+		Now:   func() time.Time { return now },
+	})
+
+	rec, body := get(t, mux, "/api/intel/pulse")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if fp.gotView != marketdata.ViewEvent {
+		t.Fatalf("default pulse view = %s, want event", fp.gotView)
+	}
+	if body["view_inferred"] != true {
+		t.Error("default resolved view must still be marked inferred")
+	}
+}
+
+func TestPulseExplicitViewBypassesResolvedOverride(t *testing.T) {
+	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
+	eventSvc := eventintel.NewService(staticEventSource{})
+	eventSvc.Now = func() time.Time { return now }
+	fp := &fakePulse{snap: &marketdata.PulseSnapshot{View: marketdata.ViewIntraday}}
+	mux := newTestMuxWithHandlers(&Handlers{
+		Pulse: fp,
+		Event: eventSvc,
+		Now:   func() time.Time { return now },
+	})
+
+	rec, body := get(t, mux, "/api/intel/pulse?view=intraday")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if fp.gotView != marketdata.ViewIntraday {
+		t.Fatalf("explicit pulse view = %s, want intraday", fp.gotView)
+	}
+	if body["view_inferred"] != false {
+		t.Error("explicit pulse view must not be marked inferred")
 	}
 }
 

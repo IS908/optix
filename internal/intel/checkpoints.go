@@ -18,7 +18,7 @@ var DailyCheckpoints = []Checkpoint{
 	{"reconcile", "对账", 16, 30},
 }
 
-// ValidCheckpointKinds 含 interrupt（写入校验用；interrupt 可写但不在日程）。
+// validCheckpointKinds 含 interrupt（写入校验用；interrupt 可写但不在日程）。
 var validCheckpointKinds = map[string]bool{
 	"script": true, "first_check": true, "set_tone": true, "reconcile": true, "interrupt": true,
 }

@@ -41,4 +41,25 @@ describe('EventRatesCard', () => {
     expect(screen.getByText('+6.25%')).toBeInTheDocument()
     expect(screen.getByText('approx')).toBeInTheDocument()
   })
+
+  it('renders event source warnings inline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '2026-06-13T14:00:00Z',
+          source: 'yfinance',
+          universe_note: '',
+          rows: [],
+          warnings: ['rates quotes: yfinance fallback stale'],
+        }),
+      }),
+    )
+
+    render(<EventRatesCard />)
+
+    await waitFor(() => expect(screen.getByText('警告 1')).toBeInTheDocument())
+    expect(screen.getByText('rates quotes: yfinance fallback stale')).toBeInTheDocument()
+  })
 })

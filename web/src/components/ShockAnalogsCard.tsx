@@ -1,5 +1,6 @@
 import { usePoll } from '../api/usePoll'
 import type { ShockAnalogsDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
 
 export function ShockAnalogsCard() {
   const { data } = usePoll<ShockAnalogsDTO>('/api/intel/shock/analogs', 60_000)
@@ -29,6 +30,7 @@ export function ShockAnalogsCard() {
           </div>
         ))}
       </div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

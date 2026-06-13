@@ -101,6 +101,93 @@ func TestBrokerQuoteAdapterOverlaysBrokerQuotes(t *testing.T) {
 	}
 }
 
+func TestServiceWarnsWhenBrokerPreferredQuotesUseFallback(t *testing.T) {
+	now := fixedShockNow()
+	adapter := NewBrokerQuoteAdapter(
+		func(context.Context) (broker.Broker, string, error) {
+			return nil, "", errors.New("ibkr offline")
+		},
+		staticFallbackSource{quotes: map[string]ShockQuote{
+			"VIX": {ID: "VIX", Label: "VIX", Price: 28, ChangePct: 25, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"SPY": {ID: "SPY", Label: "SPY", Price: 500, ChangePct: -2.5, Bid: 499.9, Ask: 500.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"QQQ": {ID: "QQQ", Label: "QQQ", Price: 430, ChangePct: -3, Bid: 429.9, Ask: 430.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"HYG": {ID: "HYG", Label: "HYG", Price: 75, ChangePct: -1.2, Bid: 74.8, Ask: 75.2, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"TLT": {ID: "TLT", Label: "TLT", Price: 94, ChangePct: 1.5, Bid: 93.9, Ask: 94.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+		}},
+	)
+	svc := NewService(adapter)
+	svc.Now = fixedShockNow
+
+	dto, err := svc.Regime(context.Background())
+	if err != nil {
+		t.Fatalf("Regime error = %v", err)
+	}
+	if dto.Source != "yfinance" {
+		t.Fatalf("Regime source = %q, want yfinance fallback", dto.Source)
+	}
+	if !warningsContain(dto.Warnings, "broker quotes") || !warningsContain(dto.Warnings, "ibkr offline") {
+		t.Fatalf("warnings = %#v, want broker fallback warning", dto.Warnings)
+	}
+}
+
+func TestServiceWarnsWhenBrokerConnectorUsesYFinanceFallback(t *testing.T) {
+	now := fixedShockNow()
+	adapter := NewBrokerQuoteAdapter(
+		func(context.Context) (broker.Broker, string, error) {
+			return testBroker{quotes: map[string]*model.StockQuote{
+				"SPY": {Symbol: "SPY", Last: 501, Bid: 500.9, Ask: 501.1, Change: -14, ChangePct: -2.72, Timestamp: now},
+			}}, "Yahoo Finance", nil
+		},
+		staticFallbackSource{quotes: map[string]ShockQuote{
+			"VIX": {ID: "VIX", Label: "VIX", Price: 28, ChangePct: 25, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"SPY": {ID: "SPY", Label: "SPY", Price: 500, ChangePct: -2.5, Bid: 499.9, Ask: 500.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"QQQ": {ID: "QQQ", Label: "QQQ", Price: 430, ChangePct: -3, Bid: 429.9, Ask: 430.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"HYG": {ID: "HYG", Label: "HYG", Price: 75, ChangePct: -1.2, Bid: 74.8, Ask: 75.2, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"TLT": {ID: "TLT", Label: "TLT", Price: 94, ChangePct: 1.5, Bid: 93.9, Ask: 94.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+		}},
+	)
+	svc := NewService(adapter)
+	svc.Now = fixedShockNow
+
+	dto, err := svc.Regime(context.Background())
+	if err != nil {
+		t.Fatalf("Regime error = %v", err)
+	}
+	if !warningsContain(dto.Warnings, "broker quotes degraded") || !warningsContain(dto.Warnings, "yfinance") {
+		t.Fatalf("warnings = %#v, want source fallback warning", dto.Warnings)
+	}
+}
+
+func TestServiceCapsBrokerOverlayWhenFallbackQuotesExist(t *testing.T) {
+	now := fixedShockNow()
+	adapter := NewBrokerQuoteAdapter(
+		func(ctx context.Context) (broker.Broker, string, error) {
+			<-ctx.Done()
+			return nil, "", ctx.Err()
+		},
+		staticFallbackSource{quotes: map[string]ShockQuote{
+			"VIX": {ID: "VIX", Label: "VIX", Price: 28, ChangePct: 25, Source: "yfinance", Basis: "delayed", AsOf: now},
+			"SPY": {ID: "SPY", Label: "SPY", Price: 500, ChangePct: -2.5, Bid: 499.9, Ask: 500.1, Source: "yfinance", Basis: "delayed", AsOf: now},
+		}},
+	)
+	adapter.overlayTimeout = 10 * time.Millisecond
+	svc := NewService(adapter)
+	svc.Now = fixedShockNow
+
+	start := time.Now()
+	dto, err := svc.Regime(context.Background())
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Regime error = %v", err)
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("Regime elapsed = %s, want broker overlay capped", elapsed)
+	}
+	if !warningsContain(dto.Warnings, "broker quotes degraded") || !warningsContain(dto.Warnings, "deadline") {
+		t.Fatalf("warnings = %#v, want broker timeout warning", dto.Warnings)
+	}
+}
+
 type fakeShockSource struct {
 	quoteErr  error
 	barErr    error

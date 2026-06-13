@@ -24,8 +24,9 @@ type Source interface {
 type BrokerConnector func(ctx context.Context) (broker.Broker, string, error)
 
 type BrokerQuoteAdapter struct {
-	connect  BrokerConnector
-	fallback Source
+	connect        BrokerConnector
+	fallback       Source
+	overlayTimeout time.Duration
 }
 
 type YFinanceAdapter struct {
@@ -51,7 +52,7 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerQuot
 }
 
 func NewBrokerQuoteAdapter(connect BrokerConnector, fallback Source) *BrokerQuoteAdapter {
-	return &BrokerQuoteAdapter{connect: connect, fallback: fallback}
+	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond}
 }
 
 func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
@@ -83,10 +84,17 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 		return out, nil
 	}
 
-	b, source, err := a.connect(ctx)
+	overlayCtx := ctx
+	var cancelOverlay context.CancelFunc
+	if len(out) > 0 && a.overlayTimeout > 0 {
+		overlayCtx, cancelOverlay = context.WithTimeout(ctx, a.overlayTimeout)
+		defer cancelOverlay()
+	}
+
+	b, source, err := a.connect(overlayCtx)
 	if err != nil {
 		if len(out) > 0 {
-			return out, nil
+			return out, fmt.Errorf("broker quotes degraded: %w", err)
 		}
 		if fallbackErr != nil {
 			return nil, fmt.Errorf("broker quotes: %w; fallback: %v", err, fallbackErr)
@@ -96,17 +104,28 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	source = normalizeSourceName(source)
 	defer b.Disconnect()
 
+	var warnParts []string
+	if source != "ibkr" {
+		warnParts = append(warnParts, fmt.Sprintf("broker quotes degraded: using %s fallback for broker-preferred quotes", source))
+	}
 	var quoteErrs []string
 	for _, id := range brokerIDs {
-		q, err := b.GetQuote(ctx, id)
+		q, err := b.GetQuote(overlayCtx, id)
 		if err != nil {
 			quoteErrs = append(quoteErrs, fmt.Sprintf("%s: %v", id, err))
 			continue
 		}
 		out[id] = stockQuoteToShock(id, q, source)
 	}
-	if len(out) == 0 && len(quoteErrs) > 0 {
-		return nil, fmt.Errorf("broker quotes: %s", strings.Join(quoteErrs, "; "))
+	if len(quoteErrs) > 0 {
+		warnParts = append(warnParts, fmt.Sprintf("broker quotes partial: %s", strings.Join(quoteErrs, "; ")))
+	}
+	if len(warnParts) > 0 {
+		err := fmt.Errorf("%s", strings.Join(warnParts, "; "))
+		if len(out) == 0 {
+			return nil, err
+		}
+		return out, err
 	}
 	return out, nil
 }

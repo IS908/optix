@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/IS908/optix/internal/datastore/sqlite"
@@ -201,7 +202,7 @@ func newIntelReconcileCmd() *cobra.Command {
 
 // emitJSONOrText：format=json 时 indent 输出 v；否则跑 textFn。
 func emitJSONOrText(format string, v any, textFn func()) error {
-	if format == "json" {
+	if strings.ToLower(format) == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)

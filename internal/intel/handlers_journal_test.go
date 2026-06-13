@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,26 @@ func TestJournalEndpoint(t *testing.T) {
 	}
 	if len(body["narratives"].([]any)) != 1 {
 		t.Errorf("want 1 narrative")
+	}
+}
+
+// 空日：judgments 必须序列化为 []（非 null），否则 SPA 对 null 做 .map/.length 崩溃。
+func TestJournalEndpointEmptyJudgmentsIsArray(t *testing.T) {
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := dET(2026, 6, 12, 11, 0)
+	jrnl := NewIntelJournal(s, fakePrice{price: 100, basis: "delayed"})
+	jrnl.Now = func() time.Time { return now }
+	h := &Handlers{Journal: jrnl, Now: func() time.Time { return now }}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/intel/journal?date=2026-06-12", nil))
+	if !strings.Contains(rec.Body.String(), `"judgments": []`) {
+		t.Errorf("empty judgments must serialize as [], body: %s", rec.Body.String())
 	}
 }
 

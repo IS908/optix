@@ -260,6 +260,10 @@ func (j *IntelJournal) ReadJournal(ctx context.Context, tradingDate string) (Jou
 		}
 	}
 	dayT, _ := time.ParseInLocation("2006-01-02", tradingDate, nyLoc)
+	// 切片永不为 nil：空也序列化为 []，避免 SPA 对 null 做 .map/.length 崩溃。
+	if judgments == nil {
+		judgments = []model.IntelJudgment{}
+	}
 	return JournalSnapshot{
 		TradingDate: tradingDate, Now: now.In(nyLoc), IsTradingDay: isTradingDay(dayT),
 		Checkpoints: checkpoints, Narratives: narr, Judgments: judgments, HitRate: hr,

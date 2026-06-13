@@ -141,6 +141,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newPremarketCmd())
 	root.AddCommand(newPostcloseCmd())
 	root.AddCommand(newEventCmd())
+	root.AddCommand(newShockCmd())
 	root.AddCommand(newServerCmd())
 
 	return root

@@ -119,7 +119,7 @@ make clean  # Removes bin/ and data/optix.db
 **`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
-- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, `/api/intel/premarket/{overnight,gaps,movers,sentiment}`, `/api/intel/postclose/{earnings,timeline,read-across,movers}`, and `/api/intel/event/{rates,diff,patterns,sensitivity}`
+- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, `/api/intel/premarket/{overnight,gaps,movers,sentiment}`, `/api/intel/postclose/{earnings,timeline,read-across,movers}`, `/api/intel/event/{rates,diff,patterns,sensitivity}`, and `/api/intel/shock/{regime,fingerprint,analogs,liquidity}`
 
 **`premarket/`**: Market Intel premarket analysis plane (pure compute, zero IBKR/gRPC)
 - `overnight.go`: descriptive overnight transmission chain (N225→TSMC→SX5E→ES)
@@ -142,6 +142,13 @@ make clean  # Removes bin/ and data/optix.db
 - `sensitivity.go`: signed risk-on/rates-up/dollar-up sensitivity matrix from event-window returns
 - `source.go`/`service.go`: yfinance adapter plus local statement/calendar fixtures; every degraded source becomes warnings with non-nil DTO slices
 
+**`shockintel/`**: Market Intel shock analysis plane (pure compute, IBKR-preferred by contract)
+- `regime.go`: VIX-sigma plus cross-asset/liquidity confirmation into normal/watch/shock/critical trigger state
+- `fingerprint.go`: supply/demand/liquidity/policy shock fingerprint scoring
+- `analogs.go`: local historical shock-template similarity matching
+- `liquidity.go`: ETF spread/depth liquidity state for SPY/QQQ/IWM/TLT/HYG/LQD
+- `source.go`/`service.go`: broker-backed top-of-book quote adapter overlays IBKR/Yahoo ETF bid/ask data on yfinance macro sensors; market depth and option stress explicitly degrade until dedicated adapters are wired
+
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
 - Schema in `migrations/001_initial.sql`
@@ -161,7 +168,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`, `shock.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

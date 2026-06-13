@@ -119,7 +119,7 @@ make clean  # Removes bin/ and data/optix.db
 **`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
-- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, `/api/intel/premarket/{overnight,gaps,movers,sentiment}`, and `/api/intel/postclose/{earnings,timeline,read-across,movers}`
+- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, `/api/intel/premarket/{overnight,gaps,movers,sentiment}`, `/api/intel/postclose/{earnings,timeline,read-across,movers}`, and `/api/intel/event/{rates,diff,patterns,sensitivity}`
 
 **`premarket/`**: Market Intel premarket analysis plane (pure compute, zero IBKR/gRPC)
 - `overnight.go`: descriptive overnight transmission chain (N225→TSMC→SX5E→ES)
@@ -134,6 +134,13 @@ make clean  # Removes bin/ and data/optix.db
 - `read_across.go`: same-sector read-across edges via the embedded sector map
 - `timeline.go`: structured postclose event timeline
 - `service.go`: `PostcloseService` bundle and per-card failure isolation for CLI/HTTP
+
+**`eventintel/`**: Market Intel event-day analysis plane (pure compute, zero IBKR/gRPC)
+- `rates.go`: US2Y/US10Y/DXY/GOLD/SPX/NDX/VIX pre-event baseline vs current quote repricing
+- `diff.go`: deterministic FOMC statement sentence diff plus hawkish/dovish keyword scoring
+- `patterns.go`: built-in FOMC/CPI calendar windows with T-1/T/T+1 historical pattern aggregation
+- `sensitivity.go`: signed risk-on/rates-up/dollar-up sensitivity matrix from event-window returns
+- `source.go`/`service.go`: yfinance adapter plus local statement/calendar fixtures; every degraded source becomes warnings with non-nil DTO slices
 
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
@@ -154,7 +161,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

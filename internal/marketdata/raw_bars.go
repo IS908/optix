@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/IS908/optix/internal/broker/yfinance"
 	"github.com/IS908/optix/pkg/model"
@@ -40,7 +39,7 @@ func parseRawBatchBars(raw []byte) (map[string][]model.OHLCV, error) {
 	for sym, rows := range bySymbol {
 		bars := make([]model.OHLCV, 0, len(rows))
 		for _, r := range rows {
-			ts, err := time.Parse(time.RFC3339, r.TS)
+			ts, err := parseYahooTimestamp(r.TS)
 			if err != nil {
 				continue
 			}

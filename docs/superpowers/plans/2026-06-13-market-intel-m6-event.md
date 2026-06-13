@@ -40,39 +40,38 @@ Spec: `docs/superpowers/specs/2026-06-13-market-intel-m6-event-design.md`
 
 ### Task 1: DTOs and Pure Computes
 
-- [ ] Write failing Go tests for rate repricing, statement diff, historical pattern aggregation, and sensitivity scoring.
-- [ ] Add `internal/eventintel/dto.go`, `rates.go`, `diff.go`, `patterns.go`, and `sensitivity.go`.
-- [ ] Run `go test ./internal/eventintel -count=1` and confirm pass.
+- [x] Write failing Go tests for rate repricing, statement diff, historical pattern aggregation, and sensitivity scoring.
+- [x] Add `internal/eventintel/dto.go`, `rates.go`, `diff.go`, `patterns.go`, and `sensitivity.go`.
+- [x] Run `go test ./internal/eventintel -count=1` and confirm pass.
 
 ### Task 2: Source Adapter and Service
 
-- [ ] Write failing service tests for source degradation and non-null slices.
-- [ ] Add `internal/eventintel/source.go` with `MarketSource`, built-in statement/event fixtures, and yfinance adapter.
-- [ ] Add `internal/eventintel/service.go` with `Rates`, `Diff`, `Patterns`, `Sensitivity`, and `Bundle`.
-- [ ] Run `go test ./internal/eventintel -count=1` and confirm pass.
+- [x] Write failing service tests for source degradation and non-null slices.
+- [x] Add `internal/eventintel/source.go` with `MarketSource`, built-in statement/event fixtures, and yfinance adapter.
+- [x] Add `internal/eventintel/service.go` with `Rates`, `Diff`, `Patterns`, `Sensitivity`, and `Bundle`.
+- [x] Run `go test ./internal/eventintel -count=1` and confirm pass.
 
 ### Task 3: HTTP and CLI
 
-- [ ] Write failing `internal/intel` handler tests for event nil 503 and one happy path.
-- [ ] Add `Event *eventintel.Service` to `intel.Handlers` and register four event endpoints.
-- [ ] Write failing CLI tests for `newEventCmd` and JSON bundle shape.
-- [ ] Add `internal/cli/event.go`; register it in `root.go`; wire event service in `server.go`.
-- [ ] Run `go test ./internal/intel ./internal/cli -count=1` and confirm pass.
+- [x] Write failing `internal/intel` handler tests for event nil 503 and one happy path.
+- [x] Add `Event *eventintel.Service` to `intel.Handlers` and register four event endpoints.
+- [x] Write failing CLI tests for `newEventCmd` and JSON bundle shape.
+- [x] Add `internal/cli/event.go`; register it in `root.go`; wire event service in `server.go`.
+- [x] Run `go test ./internal/intel ./internal/cli -count=1` and confirm pass.
 
 ### Task 4: SPA Event Cards
 
-- [ ] Add Event DTOs to `web/src/api/types.ts`.
-- [ ] Write Vitest tests for four cards.
-- [ ] Add `EventRatesCard`, `EventDiffCard`, `EventPatternsCard`, and `EventSensitivityCard`.
-- [ ] Wire `slots.ts` and `SlotGrid.tsx`.
-- [ ] Run `cd web && npm test` and confirm pass.
+- [x] Add Event DTOs to `web/src/api/types.ts`.
+- [x] Write Vitest tests for four cards.
+- [x] Add `EventRatesCard`, `EventDiffCard`, `EventPatternsCard`, and `EventSensitivityCard`.
+- [x] Wire `slots.ts` and `SlotGrid.tsx`.
+- [x] Run `cd web && npm test` and confirm pass.
 
 ### Task 5: Acceptance, Docs, and Release
 
-- [ ] Add `internal/webui/event_acceptance_test.go` with fake event service.
-- [ ] Update `CHANGELOG.md`, `CLAUDE.md`, `AGENTS.md`, and `skills/commands/optix/SKILL.md`.
-- [ ] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, and `cd web && npm run build -- --outDir /tmp/optix-web-dist-m6-verify`.
-- [ ] Start local server and capture `/intel/` Event view screenshot.
-- [ ] Self-review diff and fix bugs with tests first.
+- [x] Add `internal/webui/event_acceptance_test.go` with fake event service.
+- [x] Update `CHANGELOG.md`, `CLAUDE.md`, `AGENTS.md`, and `skills/commands/optix/SKILL.md`.
+- [x] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, and `cd web && npm run build -- --outDir /tmp/optix-web-dist-m6-verify`.
+- [x] Start local server and capture `/intel/` Event view screenshot.
+- [x] Self-review diff and fix bugs with tests first.
 - [ ] Commit, push, open PR closing #132, merge, tag `v0.13.0`, create GitHub Release.
-

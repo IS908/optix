@@ -16,7 +16,7 @@ export function PulseBar({ pulse, stale }: { pulse: PulseResponse | null; stale:
       {stale && (
         <div className="mb-2 rounded bg-amber-950 px-3 py-1 text-xs text-amber-400">数据延迟：上游拉取失败，正在退避重试</div>
       )}
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="flex flex-wrap gap-3 pb-2">
         {pulse.assets.map((a) => (
           <div key={a.id} className="min-w-32 shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
             <div className="flex items-baseline justify-between gap-2">

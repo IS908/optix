@@ -164,15 +164,32 @@ func (s *YFinanceSource) BatchBars(ctx context.Context, refs []AssetRef, interva
 	if len(symbols) == 0 {
 		return map[string][]model.OHLCV{}, nil
 	}
-	period := "1d"
-	if lookback > 24*time.Hour {
-		period = "5d"
-	}
+	period := batchBarsPeriod(lookback)
 	raw, err := yfinance.RunFetcher(ctx, s.PythonBin, "batch_bars", strings.Join(symbols, ","), interval, period)
 	if err != nil {
 		return nil, fmt.Errorf("yfinance batch_bars: %w", err)
 	}
 	return parseBatchBars(raw, symToID)
+}
+
+func batchBarsPeriod(lookback time.Duration) string {
+	days := int(lookback.Hours() / 24)
+	switch {
+	case days <= 1:
+		return "1d"
+	case days <= 5:
+		return "5d"
+	case days <= 30:
+		return "1mo"
+	case days <= 90:
+		return "3mo"
+	case days <= 180:
+		return "6mo"
+	case days <= 365:
+		return "1y"
+	default:
+		return "2y"
+	}
 }
 
 type rawBar struct {
@@ -197,7 +214,7 @@ func parseBatchBars(raw []byte, symToID map[string]string) (map[string][]model.O
 		}
 		bars := make([]model.OHLCV, 0, len(rows))
 		for _, r := range rows {
-			ts, err := time.Parse(time.RFC3339, r.TS)
+			ts, err := parseYahooTimestamp(r.TS)
 			if err != nil {
 				continue // 单 bar 时间戳坏 → 跳过该 bar，不毁整组
 			}
@@ -211,4 +228,15 @@ func parseBatchBars(raw []byte, symToID map[string]string) (map[string][]model.O
 		}
 	}
 	return out, nil
+}
+
+func parseYahooTimestamp(raw string) (time.Time, error) {
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return ts.UTC(), nil
+	}
+	ts, err := time.Parse("2006-01-02T15:04:05", raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts.UTC(), nil
 }

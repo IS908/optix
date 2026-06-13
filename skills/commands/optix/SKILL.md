@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, or risk exposure. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、隔夜行情 / market pulse, premarket overview, overnight futures。"
+description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, risk exposure, market pulse, premarket/postclose/event-day views, FOMC/CPI event analysis, or macro-event sensitivity. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、收盘后复盘、FOMC/CPI 事件日、隔夜行情。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -28,6 +28,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - Max Pain、指定到期日 / Max Pain for a specific expiration (e.g., "GOOGL 5/22 的 max pain 是多少?", "max pain for AAPL this Friday", "本周五的 max pain", "用 yfinance 算 max pain")
 - 市场快照、盘前看盘、隔夜行情、多资产总览 / Market pulse, premarket overview, multi-asset snapshot (e.g., "现在大盘怎么样?", "盘前看盘", "隔夜期货", "market pulse", "premarket snapshot", "overnight futures")
 - 隔夜传导、跳空回补、盘前异动、情绪定位 / Overnight chain, gap fill, premarket movers, sentiment positioning
+- 事件日看盘、FOMC/CPI、利率路径、声明 diff、敏感度矩阵 / Event-day view, FOMC/CPI, rate-path repricing, statement diff, sensitivity matrix
 
 ## Commands
 
@@ -236,6 +237,24 @@ Agents should read `postclose --format json` at the 16:30 对账 / 收盘后
 checkpoint. It complements `intel journal` reconciliation: `postclose` supplies
 structured market facts; the agent writes narrative and judgments through
 `optix intel`.
+
+### Event View (事件日四卡 / M6)
+
+Four pure-compute event-day cards: rate/yield proxy repricing, deterministic
+FOMC statement wording diff, historical FOMC/CPI event-day patterns, and a
+signed cross-asset sensitivity matrix. **No IBKR and no Python gRPC engine
+required** — M6 v1 uses yfinance for market rows plus local deterministic
+statement/calendar fixtures. Each row carries explicit source/basis/as_of and
+warnings when degraded; it is not trading-grade live Fed Funds futures pricing.
+
+```bash
+bash bin/optix.sh event
+bash bin/optix.sh event --format json
+```
+
+Agents should read `event --format json` around scheduled FOMC/CPI events.
+It complements `pulse --view event --format json`: `pulse` gives the current
+multi-asset board; `event` gives the four-card event interpretation layer.
 
 ### Market Intel — 判断日记检查点工作流 (judgment journal)
 

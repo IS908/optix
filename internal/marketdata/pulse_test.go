@@ -192,6 +192,86 @@ func (s *batchableSource) BatchBars(_ context.Context, refs []AssetRef, _ string
 	return out, nil
 }
 
+// blockingSource：首调 BatchQuotes 阻塞直到 ctx 取消；后续调用返回好数据。
+// 用于复现「首调 ctx 死亡 → singleflight waiter 拿到降级快照」的 M2 防护场景。
+type blockingSource struct {
+	mu      sync.Mutex
+	calls   int
+	entered chan struct{} // 首调开始阻塞时 close，供测试确定性同步
+}
+
+func (b *blockingSource) Name() string { return "blocking" }
+
+func (b *blockingSource) BatchQuotes(ctx context.Context, refs []AssetRef) (map[string]Quote, error) {
+	b.mu.Lock()
+	b.calls++
+	first := b.calls == 1
+	b.mu.Unlock()
+	if first {
+		close(b.entered) // 通知测试：首调已进入阻塞
+		<-ctx.Done()     // 卡住直到首调 ctx 取消
+		return nil, ctx.Err()
+	}
+	out := map[string]Quote{}
+	for _, r := range refs {
+		out[r.ID] = Quote{Ref: r, Label: r.ID, Price: 100, Basis: BasisDelayed}
+	}
+	return out, nil
+}
+
+func (b *blockingSource) Bars(context.Context, AssetRef, string, time.Duration) ([]model.OHLCV, error) {
+	return nil, nil
+}
+
+func TestSnapshot_RedispatchAfterDeadCtxBuilder(t *testing.T) {
+	src := &blockingSource{entered: make(chan struct{})}
+	r := NewRouter()
+	for _, c := range []AssetClass{ClassIndex, ClassFuture, ClassStock, ClassFX, ClassYield, ClassVol} {
+		r.Register(c, src)
+	}
+	svc := NewPulseService(r, nil)
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	done := make(chan *PulseSnapshot, 1)
+	go func() {
+		snap, _ := svc.Snapshot(ctxA, ViewIntraday, false)
+		done <- snap
+	}()
+	<-src.entered // A 已进入 build 并卡在 BatchQuotes（确定性同步，替代 sleep）
+
+	// B：健康 ctx，与 A 同 key 并发等待
+	type result struct{ snap *PulseSnapshot }
+	doneB := make(chan result, 1)
+	go func() {
+		snap, _ := svc.Snapshot(context.Background(), ViewIntraday, false)
+		doneB <- result{snap}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancelA() // 杀死首调 → A 拿降级快照；B 必须重发拿到好数据
+
+	snapA := <-done
+	if len(snapA.Assets) != 0 {
+		t.Fatalf("A (dead ctx) should get degraded snapshot, got %d assets", len(snapA.Assets))
+	}
+	resB := <-doneB
+	if len(resB.snap.Assets) == 0 {
+		t.Fatalf("B (healthy ctx) must get re-dispatched fresh snapshot, got degraded: missing=%v warnings=%v",
+			resB.snap.Missing, resB.snap.Warnings)
+	}
+	if src.calls != 2 {
+		t.Errorf("source called %d times, want 2 (first dead, second re-dispatch)", src.calls)
+	}
+}
+
+func TestNewYFinanceRouter_CoversAllClasses(t *testing.T) {
+	r := NewYFinanceRouter("")
+	for _, c := range []AssetClass{ClassIndex, ClassFuture, ClassStock, ClassFX, ClassYield, ClassVol} {
+		if _, ok := r.routes[c]; !ok {
+			t.Errorf("class %s not routed", c)
+		}
+	}
+}
+
 func TestSnapshot_BatchSparkRefill(t *testing.T) {
 	store, err := sqlite.New(filepath.Join(t.TempDir(), "p.db"))
 	if err != nil {

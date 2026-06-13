@@ -130,6 +130,19 @@ func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 	return out, nil
 }
 
+// NewYFinanceRouter 返回所有资产类都路由到 yfinance 的 Router（M1 免费数据形态；
+// 订阅源接入后按类改路由）。CLI pulse 与 server intel API 共用，类清单单点维护。
+func NewYFinanceRouter(pythonBin string) *Router {
+	r := NewRouter()
+	yf := NewYFinanceSource(pythonBin)
+	for _, c := range []AssetClass{
+		ClassIndex, ClassFuture, ClassStock, ClassFX, ClassYield, ClassVol,
+	} {
+		r.Register(c, yf)
+	}
+	return r
+}
+
 func (s *YFinanceSource) Bars(ctx context.Context, ref AssetRef, interval string, lookback time.Duration) ([]model.OHLCV, error) {
 	bars, err := s.BatchBars(ctx, []AssetRef{ref}, interval, lookback)
 	if err != nil {

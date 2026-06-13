@@ -11,6 +11,8 @@ import (
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/datastore/sqlite"
+	"github.com/IS908/optix/internal/intel"
+	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/internal/scheduler"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/webui"
@@ -123,6 +125,12 @@ Examples:
 			srv := webui.NewWithJournal(cfg, store, &webui.JournalDeps{
 				Service: journalSvc,
 				Store:   store,
+			})
+
+			// 4b. Market Intel API：phase 状态机 + pulse 快照（零 IBKR，yfinance 路由）
+			// HTTP pulse 路径跑在 r.Context() 下，受服务器 120s WriteTimeout 约束，无需 CLI 式 2 分钟 ctx。
+			srv.AttachIntel(&intel.Handlers{
+				Pulse: marketdata.NewPulseService(marketdata.NewYFinanceRouter(pythonBin), store),
 			})
 
 			// 5. Initialize and start background scheduler

@@ -191,10 +191,16 @@ bash bin/optix.sh pulse --format json --with-sparkline
 ```
 
 View defaults to clock inference (premarket/intraday/postclose, America/New_York);
-`event`/`shock` views via explicit `--view`. Each asset carries a `basis` label
-(delayed/approx/frozen); failed assets appear in `missing[]` without failing the
-command. Exit codes: 0 success (even with warnings) · 1 with --strict when no
-data · 3 SQLite error.
+off-hours (隔夜/周末/NYSE 假日) map to `postclose` — last session's frozen
+snapshot (built-in NYSE 2026–2027 calendar). `event`/`shock` views via explicit
+`--view`. Each asset carries a `basis` label (delayed/approx/frozen); failed
+assets appear in `missing[]` without failing the command. Exit codes: 0 success
+(even with warnings) · 1 with --strict when no data · 3 SQLite error.
+
+The same phase clock + pulse contract powers the embedded Market Intel cockpit:
+launch `optix-server` and open `http://127.0.0.1:8080/intel/` in a browser for
+the Pulse bar + phase-following view skeleton (M3–M7 slots). It ships inside the
+server binary — no separate build needed.
 
 ### Portfolio Risk (持仓风险 / 组合 Greeks)
 

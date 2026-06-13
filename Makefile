@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-cli build-server tidy test lint-python test-integration clean proto py-server release release-all release-smoke release-clean
+.PHONY: build build-cli build-server tidy test lint-python test-integration clean proto py-server release release-all release-smoke release-clean web web-deps build-full
 
 PYTHON := python/.venv/bin/python
 
@@ -11,6 +11,18 @@ build-cli:
 
 build-server:
 	go build -o bin/optix-server ./cmd/optix-server
+
+# ─── Web SPA（Market Intel /intel/）────────────────────────────────────────
+# dist 产物经 go:embed 进二进制；占位 web/dist/index.html 保证纯 Go 构建可用。
+web-deps:
+	@if [ ! -d web/node_modules ]; then cd web && npm ci; fi
+
+web: web-deps
+	cd web && npm run build
+	@echo "✓ web/dist 已构建（占位 index.html 被覆盖 —— 勿提交；还原: git checkout web/dist/index.html）"
+
+# 完整产物：SPA + 双二进制（发布与本地验收用；纯 Go 开发用 build 即可）
+build-full: web build
 
 # Dependencies
 tidy:

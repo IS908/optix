@@ -12,7 +12,28 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Market Intel SPA (`/intel/`) — M2 of epic #120.** New `web/` Vite + React
+  dashboard embedded into `optix-server` via go:embed: real-time pulse bar
+  (30s polling with exponential backoff), phase-following view tabs
+  (premarket/intraday/postclose auto + event/shock manual), and slot-grid
+  skeletons for the M3–M7 view components. Pure-Go builds keep working
+  without node — `/intel/` falls back to a placeholder page; `make build-full`
+  produces the full binary.
+- **`internal/intel` scheduling plane.** Four-phase market clock
+  (premarket/intraday/postclose/closed) with a built-in NYSE 2026–2027
+  holiday/early-close calendar, `GET /api/intel/state` (phase, next
+  transition, calendar staleness) and `GET /api/intel/pulse` (same JSON
+  contract as `optix pulse --format json`).
+
+### Changed
+
+- **`optix pulse` off-hours inference now maps to `postclose`** (last
+  session's frozen snapshot) instead of `premarket`. Overnight, weekends and
+  NYSE holidays are now `closed` phase; JSON fields are unchanged.
+- Pulse snapshots built under an expired context are re-dispatched for
+  healthy singleflight waiters (server-embedding hardening).
 
 ## [0.8.0] - 2026-06-12
 

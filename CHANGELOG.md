@@ -12,6 +12,18 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-06-14
+
+Patch release for Market Intel view override UX.
+
+### Added
+
+- Add an API-level Market Intel view resolver that can auto-route to the Event
+  view on scheduled event dates and the Shock view when the M7 regime trigger
+  enters shock/critical state.
+- Show automatic Event/Shock trigger reasons in the WebUI tabs while preserving
+  explicit manual tab selection and the return-to-auto control.
+
 ## [0.14.3] - 2026-06-14
 
 Patch release for Market Intel M7 option stress.

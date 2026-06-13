@@ -73,6 +73,21 @@ func TestRegisterJudgmentCapturesPrice(t *testing.T) {
 	}
 }
 
+// 判断登记归属到「登记时最近已到期的检查点」。15:30 → set_tone（15:00 已过、16:30 未到）。
+func TestRegisterJudgmentCheckpointAttribution(t *testing.T) {
+	now := dET(2026, 6, 12, 15, 30) // set_tone(15:00) 已过、reconcile(16:30) 未到
+	j, _ := newJournal(t, fakePrice{price: 4200, basis: "delayed"}, now)
+	jd, err := j.RegisterJudgment(context.Background(), JudgmentInput{
+		AssetID: "SPX", Direction: "up", Confidence: 60, ExpiryCheckpoint: "reconcile",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jd.Checkpoint != "set_tone" {
+		t.Errorf("checkpoint attribution = %q, want set_tone", jd.Checkpoint)
+	}
+}
+
 func TestRegisterJudgmentValidation(t *testing.T) {
 	now := dET(2026, 6, 12, 16, 30) // reconcile：无更晚检查点
 	j, _ := newJournal(t, fakePrice{price: 4200, basis: "delayed"}, now)

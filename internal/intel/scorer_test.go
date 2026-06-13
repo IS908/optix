@@ -20,6 +20,10 @@ func TestScore(t *testing.T) {
 		{"down miss", "down", 0.5, 100, 100.2, "miss", 0.2},
 		{"flat hit within band", "flat", 0.5, 100, 100.3, "hit", 0.3},
 		{"flat miss outside band", "flat", 0.5, 100, 101, "miss", 1.0},
+		// exact-threshold boundaries（>= / <= 钉死，防未来改成严格不等号回归）
+		{"up hit at exact threshold", "up", 0.5, 100, 100.5, "hit", 0.5},
+		{"down hit at exact -threshold", "down", 0.5, 100, 99.5, "hit", -0.5},
+		{"flat hit at exact band edge (neg)", "flat", 0.5, 100, 99.5, "hit", -0.5},
 		{"void zero registered", "up", 0, 0, 100, "void", 0},
 		{"void negative expiry", "up", 0, 100, -1, "void", 0},
 		{"unknown direction void", "sideways", 0, 100, 101, "void", 1.0},

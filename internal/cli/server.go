@@ -13,6 +13,7 @@ import (
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/intel"
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/premarket"
 	"github.com/IS908/optix/internal/scheduler"
 	"github.com/IS908/optix/internal/server"
 	"github.com/IS908/optix/internal/webui"
@@ -131,8 +132,13 @@ Examples:
 			// HTTP pulse 路径跑在 r.Context() 下，受服务器 120s WriteTimeout 约束，无需 CLI 式 2 分钟 ctx。
 			intelPulse := marketdata.NewPulseService(marketdata.NewYFinanceRouter(pythonBin), store)
 			srv.AttachIntel(&intel.Handlers{
-				Pulse:   intelPulse,
-				Journal: intel.NewIntelJournal(store, intelPulse),
+				Pulse:     intelPulse,
+				Journal:   intel.NewIntelJournal(store, intelPulse),
+				Premarket: premarket.NewService(premarket.NewMarketAdapter(pythonBin), store),
+				Watchlist: func(ctx context.Context) ([]string, error) {
+					items, err := store.GetWatchlist(ctx)
+					return watchlistSymbols(items), err
+				},
 			})
 
 			// 5. Initialize and start background scheduler

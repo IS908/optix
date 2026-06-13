@@ -3,15 +3,15 @@ export interface SlotDef {
   desc: string
   milestone: 'M3' | 'M4' | 'M5' | 'M6' | 'M7'
   span?: 1 | 2 // 栅格跨度（2 列布局）
-  live?: 'narrative' // 已上线槽：渲染真实组件而非占位卡
+  live?: 'narrative' | 'overnight' | 'gaps' | 'movers' | 'sentiment' // 已上线槽：渲染真实组件而非占位卡
 }
 
 export const viewSlots: Record<string, SlotDef[]> = {
   premarket: [
-    { title: '隔夜传导链', desc: '东京→台北→欧洲→美期 接力涨跌与传导强度', milestone: 'M4', span: 2 },
-    { title: '隐含开盘 + 跳空回补', desc: '期货隐含开盘价与历史跳空回补概率', milestone: 'M4' },
-    { title: '盘前异动', desc: '盘前成交异动与量比归因', milestone: 'M4' },
-    { title: '情绪定位', desc: 'P/C 比、VIX 期限升水的情绪坐标', milestone: 'M4' },
+    { title: '隔夜传导链', desc: '东京→台北→欧洲→美期 接力涨跌与传导强度', milestone: 'M4', span: 2, live: 'overnight' },
+    { title: '隐含开盘 + 跳空回补', desc: '期货隐含开盘价与历史跳空回补概率', milestone: 'M4', live: 'gaps' },
+    { title: '盘前异动', desc: '盘前成交异动与量比归因', milestone: 'M4', live: 'movers' },
+    { title: '情绪定位', desc: 'P/C 比、VIX 期限升水的情绪坐标', milestone: 'M4', live: 'sentiment' },
   ],
   intraday: [
     { title: '盘中异动', desc: '实时异动与板块轮动', milestone: 'M4', span: 2 },

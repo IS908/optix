@@ -12,7 +12,17 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Market Intel premarket view (`optix premarket`, `/intel/` premarket cards)
+  — M4 of epic #120.** Four pure-compute cards: overnight transmission chain
+  (N225→TSMC→SX5E→ES, descriptive relay consistency), implied open + historical
+  gap-fill statistics for SPX (migration 007, lazy TTL refresh), premarket
+  movers + volume ratio (watchlist ∪ a built-in liquid set), and sentiment
+  positioning (Put/Call from the option chain + VIX term premium, degraded).
+  New `optix premarket` CLI bundle (agent premarket context at the 08:00
+  checkpoint) and four `GET /api/intel/premarket/*` endpoints with independent
+  per-card failure isolation. No IBKR and no Python gRPC engine.
 
 ## [0.10.0] - 2026-06-13
 

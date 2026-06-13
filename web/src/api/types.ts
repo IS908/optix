@@ -97,3 +97,69 @@ export interface IntelJournalSnapshot {
   judgments: IntelJudgment[]
   hit_rate: HitRate
 }
+
+export interface OvernightLink {
+  id: string
+  label: string
+  pct: number
+  basis: string
+  as_of: string
+}
+
+export interface OvernightDTO {
+  as_of: string
+  links: OvernightLink[]
+  consistency: { same_dir: number; total: number; note: string }
+  warnings?: string[]
+}
+
+export interface GapStat {
+  symbol: string
+  direction: string
+  band: string
+  fill_rate: number
+  sample_n: number
+  lookback_days: number
+  as_of: string
+}
+
+export interface GapsDTO {
+  symbol: string
+  implied_gap_pct: number
+  direction: string
+  band: string
+  hist_fill_rate: number
+  sample_n: number
+  lookback_days: number
+  by_band: GapStat[]
+  as_of: string
+  warnings?: string[]
+}
+
+export interface Mover {
+  symbol: string
+  pct: number
+  vol_ratio: number
+  watchlist: boolean
+}
+
+export interface MoversDTO {
+  as_of: string
+  universe_note: string
+  gainers: Mover[]
+  losers: Mover[]
+  warnings?: string[]
+}
+
+export interface SentimentDTO {
+  as_of: string
+  pc_oi: number
+  pc_vol: number
+  pc_available: boolean
+  vix: number
+  vix3m: number
+  vix_term_premium: number
+  regime: string
+  degraded_note: string
+  warnings?: string[]
+}

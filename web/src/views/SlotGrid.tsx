@@ -4,6 +4,10 @@ import { OvernightChainCard } from '../components/OvernightChainCard'
 import { GapFillCard } from '../components/GapFillCard'
 import { PremarketMoversCard } from '../components/PremarketMoversCard'
 import { SentimentCard } from '../components/SentimentCard'
+import { PostcloseEarningsCard } from '../components/PostcloseEarningsCard'
+import { PostcloseTimelineCard } from '../components/PostcloseTimelineCard'
+import { ReadAcrossCard } from '../components/ReadAcrossCard'
+import { PostcloseMoversCard } from '../components/PostcloseMoversCard'
 import { viewSlots, type SlotDef } from './slots'
 
 function liveComponent(live: SlotDef['live']) {
@@ -18,6 +22,14 @@ function liveComponent(live: SlotDef['live']) {
       return <PremarketMoversCard />
     case 'sentiment':
       return <SentimentCard />
+    case 'postclose-earnings':
+      return <PostcloseEarningsCard />
+    case 'postclose-timeline':
+      return <PostcloseTimelineCard />
+    case 'postclose-read-across':
+      return <ReadAcrossCard />
+    case 'postclose-movers':
+      return <PostcloseMoversCard />
     default:
       return null
   }

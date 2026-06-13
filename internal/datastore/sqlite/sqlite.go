@@ -35,6 +35,9 @@ var migration005SQL string
 //go:embed migrations/006_intel_journal.sql
 var migration006SQL string
 
+//go:embed migrations/007_premarket_gaps.sql
+var migration007SQL string
+
 // Store implements data persistence using SQLite.
 type Store struct {
 	db *sql.DB
@@ -125,6 +128,11 @@ func (s *Store) migrate() error {
 	// Migration 006: Market Intel judgment journal (idempotent via IF NOT EXISTS)
 	if _, err := s.db.Exec(migration006SQL); err != nil {
 		return fmt.Errorf("migration 006: %w", err)
+	}
+
+	// Migration 007: Market Intel premarket gap stats (idempotent via IF NOT EXISTS)
+	if _, err := s.db.Exec(migration007SQL); err != nil {
+		return fmt.Errorf("migration 007: %w", err)
 	}
 
 	// Idempotent schema additions — error is swallowed when column already exists.

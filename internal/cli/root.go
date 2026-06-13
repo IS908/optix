@@ -137,6 +137,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newJournalCmd())
 	root.AddCommand(newMaxPainCmd())
 	root.AddCommand(newPulseCmd())
+	root.AddCommand(newIntelCmd())
 	root.AddCommand(newServerCmd())
 
 	return root

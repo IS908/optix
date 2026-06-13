@@ -17,8 +17,9 @@ type PulseProvider interface {
 // Handlers 承载 /api/intel/* 端点。Pulse 为 nil 时 pulse 端点回 503
 // （state 端点纯本地计算，永远可用）。Now 为 nil 时用 time.Now（测试注入）。
 type Handlers struct {
-	Pulse PulseProvider
-	Now   func() time.Time
+	Pulse   PulseProvider
+	Journal *IntelJournal // nil → /api/intel/journal 回 503
+	Now     func() time.Time
 }
 
 func (h *Handlers) now() time.Time {
@@ -32,6 +33,7 @@ func (h *Handlers) now() time.Time {
 func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/state", h.handleState)
 	mux.HandleFunc("GET /api/intel/pulse", h.handlePulse)
+	mux.HandleFunc("GET /api/intel/journal", h.handleJournal)
 }
 
 type stateJSON struct {
@@ -84,6 +86,23 @@ func (h *Handlers) handlePulse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, ToPulseDTO(snap, inferred))
+}
+
+func (h *Handlers) handleJournal(w http.ResponseWriter, r *http.Request) {
+	if h.Journal == nil {
+		writeError(w, "intel journal unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = TradingDate(h.now())
+	}
+	snap, err := h.Journal.ReadJournal(r.Context(), date)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, snap)
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

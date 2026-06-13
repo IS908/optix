@@ -297,6 +297,50 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	}, nil
 }
 
+// GetMarketDepth retrieves a bounded SMART market-depth snapshot for a US
+// equity/ETF symbol. It returns partial rows if IB delivered some depth before
+// the collection timeout; callers should treat absence of rows as degraded data.
+func (c *Client) GetMarketDepth(ctx context.Context, symbol string, levels int) (*model.MarketDepth, error) {
+	if !c.IsConnected() {
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
+	}
+	if levels <= 0 {
+		levels = 5
+	}
+
+	reqID := c.nextReqID()
+	pd := c.wrapper.registerDepth(reqID, levels)
+	errCh := c.wrapper.registerError(reqID)
+	defer c.wrapper.unregister(reqID)
+
+	const smartDepth = true
+	c.ibClient.ReqMktDepth(reqID, stockContract(symbol), levels, smartDepth, nil)
+	defer c.ibClient.CancelMktDepth(reqID, smartDepth)
+
+	depthCtx, cancel := context.WithTimeout(ctx, marketDepthTimeout)
+	defer cancel()
+
+	select {
+	case <-pd.done:
+	case err := <-errCh:
+		return nil, fmt.Errorf("GetMarketDepth %s: %w", symbol, err)
+	case <-depthCtx.Done():
+	}
+
+	snapshot := pd.snapshot()
+	if len(snapshot) == 0 {
+		if err := depthCtx.Err(); err != nil {
+			return nil, fmt.Errorf("GetMarketDepth %s: no depth rows before timeout: %w", symbol, err)
+		}
+		return nil, fmt.Errorf("GetMarketDepth %s: no depth rows", symbol)
+	}
+	return &model.MarketDepth{
+		Symbol:    symbol,
+		Timestamp: time.Now().UTC(),
+		Levels:    snapshot,
+	}, nil
+}
+
 // GetHistoricalBars retrieves historical OHLCV data from IB.
 //
 // timeframe examples: "1 day", "1 hour", "5 mins"
@@ -649,6 +693,7 @@ const (
 	oiStrikeWindowPct    = 0.15            // ±15% around spot
 	oiMaxConcurrent      = 5               // bounded for IB pacing (50 msg/sec limit)
 	oiPerContractTimeout = 5 * time.Second // give up if no OI tick in 5s
+	marketDepthTimeout   = 3 * time.Second // collect initial SMART depth rows
 )
 
 // isNoSubscriptionErr returns true for IB errors that indicate missing market

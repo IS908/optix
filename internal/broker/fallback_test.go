@@ -126,3 +126,56 @@ func TestFallbackBroker_PrimaryFailsFallbackSucceeds(t *testing.T) {
 		t.Errorf("primary.Disconnect was called %d times after Connect failure; want ≥1", primary.disconnectCalls)
 	}
 }
+
+func TestFallbackBroker_MarketDepthDelegatesToActiveBroker(t *testing.T) {
+	primary := &fakeDepthBroker{
+		fakeBroker: fakeBroker{name: "primary"},
+		depth: &model.MarketDepth{
+			Symbol: "SPY",
+			Levels: []model.MarketDepthLevel{
+				{Side: "bid", Position: 0, Price: 499.9, Size: 1000},
+				{Side: "ask", Position: 0, Price: 500.1, Size: 900},
+			},
+		},
+	}
+	fb := &fakeBroker{name: "fallback"}
+
+	wrapper := NewFallbackBroker(primary, fb)
+	if err := wrapper.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	depth, err := wrapper.GetMarketDepth(context.Background(), "SPY", 5)
+	if err != nil {
+		t.Fatalf("GetMarketDepth: %v", err)
+	}
+	if depth.Symbol != "SPY" || len(depth.Levels) != 2 {
+		t.Fatalf("depth = %#v, want SPY two-level book", depth)
+	}
+	if primary.depthCalls != 1 {
+		t.Fatalf("primary.depthCalls = %d, want 1", primary.depthCalls)
+	}
+}
+
+func TestFallbackBroker_MarketDepthUnsupportedWhenActiveBrokerCannotProvideIt(t *testing.T) {
+	primary := &fakeBroker{name: "primary"}
+	fb := &fakeBroker{name: "fallback"}
+
+	wrapper := NewFallbackBroker(primary, fb)
+	if err := wrapper.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if _, err := wrapper.GetMarketDepth(context.Background(), "SPY", 5); !errors.Is(err, ErrMarketDepthNotSupported) {
+		t.Fatalf("GetMarketDepth error = %v, want ErrMarketDepthNotSupported", err)
+	}
+}
+
+type fakeDepthBroker struct {
+	fakeBroker
+	depth      *model.MarketDepth
+	depthCalls int
+}
+
+func (f *fakeDepthBroker) GetMarketDepth(context.Context, string, int) (*model.MarketDepth, error) {
+	f.depthCalls++
+	return f.depth, nil
+}

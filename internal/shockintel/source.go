@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -63,9 +64,17 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	out := map[string]ShockQuote{}
 	var fallbackErr error
 	if a.fallback != nil {
-		fallbackQuotes, err := a.fallback.Quotes(ctx, ids)
+		fallbackCtx := ctx
+		var cancelFallback context.CancelFunc
+		if a.overlayTimeout > 0 {
+			fallbackCtx, cancelFallback = context.WithTimeout(ctx, a.overlayTimeout)
+		}
+		fallbackQuotes, err := a.fallback.Quotes(fallbackCtx, ids)
+		if cancelFallback != nil {
+			cancelFallback()
+		}
 		if err != nil {
-			fallbackErr = err
+			fallbackErr = fmt.Errorf("fallback quotes degraded: %w", err)
 		} else {
 			for id, q := range fallbackQuotes {
 				out[id] = q
@@ -86,7 +95,7 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 
 	overlayCtx := ctx
 	var cancelOverlay context.CancelFunc
-	if len(out) > 0 && a.overlayTimeout > 0 {
+	if (len(out) > 0 || fallbackErr != nil) && a.overlayTimeout > 0 {
 		overlayCtx, cancelOverlay = context.WithTimeout(ctx, a.overlayTimeout)
 		defer cancelOverlay()
 	}
@@ -94,10 +103,13 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	b, source, err := a.connect(overlayCtx)
 	if err != nil {
 		if len(out) > 0 {
+			if fallbackErr != nil {
+				return out, fmt.Errorf("%v; broker quotes degraded: %w", fallbackErr, err)
+			}
 			return out, fmt.Errorf("broker quotes degraded: %w", err)
 		}
 		if fallbackErr != nil {
-			return nil, fmt.Errorf("broker quotes: %w; fallback: %v", err, fallbackErr)
+			return nil, fmt.Errorf("broker quotes: %w; %v", err, fallbackErr)
 		}
 		return nil, fmt.Errorf("broker quotes: %w", err)
 	}
@@ -105,6 +117,9 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	defer b.Disconnect()
 
 	var warnParts []string
+	if fallbackErr != nil {
+		warnParts = append(warnParts, fallbackErr.Error())
+	}
 	if source != "ibkr" {
 		warnParts = append(warnParts, fmt.Sprintf("broker quotes degraded: using %s fallback for broker-preferred quotes", source))
 	}
@@ -137,8 +152,72 @@ func (a *BrokerQuoteAdapter) Bars(ctx context.Context, ids []string, interval st
 	return a.fallback.Bars(ctx, ids, interval, lookback)
 }
 
-func (a *BrokerQuoteAdapter) Depth(context.Context, []string, int) (map[string]DepthSnapshot, error) {
-	return map[string]DepthSnapshot{}, fmt.Errorf("market depth unavailable in broker quote adapter; IBKR top-of-book bid/ask is used when available")
+func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int) (map[string]DepthSnapshot, error) {
+	out := map[string]DepthSnapshot{}
+	brokerIDs := brokerQuoteIDs(ids)
+	if len(brokerIDs) == 0 || a.connect == nil {
+		return out, nil
+	}
+	if levels <= 0 {
+		levels = 5
+	}
+
+	depthCtx := ctx
+	var cancelDepth context.CancelFunc
+	if a.overlayTimeout > 0 {
+		depthCtx, cancelDepth = context.WithTimeout(ctx, a.overlayTimeout)
+		defer cancelDepth()
+	}
+
+	b, source, err := a.connect(depthCtx)
+	if err != nil {
+		return out, fmt.Errorf("broker depth degraded: %w", err)
+	}
+	source = normalizeSourceName(source)
+	defer b.Disconnect()
+	if source != "ibkr" {
+		return out, fmt.Errorf("broker depth degraded: using %s fallback; IBKR market depth unavailable", source)
+	}
+
+	fetcher, ok := b.(broker.MarketDepthFetcher)
+	if !ok {
+		return out, broker.ErrMarketDepthNotSupported
+	}
+
+	type depthResult struct {
+		id    string
+		depth *model.MarketDepth
+		err   error
+	}
+	results := make(chan depthResult, len(brokerIDs))
+	var wg sync.WaitGroup
+	for _, id := range brokerIDs {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			depth, err := fetcher.GetMarketDepth(depthCtx, id, levels)
+			results <- depthResult{id: id, depth: depth, err: err}
+		}(id)
+	}
+	wg.Wait()
+	close(results)
+
+	var warnParts []string
+	for result := range results {
+		if result.err != nil {
+			warnParts = append(warnParts, fmt.Sprintf("%s: %v", result.id, result.err))
+			continue
+		}
+		out[result.id] = marketDepthToShock(result.id, result.depth, source)
+	}
+	if len(warnParts) > 0 {
+		err := fmt.Errorf("broker depth partial: %s", strings.Join(warnParts, "; "))
+		if len(out) == 0 {
+			return out, err
+		}
+		return out, err
+	}
+	return out, nil
 }
 
 func (a *BrokerQuoteAdapter) OptionMetrics(context.Context, []string) (map[string]OptionStress, error) {
@@ -238,6 +317,33 @@ func stockQuoteToShock(id string, q *model.StockQuote, source string) ShockQuote
 		ID: id, Label: nonEmpty(q.Symbol, id), Price: q.Last, Change: q.Change, ChangePct: q.ChangePct,
 		Bid: q.Bid, Ask: q.Ask, Source: source, Basis: basisForSource(source), AsOf: q.Timestamp.UTC(),
 	}
+}
+
+func marketDepthToShock(id string, depth *model.MarketDepth, source string) DepthSnapshot {
+	out := DepthSnapshot{ID: id, Source: source, Basis: basisForSource(source), AsOf: time.Now().UTC()}
+	if depth == nil {
+		out.Missing = true
+		out.Note = "depth missing"
+		return out
+	}
+	if !depth.Timestamp.IsZero() {
+		out.AsOf = depth.Timestamp.UTC()
+	}
+	for _, level := range depth.Levels {
+		if level.Side != "bid" && level.Side != "ask" {
+			continue
+		}
+		out.Levels = append(out.Levels, DepthLevel{
+			Side:  level.Side,
+			Price: level.Price,
+			Size:  level.Size,
+		})
+	}
+	if len(out.Levels) == 0 {
+		out.Missing = true
+		out.Note = "depth missing"
+	}
+	return out
 }
 
 func normalizeSourceName(name string) string {

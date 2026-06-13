@@ -30,4 +30,38 @@ describe('ShockFingerprintCard', () => {
     expect(screen.getByText('Policy shock')).toBeInTheDocument()
     expect(screen.getByText('90')).toBeInTheDocument()
   })
+
+  it('renders option stress rows when available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '2026-06-13T15:30:00Z',
+          source: 'computed',
+          rows: [
+            { kind: 'liquidity', label: 'Liquidity shock', score: 70, confidence: 0.7, active: true, evidence: ['SPY option IV elevated'], missing: [] },
+          ],
+          option_stress: [
+            {
+              underlying: 'SPY',
+              source: 'ibkr',
+              basis: 'realtime_or_delayed',
+              as_of: '2026-06-13T15:30:00Z',
+              iv_change: 0.08,
+              volume: 2500,
+              open_interest: 12000,
+              note: 'exp=20260717 atm_iv=0.42 put_call_iv_skew=0.08',
+            },
+          ],
+        }),
+      }),
+    )
+
+    render(<ShockFingerprintCard />)
+
+    await waitFor(() => expect(screen.getByText('SPY')).toBeInTheDocument())
+    expect(screen.getByText('IV skew +8.0%')).toBeInTheDocument()
+    expect(screen.getByText('OI 12000')).toBeInTheDocument()
+  })
 })

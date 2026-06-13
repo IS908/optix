@@ -14,7 +14,7 @@ func TestBuildShockFingerprintClassifiesLiquidityAndPolicyStress(t *testing.T) {
 	}
 	liquidity := LiquidityDTO{Rows: []LiquidityRow{{ID: "HYG", SpreadZ: 3.8, State: "stressed"}}}
 
-	dto := BuildShockFingerprint(quotes, liquidity, now)
+	dto := BuildShockFingerprint(quotes, liquidity, nil, now)
 
 	liquidityRow := findFingerprint(t, dto.Rows, "liquidity")
 	if !liquidityRow.Active {
@@ -33,7 +33,7 @@ func TestBuildShockFingerprintClassifiesLiquidityAndPolicyStress(t *testing.T) {
 }
 
 func TestBuildShockFingerprintKeepsAllRowsWhenDataMissing(t *testing.T) {
-	dto := BuildShockFingerprint(map[string]ShockQuote{}, LiquidityDTO{}, fixedShockNow())
+	dto := BuildShockFingerprint(map[string]ShockQuote{}, LiquidityDTO{}, nil, fixedShockNow())
 	if len(dto.Rows) != 4 {
 		t.Fatalf("rows = %d, want 4", len(dto.Rows))
 	}

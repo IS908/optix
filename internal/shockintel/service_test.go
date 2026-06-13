@@ -2,6 +2,7 @@ package shockintel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -63,14 +64,85 @@ func TestServiceLiquidityWarnsWhenDepthUnavailable(t *testing.T) {
 	}
 }
 
-func TestYFinanceAdapterDepthAndOptionMetricsDegradeExplicitly(t *testing.T) {
+func TestServiceFingerprintIncludesOptionStressRows(t *testing.T) {
+	now := fixedShockNow()
+	svc := NewService(&fakeShockSource{optionMetrics: map[string]OptionStress{
+		"SPY": {
+			Underlying: "SPY", Source: "ibkr", Basis: "realtime_or_delayed", AsOf: now,
+			IVChange: 0.08, Volume: 2500, OpenInt: 12000, Note: "atm_iv=0.42 skew=0.08",
+		},
+	}})
+	svc.Now = fixedShockNow
+
+	dto, err := svc.Fingerprint(context.Background())
+	if err != nil {
+		t.Fatalf("Fingerprint error = %v", err)
+	}
+	raw, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal fingerprint = %v", err)
+	}
+	var body struct {
+		OptionStress []OptionStress `json:"option_stress"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal fingerprint = %v", err)
+	}
+	if len(body.OptionStress) != 1 {
+		t.Fatalf("option_stress rows = %d, want 1; json=%s", len(body.OptionStress), string(raw))
+	}
+	if body.OptionStress[0].Underlying != "SPY" || body.OptionStress[0].Source != "ibkr" || body.OptionStress[0].Basis == "" {
+		t.Fatalf("option_stress row missing source semantics: %#v", body.OptionStress[0])
+	}
+	if !fingerprintEvidenceContains(dto.Rows, "option IV elevated") {
+		t.Fatalf("fingerprint rows = %#v, want option IV evidence", dto.Rows)
+	}
+}
+
+func TestYFinanceAdapterDepthDegradesExplicitly(t *testing.T) {
 	adapter := NewYFinanceAdapter("python3")
 
 	if _, err := adapter.Depth(context.Background(), []string{"SPY"}, 5); err == nil || !strings.Contains(err.Error(), "depth") {
 		t.Fatalf("Depth error = %v, want explicit depth error", err)
 	}
-	if _, err := adapter.OptionMetrics(context.Background(), []string{"SPY"}); err == nil || !strings.Contains(err.Error(), "option") {
-		t.Fatalf("OptionMetrics error = %v, want explicit option error", err)
+}
+
+func TestBrokerQuoteAdapterOptionMetricsUsesBrokerChain(t *testing.T) {
+	now := fixedShockNow()
+	chain := &model.OptionChain{
+		Underlying:      "SPY",
+		UnderlyingPrice: 500,
+		Expirations: []model.OptionChainExpiry{{
+			Expiration: "20260717",
+			Calls: []model.OptionQuote{
+				{Underlying: "SPY", Expiration: "20260717", Strike: 500, OptionType: model.OptionTypeCall, Volume: 900, OpenInterest: 5000, ImpliedVolatility: 0.34},
+				{Underlying: "SPY", Expiration: "20260717", Strike: 510, OptionType: model.OptionTypeCall, Volume: 300, OpenInterest: 1500, ImpliedVolatility: 0.31},
+			},
+			Puts: []model.OptionQuote{
+				{Underlying: "SPY", Expiration: "20260717", Strike: 500, OptionType: model.OptionTypePut, Volume: 1600, OpenInterest: 7000, ImpliedVolatility: 0.43},
+				{Underlying: "SPY", Expiration: "20260717", Strike: 490, OptionType: model.OptionTypePut, Volume: 500, OpenInterest: 2600, ImpliedVolatility: 0.39},
+			},
+		}},
+	}
+	adapter := NewBrokerQuoteAdapter(
+		func(context.Context) (broker.Broker, string, error) {
+			return testBroker{quotes: map[string]*model.StockQuote{
+				"SPY": {Symbol: "SPY", Last: 501, Timestamp: now},
+			}, chains: map[string]*model.OptionChain{"SPY": chain}}, "IBKR", nil
+		},
+		staticFallbackSource{},
+	)
+
+	got, err := adapter.OptionMetrics(context.Background(), []string{"SPY"})
+	if err != nil {
+		t.Fatalf("OptionMetrics error = %v", err)
+	}
+	spy := got["SPY"]
+	if spy.Source != "ibkr" || spy.Basis == "" || spy.AsOf.IsZero() {
+		t.Fatalf("SPY source semantics = %#v", spy)
+	}
+	if spy.IVChange <= 0.08 || spy.Volume != 3300 || spy.OpenInt != 16100 {
+		t.Fatalf("SPY metrics = %#v, want skew/volume/OI aggregation", spy)
 	}
 }
 
@@ -251,10 +323,11 @@ func TestBrokerQuoteAdapterCapsFallbackQuotesWhenBrokerOverlayCanRecover(t *test
 }
 
 type fakeShockSource struct {
-	quoteErr  error
-	barErr    error
-	depthErr  error
-	optionErr error
+	quoteErr      error
+	barErr        error
+	depthErr      error
+	optionErr     error
+	optionMetrics map[string]OptionStress
 }
 
 func (f *fakeShockSource) Quotes(context.Context, []string) (map[string]ShockQuote, error) {
@@ -301,6 +374,9 @@ func (f *fakeShockSource) OptionMetrics(context.Context, []string) (map[string]O
 	if f.optionErr != nil {
 		return nil, f.optionErr
 	}
+	if f.optionMetrics != nil {
+		return f.optionMetrics, nil
+	}
 	return map[string]OptionStress{}, nil
 }
 
@@ -308,6 +384,17 @@ func warningsContain(warnings []string, needle string) bool {
 	for _, warning := range warnings {
 		if strings.Contains(warning, needle) {
 			return true
+		}
+	}
+	return false
+}
+
+func fingerprintEvidenceContains(rows []FingerprintRow, needle string) bool {
+	for _, row := range rows {
+		for _, evidence := range row.Evidence {
+			if strings.Contains(evidence, needle) {
+				return true
+			}
 		}
 	}
 	return false
@@ -355,6 +442,7 @@ func (blockingFallbackSource) OptionMetrics(context.Context, []string) (map[stri
 type testBroker struct {
 	quotes map[string]*model.StockQuote
 	depth  map[string]*model.MarketDepth
+	chains map[string]*model.OptionChain
 }
 
 func (b testBroker) Connect(context.Context) error { return nil }
@@ -376,6 +464,13 @@ func (b testBroker) GetHistoricalBars(context.Context, string, string, string, s
 
 func (b testBroker) GetOptionChain(context.Context, string, string) (*model.OptionChain, error) {
 	return nil, nil
+}
+
+func (b testBroker) GetOptionChainWithOI(_ context.Context, underlying string, _ string) (*model.OptionChain, error) {
+	if ch, ok := b.chains[underlying]; ok {
+		return ch, nil
+	}
+	return nil, errors.New("missing option chain")
 }
 
 func (b testBroker) GetMarketDepth(_ context.Context, symbol string, _ int) (*model.MarketDepth, error) {

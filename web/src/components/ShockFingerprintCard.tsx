@@ -1,6 +1,28 @@
 import { usePoll } from '../api/usePoll'
-import type { ShockFingerprintDTO } from '../api/types'
+import type { ShockFingerprintDTO, ShockOptionStress } from '../api/types'
 import { DataWarnings } from './DataWarnings'
+
+function formatSignedPct(value: number) {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${(value * 100).toFixed(1)}%`
+}
+
+function OptionStressRow({ row }: { row: ShockOptionStress }) {
+  return (
+    <div className="grid grid-cols-[44px_1fr_72px] items-center gap-2 text-xs">
+      <div>
+        <div className="font-medium text-zinc-300">{row.underlying}</div>
+        <div className="text-[10px] text-zinc-600">{row.basis}</div>
+      </div>
+      <div className="min-w-0 text-zinc-500">
+        <span className={row.iv_change >= 0.05 ? 'text-amber-300' : 'text-zinc-500'}>IV skew {formatSignedPct(row.iv_change)}</span>
+        <span className="mx-1 text-zinc-700">·</span>
+        <span>Vol {row.volume}</span>
+      </div>
+      <div className="text-right tabular-nums text-zinc-500">OI {row.open_interest}</div>
+    </div>
+  )
+}
 
 export function ShockFingerprintCard() {
   const { data } = usePoll<ShockFingerprintDTO>('/api/intel/shock/fingerprint', 60_000)
@@ -26,6 +48,16 @@ export function ShockFingerprintCard() {
           </div>
         ))}
       </div>
+      {data.option_stress && data.option_stress.length > 0 ? (
+        <div className="mt-4 border-t border-zinc-800 pt-3">
+          <div className="mb-2 text-[10px] uppercase tracking-normal text-zinc-600">Option stress</div>
+          <div className="space-y-2">
+            {data.option_stress.slice(0, 4).map((row) => (
+              <OptionStressRow key={row.underlying} row={row} />
+            ))}
+          </div>
+        </div>
+      ) : null}
       <DataWarnings warnings={data.warnings} />
     </div>
   )

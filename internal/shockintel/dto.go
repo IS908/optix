@@ -79,10 +79,11 @@ type FingerprintRow struct {
 }
 
 type FingerprintDTO struct {
-	AsOf     time.Time        `json:"as_of"`
-	Source   string           `json:"source"`
-	Rows     []FingerprintRow `json:"rows"`
-	Warnings []string         `json:"warnings,omitempty"`
+	AsOf         time.Time        `json:"as_of"`
+	Source       string           `json:"source"`
+	Rows         []FingerprintRow `json:"rows"`
+	OptionStress []OptionStress   `json:"option_stress,omitempty"`
+	Warnings     []string         `json:"warnings,omitempty"`
 }
 
 type ShockVector struct {

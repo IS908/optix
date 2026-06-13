@@ -349,10 +349,22 @@ export interface ShockFingerprintRow {
   missing: string[]
 }
 
+export interface ShockOptionStress {
+  underlying: string
+  source: string
+  basis: string
+  as_of: string
+  iv_change: number
+  volume: number
+  open_interest: number
+  note?: string
+}
+
 export interface ShockFingerprintDTO {
   as_of: string
   source: string
   rows: ShockFingerprintRow[]
+  option_stress?: ShockOptionStress[]
   warnings?: string[]
 }
 

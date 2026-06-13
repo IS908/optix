@@ -3,6 +3,7 @@ package shockintel
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +12,7 @@ import (
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
+	"github.com/IS908/optix/internal/broker/yfinance"
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/pkg/model"
 )
@@ -31,7 +33,8 @@ type BrokerQuoteAdapter struct {
 }
 
 type YFinanceAdapter struct {
-	src *marketdata.YFinanceSource
+	src       *marketdata.YFinanceSource
+	pythonBin string
 }
 
 var shockBrokerClientID int64 = 8700
@@ -57,7 +60,7 @@ func NewBrokerQuoteAdapter(connect BrokerConnector, fallback Source) *BrokerQuot
 }
 
 func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
-	return &YFinanceAdapter{src: marketdata.NewYFinanceSource(pythonBin)}
+	return &YFinanceAdapter{src: marketdata.NewYFinanceSource(pythonBin), pythonBin: pythonBin}
 }
 
 func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[string]ShockQuote, error) {
@@ -220,8 +223,54 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 	return out, nil
 }
 
-func (a *BrokerQuoteAdapter) OptionMetrics(context.Context, []string) (map[string]OptionStress, error) {
-	return map[string]OptionStress{}, fmt.Errorf("option stress unavailable in M7 v1; use IBKR OPRA chain/OI integration in a follow-up")
+func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []string) (map[string]OptionStress, error) {
+	out := map[string]OptionStress{}
+	if len(underlyings) == 0 {
+		return out, nil
+	}
+	if a.connect == nil {
+		return out, fmt.Errorf("broker option stress unavailable: no broker connector")
+	}
+
+	optionCtx := ctx
+	var cancelOption context.CancelFunc
+	if a.overlayTimeout > 0 {
+		optionCtx, cancelOption = context.WithTimeout(ctx, 6*time.Second)
+		defer cancelOption()
+	}
+
+	b, source, err := a.connect(optionCtx)
+	if err != nil {
+		return out, fmt.Errorf("broker option stress degraded: %w", err)
+	}
+	source = normalizeSourceName(source)
+	defer b.Disconnect()
+
+	var warnParts []string
+	if source != "ibkr" {
+		warnParts = append(warnParts, fmt.Sprintf("broker option stress degraded: using %s fallback for option chain", source))
+	}
+	for _, underlying := range uniqueStrings(underlyings) {
+		chain, err := optionStressChain(optionCtx, b, underlying)
+		if err != nil {
+			warnParts = append(warnParts, fmt.Sprintf("%s: %v", underlying, err))
+			continue
+		}
+		row, ok := summarizeOptionStress(underlying, chain, source, time.Now().UTC())
+		if !ok {
+			warnParts = append(warnParts, fmt.Sprintf("%s: option chain missing IV/OI/volume", underlying))
+			continue
+		}
+		out[underlying] = row
+	}
+	if len(warnParts) > 0 {
+		err := fmt.Errorf("option stress partial: %s", strings.Join(warnParts, "; "))
+		if len(out) == 0 {
+			return out, err
+		}
+		return out, err
+	}
+	return out, nil
 }
 
 func (a *YFinanceAdapter) Quotes(ctx context.Context, ids []string) (map[string]ShockQuote, error) {
@@ -247,8 +296,140 @@ func (a *YFinanceAdapter) Depth(context.Context, []string, int) (map[string]Dept
 	return map[string]DepthSnapshot{}, fmt.Errorf("depth unavailable from yfinance fallback; use IBKR market depth for realtime liquidity")
 }
 
-func (a *YFinanceAdapter) OptionMetrics(context.Context, []string) (map[string]OptionStress, error) {
-	return map[string]OptionStress{}, fmt.Errorf("option stress unavailable from yfinance fallback in M7 v1; use IBKR OPRA data for IV/Greeks/OI/volume")
+func (a *YFinanceAdapter) OptionMetrics(ctx context.Context, underlyings []string) (map[string]OptionStress, error) {
+	b := yfinance.New(yfinance.Config{PythonBin: a.pythonBin})
+	out := map[string]OptionStress{}
+	var warnParts []string
+	for _, underlying := range uniqueStrings(underlyings) {
+		chain, err := b.GetOptionChainWithOI(ctx, underlying, "")
+		if err != nil {
+			warnParts = append(warnParts, fmt.Sprintf("%s: %v", underlying, err))
+			continue
+		}
+		row, ok := summarizeOptionStress(underlying, chain, "yfinance", time.Now().UTC())
+		if !ok {
+			warnParts = append(warnParts, fmt.Sprintf("%s: option chain missing IV/OI/volume", underlying))
+			continue
+		}
+		out[underlying] = row
+	}
+	if len(warnParts) > 0 {
+		err := fmt.Errorf("option stress partial: %s", strings.Join(warnParts, "; "))
+		if len(out) == 0 {
+			return out, err
+		}
+		return out, err
+	}
+	return out, nil
+}
+
+func optionStressChain(ctx context.Context, b broker.Broker, underlying string) (*model.OptionChain, error) {
+	if f, ok := b.(broker.OIFetcher); ok {
+		return f.GetOptionChainWithOI(ctx, underlying, "")
+	}
+	return b.GetOptionChain(ctx, underlying, "")
+}
+
+func summarizeOptionStress(underlying string, chain *model.OptionChain, source string, asOf time.Time) (OptionStress, bool) {
+	if chain == nil || len(chain.Expirations) == 0 {
+		return OptionStress{}, false
+	}
+	exp := chain.Expirations[0]
+	if len(exp.Calls) == 0 && len(exp.Puts) == 0 {
+		return OptionStress{}, false
+	}
+	spot := chain.UnderlyingPrice
+	if spot <= 0 {
+		spot = inferSpotFromChain(exp)
+	}
+	call, hasCall := nearestOption(exp.Calls, spot)
+	put, hasPut := nearestOption(exp.Puts, spot)
+
+	var volume int64
+	var openInt int64
+	for _, q := range exp.Calls {
+		volume += q.Volume
+		openInt += int64(q.OpenInterest)
+	}
+	for _, q := range exp.Puts {
+		volume += q.Volume
+		openInt += int64(q.OpenInterest)
+	}
+
+	callIV, putIV := 0.0, 0.0
+	if hasCall {
+		callIV = call.ImpliedVolatility
+	}
+	if hasPut {
+		putIV = put.ImpliedVolatility
+	}
+	atmIV := averagePositive(callIV, putIV)
+	ivSkew := 0.0
+	if callIV > 0 && putIV > 0 {
+		ivSkew = putIV - callIV
+	}
+	if atmIV <= 0 && volume == 0 && openInt == 0 {
+		return OptionStress{}, false
+	}
+
+	note := fmt.Sprintf("exp=%s", exp.Expiration)
+	if atmIV > 0 {
+		note = fmt.Sprintf("%s atm_iv=%.2f", note, atmIV)
+	}
+	if ivSkew != 0 {
+		note = fmt.Sprintf("%s put_call_iv_skew=%.2f", note, ivSkew)
+	}
+	return OptionStress{
+		Underlying: underlying,
+		Source:     source,
+		Basis:      basisForSource(source),
+		AsOf:       asOf.UTC(),
+		IVChange:   ivSkew,
+		Volume:     volume,
+		OpenInt:    openInt,
+		Note:       note,
+	}, true
+}
+
+func nearestOption(options []model.OptionQuote, spot float64) (model.OptionQuote, bool) {
+	if len(options) == 0 {
+		return model.OptionQuote{}, false
+	}
+	best := options[0]
+	bestDist := math.Abs(best.Strike - spot)
+	for _, option := range options[1:] {
+		dist := math.Abs(option.Strike - spot)
+		if dist < bestDist {
+			best = option
+			bestDist = dist
+		}
+	}
+	return best, true
+}
+
+func inferSpotFromChain(exp model.OptionChainExpiry) float64 {
+	if len(exp.Calls) > 0 {
+		return exp.Calls[len(exp.Calls)/2].Strike
+	}
+	if len(exp.Puts) > 0 {
+		return exp.Puts[len(exp.Puts)/2].Strike
+	}
+	return 0
+}
+
+func averagePositive(values ...float64) float64 {
+	total := 0.0
+	count := 0
+	for _, value := range values {
+		if value > 0 {
+			total += value
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return total / float64(count)
 }
 
 func shockRefsForIDs(ids []string) []marketdata.AssetRef {
@@ -307,6 +488,22 @@ func brokerQuoteSupported(id string) bool {
 	default:
 		return false
 	}
+}
+
+func uniqueStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		out = append(out, value)
+		seen[value] = struct{}{}
+	}
+	return out
 }
 
 func stockQuoteToShock(id string, q *model.StockQuote, source string) ShockQuote {

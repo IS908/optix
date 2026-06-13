@@ -40,8 +40,10 @@ func (s *Service) Fingerprint(ctx context.Context) (FingerprintDTO, error) {
 	now := s.now().UTC()
 	quotes, warnings := s.quotes(ctx, shockQuoteIDs())
 	liquidity, _ := s.Liquidity(ctx)
-	out := BuildShockFingerprint(quotes, liquidity, now)
+	options, optionWarnings := s.optionStress(ctx, optionStressUnderlyings())
+	out := BuildShockFingerprint(quotes, liquidity, options, now)
 	out.Warnings = append(warnings, out.Warnings...)
+	out.Warnings = append(out.Warnings, optionWarnings...)
 	return out, nil
 }
 
@@ -92,8 +94,38 @@ func (s *Service) quotes(ctx context.Context, ids []string) (map[string]ShockQuo
 	return quotes, warnings
 }
 
+func (s *Service) optionStress(ctx context.Context, underlyings []string) ([]OptionStress, []string) {
+	if s.src == nil {
+		return []OptionStress{}, []string{"option stress: shock source unavailable"}
+	}
+	optionCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	metrics, err := s.src.OptionMetrics(optionCtx, underlyings)
+	var warnings []string
+	if err != nil {
+		warnings = append(warnings, "option stress: "+err.Error())
+	}
+	if metrics == nil {
+		metrics = map[string]OptionStress{}
+	}
+	rows := make([]OptionStress, 0, len(underlyings))
+	for _, underlying := range underlyings {
+		if row, ok := metrics[underlying]; ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows, warnings
+}
+
 func shockQuoteIDs() []string {
 	return []string{"VIX", "SPY", "QQQ", "IWM", "TLT", "HYG", "LQD", "GLD", "USO", "UUP", "VIXY", "US10Y"}
+}
+
+func optionStressUnderlyings() []string {
+	// Use liquid ETF option chains as the first implementation path for
+	// SPX/SPY and VIX/VIXY stress proxies; index-option contracts need a
+	// dedicated IBKR contract mapper.
+	return []string{"SPY", "QQQ", "IWM", "VIXY"}
 }
 
 func liquidityIDs() []string {

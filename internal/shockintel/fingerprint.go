@@ -2,11 +2,11 @@ package shockintel
 
 import "time"
 
-func BuildShockFingerprint(quotes map[string]ShockQuote, liquidity LiquidityDTO, asOf time.Time) FingerprintDTO {
+func BuildShockFingerprint(quotes map[string]ShockQuote, liquidity LiquidityDTO, options []OptionStress, asOf time.Time) FingerprintDTO {
 	rows := []FingerprintRow{
 		scoreSupply(quotes),
 		scoreDemand(quotes),
-		scoreLiquidity(quotes, liquidity),
+		scoreLiquidity(quotes, liquidity, options),
 		scorePolicy(quotes),
 	}
 	for i := range rows {
@@ -20,7 +20,7 @@ func BuildShockFingerprint(quotes map[string]ShockQuote, liquidity LiquidityDTO,
 			rows[i].Missing = []string{}
 		}
 	}
-	return FingerprintDTO{AsOf: asOf.UTC(), Source: aggregateSource(quotes, "computed"), Rows: rows}
+	return FingerprintDTO{AsOf: asOf.UTC(), Source: aggregateSource(quotes, "computed"), Rows: rows, OptionStress: options}
 }
 
 func scoreSupply(q map[string]ShockQuote) FingerprintRow {
@@ -41,7 +41,7 @@ func scoreDemand(q map[string]ShockQuote) FingerprintRow {
 	return row
 }
 
-func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO) FingerprintRow {
+func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO, options []OptionStress) FingerprintRow {
 	row := FingerprintRow{Kind: "liquidity", Label: "Liquidity shock", Evidence: []string{}, Missing: []string{}}
 	addIf(&row, q, "VIX", 10, true, 30, "VIX up")
 	addIf(&row, q, "HYG", -0.75, false, 25, "credit ETF weak")
@@ -54,6 +54,13 @@ func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO) Fingerprint
 	}
 	if len(liquidity.Rows) == 0 {
 		row.Missing = append(row.Missing, "liquidity")
+	}
+	for _, stress := range options {
+		if stress.IVChange >= 0.05 {
+			row.Score += 20
+			row.Evidence = append(row.Evidence, stress.Underlying+" option IV elevated")
+			break
+		}
 	}
 	return row
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
+	"github.com/IS908/optix/internal/shockintel"
 )
 
 // PulseProvider 是 handlers 对 PulseService 的最小依赖面（测试注入 fake）。
@@ -25,6 +26,7 @@ type Handlers struct {
 	Premarket *premarket.Service  // nil → /api/intel/premarket/* 回 503
 	Postclose *postclose.Service  // nil → /api/intel/postclose/* 回 503
 	Event     *eventintel.Service // nil → /api/intel/event/* 回 503
+	Shock     *shockintel.Service // nil → /api/intel/shock/* 回 503
 	Watchlist func(ctx context.Context) ([]string, error)
 	Now       func() time.Time
 }
@@ -53,6 +55,10 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/event/diff", h.handleEventDiff)
 	mux.HandleFunc("GET /api/intel/event/patterns", h.handleEventPatterns)
 	mux.HandleFunc("GET /api/intel/event/sensitivity", h.handleEventSensitivity)
+	mux.HandleFunc("GET /api/intel/shock/regime", h.handleShockRegime)
+	mux.HandleFunc("GET /api/intel/shock/fingerprint", h.handleShockFingerprint)
+	mux.HandleFunc("GET /api/intel/shock/analogs", h.handleShockAnalogs)
+	mux.HandleFunc("GET /api/intel/shock/liquidity", h.handleShockLiquidity)
 }
 
 type stateJSON struct {
@@ -277,6 +283,58 @@ func (h *Handlers) handleEventSensitivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 	dto, err := h.Event.Sensitivity(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleShockRegime(w http.ResponseWriter, r *http.Request) {
+	if h.Shock == nil {
+		writeError(w, "shock service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Shock.Regime(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleShockFingerprint(w http.ResponseWriter, r *http.Request) {
+	if h.Shock == nil {
+		writeError(w, "shock service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Shock.Fingerprint(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleShockAnalogs(w http.ResponseWriter, r *http.Request) {
+	if h.Shock == nil {
+		writeError(w, "shock service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Shock.Analogs(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleShockLiquidity(w http.ResponseWriter, r *http.Request) {
+	if h.Shock == nil {
+		writeError(w, "shock service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Shock.Liquidity(r.Context())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

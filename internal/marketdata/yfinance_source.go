@@ -51,6 +51,17 @@ var yahooAssets = map[string]yahooAsset{
 	"DXY":    {symbol: "DX-Y.NYB", label: "DXY", basis: BasisDelayed},
 	"USDJPY": {symbol: "JPY=X", label: "美元/日元", basis: BasisDelayed},
 	"USDCNH": {symbol: "CNH=X", label: "离岸人民币", basis: BasisDelayed},
+	// ETF shock sensors
+	"SPY":  {symbol: "SPY", label: "SPY", basis: BasisDelayed},
+	"QQQ":  {symbol: "QQQ", label: "QQQ", basis: BasisDelayed},
+	"IWM":  {symbol: "IWM", label: "IWM", basis: BasisDelayed},
+	"TLT":  {symbol: "TLT", label: "TLT", basis: BasisDelayed},
+	"HYG":  {symbol: "HYG", label: "HYG", basis: BasisDelayed},
+	"LQD":  {symbol: "LQD", label: "LQD", basis: BasisDelayed},
+	"GLD":  {symbol: "GLD", label: "GLD", basis: BasisDelayed},
+	"USO":  {symbol: "USO", label: "USO", basis: BasisDelayed},
+	"UUP":  {symbol: "UUP", label: "UUP", basis: BasisDelayed},
+	"VIXY": {symbol: "VIXY", label: "VIXY", basis: BasisDelayed},
 	// 国际/个股代理
 	"N225":      {symbol: "^N225", label: "N225", basis: BasisDelayed},
 	"SX5E":      {symbol: "^STOXX50E", label: "欧洲 SX5E", basis: BasisDelayed},

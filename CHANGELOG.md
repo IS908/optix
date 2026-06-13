@@ -12,7 +12,16 @@ above it.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Market Intel shock view (`optix shock`, `/intel/` shock cards) — M7 of
+  epic #120.** Four source-backed cards: regime trigger scoring, interpretable
+  supply/demand/liquidity/policy shock fingerprints, local historical analog
+  matching, and ETF liquidity state. New `optix shock` CLI bundle and four
+  `GET /api/intel/shock/*` endpoints with explicit source/basis/as_of/warnings
+  labels. M7 is IBKR-preferred for ETF top-of-book bid/ask data via the existing
+  broker fallback chain, while v1 remains runnable with yfinance macro/quote
+  fallback and explicit market-depth/option-stress degradation warnings.
 
 ## [0.13.0] - 2026-06-13
 

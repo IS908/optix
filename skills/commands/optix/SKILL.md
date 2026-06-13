@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, risk exposure, market pulse, premarket/postclose/event-day views, FOMC/CPI event analysis, or macro-event sensitivity. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、收盘后复盘、FOMC/CPI 事件日、隔夜行情。"
+description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, risk exposure, market pulse, premarket/postclose/event-day/shock views, FOMC/CPI event analysis, macro-event sensitivity, regime triggers, shock fingerprints, or market liquidity state. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、收盘后复盘、FOMC/CPI 事件日、突发冲击、流动性状态、隔夜行情。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -29,6 +29,7 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 - 市场快照、盘前看盘、隔夜行情、多资产总览 / Market pulse, premarket overview, multi-asset snapshot (e.g., "现在大盘怎么样?", "盘前看盘", "隔夜期货", "market pulse", "premarket snapshot", "overnight futures")
 - 隔夜传导、跳空回补、盘前异动、情绪定位 / Overnight chain, gap fill, premarket movers, sentiment positioning
 - 事件日看盘、FOMC/CPI、利率路径、声明 diff、敏感度矩阵 / Event-day view, FOMC/CPI, rate-path repricing, statement diff, sensitivity matrix
+- 突发冲击、regime 触发、冲击指纹、流动性状态 / Shock view, regime trigger, shock fingerprints, liquidity state
 
 ## Commands
 
@@ -255,6 +256,26 @@ bash bin/optix.sh event --format json
 Agents should read `event --format json` around scheduled FOMC/CPI events.
 It complements `pulse --view event --format json`: `pulse` gives the current
 multi-asset board; `event` gives the four-card event interpretation layer.
+
+### Shock View (突发冲击四卡 / M7)
+
+Four pure-compute shock cards: regime trigger scoring, supply/demand/liquidity/
+policy shock fingerprints, local historical analog matching, and ETF liquidity
+state. M7 is **IBKR-preferred by contract** for realtime L1, bid/ask spread,
+market depth, tick-by-tick, and option IV/Greeks/OI/volume. v1 already overlays
+broker-backed ETF top-of-book bid/ask data when IBKR is available, and remains
+runnable without IBKR through yfinance quote fallback. Dedicated market depth
+and exact option stress still explicitly degrade with warnings.
+
+```bash
+bash bin/optix.sh shock
+bash bin/optix.sh shock --format json
+```
+
+Agents should read `shock --format json` during abnormal cross-asset moves.
+It complements `pulse --view shock --format json`: `pulse` gives the current
+multi-asset board; `shock` gives the four-card trigger/fingerprint/liquidity
+interpretation layer.
 
 ### Market Intel — 判断日记检查点工作流 (judgment journal)
 

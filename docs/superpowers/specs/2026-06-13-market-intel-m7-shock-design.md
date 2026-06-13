@@ -33,8 +33,8 @@ Use an IBKR-backed adapter when available for:
 2. **Bid/ask and spread** for ETFs and futures. These feed liquidity state and
    help distinguish real stress from stale last-price moves.
 3. **ETF Level II / market depth** for SPY, QQQ, IWM, TLT, HYG, and LQD.
-   M7 v1 stores the interface and DTO shape; the initial implementation may
-   return an IBKR-unavailable warning if the adapter is not wired.
+   M7 v1 stores the interface and DTO shape; market-depth rows explicitly
+   degrade until a broker depth adapter is added.
 4. **Tick-by-tick bid/ask and last** for a small core set such as SPY, QQQ,
    TLT, HYG, and VIXY. This is a future adapter path, not required for M7 v1.
 5. **Option IV, Greeks, OI, and volume** for SPX/SPY, QQQ, IWM, and VIX/VIXY.
@@ -129,9 +129,10 @@ type Source interface {
 ```
 
 `YFinanceAdapter` implements quotes/bars and returns explicit warnings for
-depth and exact option stress. `IBKRAdapter` is designed as the preferred
-implementation but is not required to be fully wired in M7 v1; the contract must
-make the upgrade path obvious.
+depth and exact option stress. `BrokerQuoteAdapter` is wired in M7 v1 as the
+IBKR-preferred path for ETF top-of-book quote/bid/ask data, with yfinance used
+for macro/index sensors and as the broker fallback. Market depth and exact
+option stress remain explicit degraded paths.
 
 ## 5. CLI and HTTP
 

@@ -12,6 +12,10 @@ import { EventRatesCard } from '../components/EventRatesCard'
 import { EventDiffCard } from '../components/EventDiffCard'
 import { EventPatternsCard } from '../components/EventPatternsCard'
 import { EventSensitivityCard } from '../components/EventSensitivityCard'
+import { ShockRegimeCard } from '../components/ShockRegimeCard'
+import { ShockFingerprintCard } from '../components/ShockFingerprintCard'
+import { ShockAnalogsCard } from '../components/ShockAnalogsCard'
+import { ShockLiquidityCard } from '../components/ShockLiquidityCard'
 import { viewSlots, type SlotDef } from './slots'
 
 function liveComponent(live: SlotDef['live']) {
@@ -42,6 +46,14 @@ function liveComponent(live: SlotDef['live']) {
       return <EventPatternsCard />
     case 'event-sensitivity':
       return <EventSensitivityCard />
+    case 'shock-regime':
+      return <ShockRegimeCard />
+    case 'shock-fingerprint':
+      return <ShockFingerprintCard />
+    case 'shock-analogs':
+      return <ShockAnalogsCard />
+    case 'shock-liquidity':
+      return <ShockLiquidityCard />
     default:
       return null
   }

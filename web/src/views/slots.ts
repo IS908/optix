@@ -16,7 +16,11 @@ export interface SlotDef {
     | 'event-rates'
     | 'event-diff'
     | 'event-patterns'
-    | 'event-sensitivity' // 已上线槽：渲染真实组件而非占位卡
+    | 'event-sensitivity'
+    | 'shock-regime'
+    | 'shock-fingerprint'
+    | 'shock-analogs'
+    | 'shock-liquidity' // 已上线槽：渲染真实组件而非占位卡
 }
 
 export const viewSlots: Record<string, SlotDef[]> = {
@@ -44,9 +48,9 @@ export const viewSlots: Record<string, SlotDef[]> = {
     { title: '资产敏感度矩阵', desc: '事件冲击下各资产 beta 矩阵', milestone: 'M6', live: 'event-sensitivity' },
   ],
   shock: [
-    { title: 'Regime 触发器', desc: 'VIX σ + 跨资产确认的触发状态', milestone: 'M7', span: 2 },
-    { title: '冲击指纹', desc: '供给/需求/流动性/政策 四类指纹分类', milestone: 'M7' },
-    { title: '历史类比', desc: '与历史冲击日的相似度匹配', milestone: 'M7' },
-    { title: '流动性状态', desc: '价差/深度近似的流动性仪表', milestone: 'M7' },
+    { title: 'Regime 触发器', desc: 'VIX σ + 跨资产确认的触发状态', milestone: 'M7', span: 2, live: 'shock-regime' },
+    { title: '冲击指纹', desc: '供给/需求/流动性/政策 四类指纹分类', milestone: 'M7', live: 'shock-fingerprint' },
+    { title: '历史类比', desc: '与历史冲击日的相似度匹配', milestone: 'M7', live: 'shock-analogs' },
+    { title: '流动性状态', desc: '价差/深度近似的流动性仪表', milestone: 'M7', live: 'shock-liquidity' },
   ],
 }

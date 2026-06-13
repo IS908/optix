@@ -4,9 +4,9 @@
 
 **Goal:** Build the Market Intel Shock view with four M7 cards plus CLI and HTTP access.
 
-**Architecture:** Add `internal/shockintel` as a pure-compute package mirroring `eventintel`. It consumes a small source interface that is IBKR-preferred by contract and yfinance/local-fixture backed in v1, then exposes DTOs through `optix shock`, `/api/intel/shock/*`, and React cards.
+**Architecture:** Add `internal/shockintel` as a pure-compute package mirroring `eventintel`. It consumes a small source interface that is IBKR-preferred for ETF top-of-book quote/bid/ask data and yfinance/local-fixture backed for macro sensors plus fallback, then exposes DTOs through `optix shock`, `/api/intel/shock/*`, and React cards.
 
-**Tech Stack:** Go, Cobra, net/http, existing `internal/marketdata` yfinance source, React + TypeScript + Vitest.
+**Tech Stack:** Go, Cobra, net/http, existing broker fallback chain, existing `internal/marketdata` yfinance source, React + TypeScript + Vitest.
 
 Spec: `docs/superpowers/specs/2026-06-13-market-intel-m7-shock-design.md`
 
@@ -17,7 +17,7 @@ Spec: `docs/superpowers/specs/2026-06-13-market-intel-m7-shock-design.md`
 | File | Action | Responsibility |
 |---|---|---|
 | `internal/shockintel/dto.go` | Create | Shared JSON DTOs and source-facing structs |
-| `internal/shockintel/source.go` | Create | Source interface, yfinance adapter, local analog templates |
+| `internal/shockintel/source.go` | Create | Source interface, IBKR-preferred broker quote adapter, yfinance adapter, local analog templates |
 | `internal/shockintel/regime.go` | Create | Regime trigger scoring and mechanism trigger DTO |
 | `internal/shockintel/fingerprint.go` | Create | Supply/demand/liquidity/policy fingerprint scoring |
 | `internal/shockintel/analogs.go` | Create | Historical analog similarity matching |
@@ -40,38 +40,38 @@ Spec: `docs/superpowers/specs/2026-06-13-market-intel-m7-shock-design.md`
 
 ### Task 1: DTOs and Pure Computes
 
-- [ ] Write failing Go tests in `internal/shockintel` for regime scoring, fingerprint classification, analog similarity, and liquidity state.
-- [ ] Add `dto.go`, `regime.go`, `fingerprint.go`, `analogs.go`, and `liquidity.go`.
-- [ ] Run `go test ./internal/shockintel -count=1` and confirm pass.
+- [x] Write failing Go tests in `internal/shockintel` for regime scoring, fingerprint classification, analog similarity, and liquidity state.
+- [x] Add `dto.go`, `regime.go`, `fingerprint.go`, `analogs.go`, and `liquidity.go`.
+- [x] Run `go test ./internal/shockintel -count=1` and confirm pass.
 
 ### Task 2: Source Adapter and Service
 
-- [ ] Write failing service tests for yfinance fallback, depth degradation, option-metric degradation, and non-null slices.
-- [ ] Add `source.go` with `Source`, `YFinanceAdapter`, IBKR-preferred metadata labels, and local analog templates.
-- [ ] Add `service.go` with `Regime`, `Fingerprint`, `Analogs`, `Liquidity`, and `Bundle`.
-- [ ] Run `go test ./internal/shockintel -count=1` and confirm pass.
+- [x] Write failing service tests for yfinance fallback, broker quote overlay, depth degradation, option-metric degradation, and non-null slices.
+- [x] Add `source.go` with `Source`, `BrokerQuoteAdapter`, `YFinanceAdapter`, IBKR-preferred metadata labels, and local analog templates.
+- [x] Add `service.go` with `Regime`, `Fingerprint`, `Analogs`, `Liquidity`, and `Bundle`.
+- [x] Run `go test ./internal/shockintel -count=1` and confirm pass.
 
 ### Task 3: HTTP and CLI
 
-- [ ] Write failing `internal/intel` handler tests for shock nil 503 and one happy path.
-- [ ] Add `Shock *shockintel.Service` to `intel.Handlers` and register four shock endpoints.
-- [ ] Write failing CLI tests for `newShockCmd` and JSON bundle shape.
-- [ ] Add `internal/cli/shock.go`; register it in `root.go`; wire shock service in `server.go`.
-- [ ] Run `go test ./internal/intel ./internal/cli -count=1` and confirm pass.
+- [x] Write failing `internal/intel` handler tests for shock nil 503 and one happy path.
+- [x] Add `Shock *shockintel.Service` to `intel.Handlers` and register four shock endpoints.
+- [x] Write failing CLI tests for `newShockCmd` and JSON bundle shape.
+- [x] Add `internal/cli/shock.go`; register it in `root.go`; wire shock service in `server.go`.
+- [x] Run `go test ./internal/intel ./internal/cli -count=1` and confirm pass.
 
 ### Task 4: SPA Shock Cards
 
-- [ ] Add Shock DTOs to `web/src/api/types.ts`.
-- [ ] Write Vitest tests for four cards.
-- [ ] Add `ShockRegimeCard`, `ShockFingerprintCard`, `ShockAnalogsCard`, and `ShockLiquidityCard`.
-- [ ] Wire `slots.ts` and `SlotGrid.tsx`.
-- [ ] Run `cd web && npm test` and confirm pass.
+- [x] Add Shock DTOs to `web/src/api/types.ts`.
+- [x] Write Vitest tests for four cards.
+- [x] Add `ShockRegimeCard`, `ShockFingerprintCard`, `ShockAnalogsCard`, and `ShockLiquidityCard`.
+- [x] Wire `slots.ts` and `SlotGrid.tsx`.
+- [x] Run `cd web && npm test` and confirm pass.
 
 ### Task 5: Acceptance, Docs, and Release
 
-- [ ] Add `internal/webui/shock_acceptance_test.go` with fake shock service coverage.
-- [ ] Update `CHANGELOG.md`, `CLAUDE.md`, `AGENTS.md`, and `skills/commands/optix/SKILL.md`.
-- [ ] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, `cd web && npm run build -- --outDir /tmp/optix-web-dist-m7-verify`, and `make build`.
-- [ ] Start local server and capture `/intel/` Shock view screenshot.
-- [ ] Self-review diff and fix bugs with tests first.
+- [x] Add `internal/webui/shock_acceptance_test.go` with fake shock service coverage.
+- [x] Update `CHANGELOG.md`, `CLAUDE.md`, `AGENTS.md`, and `skills/commands/optix/SKILL.md`.
+- [x] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, `cd web && npm run build -- --outDir /tmp/optix-web-dist-m7-verify`, and `make build`.
+- [x] Start local server and capture `/intel/` Shock view screenshot.
+- [x] Self-review diff and fix bugs with tests first.
 - [ ] Commit, push, open PR closing #134, merge, tag `v0.14.0`, and create GitHub Release.

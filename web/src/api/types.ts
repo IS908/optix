@@ -314,3 +314,88 @@ export interface EventSensitivityDTO {
   rows: EventSensitivityRow[]
   warnings?: string[]
 }
+
+export interface ShockRegimeConfirmation {
+  id: string
+  label: string
+  dimension: string
+  change_pct: number
+  weight: number
+  contribution: number
+  source: string
+  basis: string
+  as_of: string
+  note?: string
+}
+
+export interface ShockRegimeDTO {
+  as_of: string
+  source: string
+  state: string
+  score: number
+  vix_sigma: number
+  triggered_view?: string
+  confirmations: ShockRegimeConfirmation[]
+  warnings?: string[]
+}
+
+export interface ShockFingerprintRow {
+  kind: string
+  label: string
+  score: number
+  confidence: number
+  active: boolean
+  evidence: string[]
+  missing: string[]
+}
+
+export interface ShockFingerprintDTO {
+  as_of: string
+  source: string
+  rows: ShockFingerprintRow[]
+  warnings?: string[]
+}
+
+export interface ShockAnalogRow {
+  name: string
+  date: string
+  category: string
+  similarity: number
+  next_session_bias: string
+  matched_features: string[]
+}
+
+export interface ShockAnalogsDTO {
+  as_of: string
+  source: string
+  rows: ShockAnalogRow[]
+  warnings?: string[]
+}
+
+export interface ShockLiquidityRow {
+  id: string
+  label: string
+  source: string
+  basis: string
+  as_of: string
+  bid: number
+  ask: number
+  mid: number
+  spread_bps: number
+  spread_z: number
+  top_bid_size: number
+  top_ask_size: number
+  top5_bid_depth: number
+  top5_ask_depth: number
+  depth_available: boolean
+  state: string
+  missing?: boolean
+  note?: string
+}
+
+export interface ShockLiquidityDTO {
+  as_of: string
+  source: string
+  rows: ShockLiquidityRow[]
+  warnings?: string[]
+}

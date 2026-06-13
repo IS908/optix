@@ -18,6 +18,7 @@ import (
 	"github.com/IS908/optix/internal/premarket"
 	"github.com/IS908/optix/internal/scheduler"
 	"github.com/IS908/optix/internal/server"
+	"github.com/IS908/optix/internal/shockintel"
 	"github.com/IS908/optix/internal/webui"
 	"github.com/IS908/optix/pkg/model"
 	"github.com/rs/zerolog/log"
@@ -143,6 +144,7 @@ Examples:
 				Premarket: premarket.NewService(premarket.NewMarketAdapter(pythonBin), store),
 				Postclose: postcloseSvc,
 				Event:     eventintel.NewDefaultService(pythonBin),
+				Shock:     shockintel.NewIBKRPreferredService(ibHost, ibPort, pythonBin),
 				Watchlist: func(ctx context.Context) ([]string, error) {
 					items, err := store.GetWatchlist(ctx)
 					return watchlistSymbols(items), err

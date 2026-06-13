@@ -120,7 +120,7 @@ make clean  # Removes bin/ and data/optix.db
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
 - `checkpoints.go`/`journal.go`/`scorer.go`: judgment-journal domain — daily checkpoint schedule (剧本/首验/定调/对账), `IntelJournal` service (narrative + falsifiable-judgment writes via CLI, price capture, reconciliation, hit-rate), append-only over migration 006 tables
-- `handlers.go`: `GET /api/intel/state` (phase + next transition), `/api/intel/pulse` (same DTO as `optix pulse --format json`, lifted here and shared by CLI + HTTP), `/api/intel/journal` (read-only journal snapshot for the SPA narrative panel), `/api/intel/premarket/{overnight,gaps,movers,sentiment}` (M4 premarket cards), `/api/intel/postclose/{earnings,timeline,read-across,movers}` (M5 postclose cards), and `/api/intel/event/{rates,diff,patterns,sensitivity}` (M6 event cards)
+- `handlers.go`: `GET /api/intel/state` (phase + next transition), `/api/intel/pulse` (same DTO as `optix pulse --format json`, lifted here and shared by CLI + HTTP), `/api/intel/journal` (read-only journal snapshot for the SPA narrative panel), `/api/intel/premarket/{overnight,gaps,movers,sentiment}` (M4 premarket cards), `/api/intel/postclose/{earnings,timeline,read-across,movers}` (M5 postclose cards), `/api/intel/event/{rates,diff,patterns,sensitivity}` (M6 event cards), and `/api/intel/shock/{regime,fingerprint,analogs,liquidity}` (M7 shock cards)
 
 **`premarket/`**: Market Intel premarket analysis plane (pure compute, zero IBKR/gRPC)
 - `overnight.go`: descriptive overnight transmission chain (N225→TSMC→SX5E→ES)
@@ -142,6 +142,13 @@ make clean  # Removes bin/ and data/optix.db
 - `patterns.go`: built-in FOMC/CPI calendar windows with T-1/T/T+1 historical pattern aggregation
 - `sensitivity.go`: signed risk-on/rates-up/dollar-up sensitivity matrix from event-window returns
 - `source.go`/`service.go`: yfinance adapter plus local statement/calendar fixtures; degraded sources return warnings with non-nil DTO slices
+
+**`shockintel/`**: Market Intel shock analysis plane (pure compute, IBKR-preferred by contract)
+- `regime.go`: VIX-sigma plus cross-asset/liquidity confirmation into normal/watch/shock/critical trigger state
+- `fingerprint.go`: supply/demand/liquidity/policy shock fingerprint scoring
+- `analogs.go`: local historical shock-template similarity matching
+- `liquidity.go`: ETF spread/depth liquidity state for SPY/QQQ/IWM/TLT/HYG/LQD
+- `source.go`/`service.go`: broker-backed top-of-book quote adapter overlays IBKR/Yahoo ETF bid/ask data on yfinance macro sensors; market depth and option stress explicitly degrade until dedicated adapters are wired
 
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
@@ -166,7 +173,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`, `shock.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

@@ -31,6 +31,13 @@ func TestIntelSPAServing(t *testing.T) {
 	if loc := rec.Header().Get("Location"); loc != "/intel/" {
 		t.Errorf("GET /intel Location = %q, want /intel/", loc)
 	}
+
+	// 嵌入目录列表必须 404（不让 FileServer 自动索引泄露产物结构）。
+	rec = httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, httptest.NewRequest("GET", "/intel/assets/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET /intel/assets/ = %d, want 404 (no dir listing)", rec.Code)
+	}
 }
 
 func TestAttachIntelRegistersAPI(t *testing.T) {

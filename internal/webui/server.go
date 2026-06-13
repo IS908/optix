@@ -229,6 +229,11 @@ func (s *Server) AttachIntel(h *intel.Handlers) { h.Register(s.mux) }
 func spaHandler(dist fs.FS) http.Handler {
 	files := http.StripPrefix("/intel/", http.FileServer(http.FS(dist)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 不暴露嵌入目录列表（FileServer 会对目录自动索引）。
+		if strings.HasSuffix(r.URL.Path, "/") && r.URL.Path != "/intel/" {
+			http.NotFound(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/intel/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {

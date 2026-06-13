@@ -115,6 +115,11 @@ make clean  # Removes bin/ and data/optix.db
 - Business-ID `AssetRef` + `Source`/`Router` abstraction routes by `AssetClass` to pluggable sources (currently all via yfinance; zero IBKR dependency)
 - `PulseService` with 60s in-memory TTL + SQLite `market_pulse_bars` two-tier cache (migration 005, 2-day rolling prune)
 
+**`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
+- `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
+- `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
+- `handlers.go`: `GET /api/intel/state` (phase + next transition) and `/api/intel/pulse` (same DTO as `optix pulse --format json`, lifted here and shared by CLI + HTTP)
+
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
 - Schema in `migrations/001_initial.sql`
@@ -131,9 +136,13 @@ make clean  # Removes bin/ and data/optix.db
 - `grpc.go`: Server setup
 - `marketdata_svc.go`: Implements `MarketDataService` proto
 
+**`web/`** (repo root, not under `internal/`): Market Intel SPA (Vite + React + TS + Tailwind)
+- `go:embed all:dist` into `optix-server`, served at `/intel/`; a committed placeholder `dist/index.html` keeps pure-Go builds working without node
+- `make web` / `make build-full` build the SPA; build artifacts (`dist/assets`, `node_modules`) are gitignored
+
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
-- `server.go`: Web UI launch command
+- `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
 - `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)

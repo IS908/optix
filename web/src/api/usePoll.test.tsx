@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { usePoll } from './usePoll'
 
+// 组件 unmount（移除 visibilitychange 监听器）由 test-setup.ts 的全局 afterEach(cleanup)
+// 负责；这里只复位 timer/mock/global stub。
 describe('usePoll', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -9,6 +11,7 @@ describe('usePoll', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('fetches immediately and keeps data on later failure (stale)', async () => {
@@ -63,5 +66,38 @@ describe('usePoll', () => {
       await vi.advanceTimersByTimeAsync(90_000)
     })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not spawn a parallel poll loop when re-shown mid-flight', async () => {
+    // 一次永不 resolve 的 fetch：把首个 tick 卡在 in-flight，
+    // 期间触发 visibilitychange，确认不会另起第二条轮询链。
+    let resolveFetch: (v: unknown) => void = () => {}
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise((res) => { resolveFetch = res }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const visGetter = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+
+    renderHook(() => usePoll('/x', 30_000))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0) // 首个 tick 发起 fetch，卡在 in-flight
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // 标签页隐藏→重现：onVisible 在 in-flight 时必须不另起 tick
+    await act(async () => {
+      visGetter.mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      visGetter.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 仍只有一条在途请求
+
+    // 解开在途请求 → 正常 schedule 下一次，总链路只有一条
+    await act(async () => {
+      resolveFetch({ ok: true, json: async () => ({ n: 1 }) })
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 一次解开 + 一次定时，无并发倍增
   })
 })

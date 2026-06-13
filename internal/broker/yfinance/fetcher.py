@@ -5,6 +5,7 @@ Usage:
     python fetcher.py quote AAPL
     python fetcher.py bars AAPL 1d 365
     python fetcher.py option_chain AAPL [YYYYMMDD]
+    python fetcher.py earnings_dates AAPL,NVDA [LIMIT]
 
 Outputs JSON to stdout. Errors go to stderr with non-zero exit code.
 """
@@ -30,6 +31,17 @@ def _safe_int(v) -> int:
     """Coerce to int; treat None/NaN/inf/non-numeric as 0. yfinance sometimes
     returns NaN for volume/openInterest on illiquid contracts."""
     return int(_safe_float(v))
+
+
+def _optional_float(v):
+    """Coerce finite numeric values; preserve missing/NaN as None."""
+    try:
+        f = float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+    if f is None or not math.isfinite(f):
+        return None
+    return f
 
 
 def _ensure_yfinance():
@@ -249,9 +261,42 @@ def fetch_batch_bars(symbols: list, interval: str, period: str) -> dict:
     return out
 
 
+def fetch_earnings_dates(symbols: list, limit: int = 12) -> dict:
+    """Fetch yfinance earnings-date rows for symbols.
+
+    Returns {sym: [{symbol,event_time,timing,eps_estimate,eps_reported,
+    eps_surprise_pct}, ...]}. Missing/unavailable symbols return an empty list.
+    """
+    import yfinance as yf
+
+    out = {}
+    for sym in symbols:
+        rows = []
+        try:
+            ticker = yf.Ticker(sym)
+            df = ticker.get_earnings_dates(limit=limit)
+            if df is not None and not df.empty:
+                for ts, r in df.iterrows():
+                    event_time = ts.to_pydatetime().astimezone(timezone.utc).isoformat()
+                    hour = ts.to_pydatetime().hour
+                    timing = "postmarket" if hour >= 16 else "premarket" if hour < 9 else "unknown"
+                    rows.append({
+                        "symbol": sym,
+                        "event_time": event_time,
+                        "timing": timing,
+                        "eps_estimate": _optional_float(r.get("EPS Estimate")),
+                        "eps_reported": _optional_float(r.get("Reported EPS")),
+                        "eps_surprise_pct": _optional_float(r.get("Surprise(%)")),
+                    })
+        except Exception:
+            rows = []
+        out[sym] = rows
+    return out
+
+
 def main():
     if len(sys.argv) < 3:
-        print("Usage: fetcher.py <quote|bars|option_chain|batch_quotes|batch_bars> <SYMBOL[,SYMBOL...]> [args...]", file=sys.stderr)
+        print("Usage: fetcher.py <quote|bars|option_chain|batch_quotes|batch_bars|earnings_dates> <SYMBOL[,SYMBOL...]> [args...]", file=sys.stderr)
         sys.exit(1)
 
     _ensure_yfinance()
@@ -276,6 +321,9 @@ def main():
             interval = sys.argv[3] if len(sys.argv) > 3 else "5m"
             period = sys.argv[4] if len(sys.argv) > 4 else "1d"
             result = fetch_batch_bars([s for s in symbol.split(",") if s], interval, period)
+        elif command == "earnings_dates":
+            limit = int(sys.argv[3]) if len(sys.argv) > 3 else 12
+            result = fetch_earnings_dates([s for s in symbol.split(",") if s], limit)
         else:
             print(f"Unknown command: {command}", file=sys.stderr)
             sys.exit(1)

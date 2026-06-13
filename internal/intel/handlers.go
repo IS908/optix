@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
 )
 
@@ -21,6 +22,7 @@ type Handlers struct {
 	Pulse     PulseProvider
 	Journal   *IntelJournal      // nil → /api/intel/journal 回 503
 	Premarket *premarket.Service // nil → /api/intel/premarket/* 回 503
+	Postclose *postclose.Service // nil → /api/intel/postclose/* 回 503
 	Watchlist func(ctx context.Context) ([]string, error)
 	Now       func() time.Time
 }
@@ -41,6 +43,10 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/premarket/gaps", h.handlePMGaps)
 	mux.HandleFunc("GET /api/intel/premarket/movers", h.handlePMMovers)
 	mux.HandleFunc("GET /api/intel/premarket/sentiment", h.handlePMSentiment)
+	mux.HandleFunc("GET /api/intel/postclose/earnings", h.handlePCEarnings)
+	mux.HandleFunc("GET /api/intel/postclose/timeline", h.handlePCTimeline)
+	mux.HandleFunc("GET /api/intel/postclose/read-across", h.handlePCReadAcross)
+	mux.HandleFunc("GET /api/intel/postclose/movers", h.handlePCMovers)
 }
 
 type stateJSON struct {
@@ -166,6 +172,66 @@ func (h *Handlers) handlePMSentiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePCEarnings(w http.ResponseWriter, r *http.Request) {
+	if h.Postclose == nil {
+		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Postclose.Earnings(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePCTimeline(w http.ResponseWriter, r *http.Request) {
+	if h.Postclose == nil {
+		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Postclose.Timeline(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePCReadAcross(w http.ResponseWriter, r *http.Request) {
+	if h.Postclose == nil {
+		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Postclose.ReadAcross(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handlePCMovers(w http.ResponseWriter, r *http.Request) {
+	if h.Postclose == nil {
+		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Postclose.Movers(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) watchlist(ctx context.Context) []string {
+	if h.Watchlist == nil {
+		return nil
+	}
+	watchlist, _ := h.Watchlist(ctx)
+	return watchlist
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

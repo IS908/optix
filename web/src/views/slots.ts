@@ -3,7 +3,16 @@ export interface SlotDef {
   desc: string
   milestone: 'M3' | 'M4' | 'M5' | 'M6' | 'M7'
   span?: 1 | 2 // 栅格跨度（2 列布局）
-  live?: 'narrative' | 'overnight' | 'gaps' | 'movers' | 'sentiment' // 已上线槽：渲染真实组件而非占位卡
+  live?:
+    | 'narrative'
+    | 'overnight'
+    | 'gaps'
+    | 'movers'
+    | 'sentiment'
+    | 'postclose-earnings'
+    | 'postclose-timeline'
+    | 'postclose-read-across'
+    | 'postclose-movers' // 已上线槽：渲染真实组件而非占位卡
 }
 
 export const viewSlots: Record<string, SlotDef[]> = {
@@ -19,10 +28,10 @@ export const viewSlots: Record<string, SlotDef[]> = {
     { title: '叙事流', desc: '检查点叙事与判断登记（agent 填槽）', milestone: 'M3', live: 'narrative' },
   ],
   postclose: [
-    { title: '财报速递', desc: '盘后财报 vs 共识速览', milestone: 'M5', span: 2 },
-    { title: '要点时间轴', desc: '财报电话会要点时间轴', milestone: 'M5' },
-    { title: 'Read-across 传导', desc: '同业/供应链传导图谱', milestone: 'M5' },
-    { title: '全天合并异动', desc: '正股+盘后合并异动列表', milestone: 'M5' },
+    { title: '财报速递', desc: '盘后财报 vs 共识速览', milestone: 'M5', span: 2, live: 'postclose-earnings' },
+    { title: '要点时间轴', desc: '财报电话会要点时间轴', milestone: 'M5', live: 'postclose-timeline' },
+    { title: 'Read-across 传导', desc: '同业/供应链传导图谱', milestone: 'M5', live: 'postclose-read-across' },
+    { title: '全天合并异动', desc: '正股+盘后合并异动列表', milestone: 'M5', live: 'postclose-movers' },
   ],
   event: [
     { title: '利率路径定价', desc: '事前冻结 vs T+0 重定价对比', milestone: 'M6', span: 2 },

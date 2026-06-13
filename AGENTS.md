@@ -114,12 +114,12 @@ make clean  # Removes bin/ and data/optix.db
 **`marketdata/`**: Multi-asset market snapshot layer (indices/futures/yields/vol/FX)
 - Business-ID `AssetRef` + `Source`/`Router` abstraction routes by `AssetClass` to pluggable sources (currently all via yfinance; zero IBKR dependency)
 - `PulseService` with 60s in-memory TTL + SQLite `market_pulse_bars` two-tier cache
-- `option_chain.go` and `raw_bars.go`: yfinance subprocess helpers for M4 Put/Call ratios and raw-ticker premarket bars
+- `earnings.go`, `option_chain.go`, and `raw_bars.go`: yfinance subprocess helpers for Market Intel earnings dates, Put/Call ratios, and raw-ticker pre/post bars
 
 **`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
-- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, and `/api/intel/premarket/{overnight,gaps,movers,sentiment}`
+- `handlers.go`: `GET /api/intel/state`, `/api/intel/pulse`, `/api/intel/journal`, `/api/intel/premarket/{overnight,gaps,movers,sentiment}`, and `/api/intel/postclose/{earnings,timeline,read-across,movers}`
 
 **`premarket/`**: Market Intel premarket analysis plane (pure compute, zero IBKR/gRPC)
 - `overnight.go`: descriptive overnight transmission chain (N225→TSMC→SX5E→ES)
@@ -127,6 +127,13 @@ make clean  # Removes bin/ and data/optix.db
 - `movers.go`: watchlist ∪ curated liquid tickers, premarket move and volume-ratio ranking
 - `sentiment.go`: Put/Call + VIX3M/VIX term premium, degraded regime label
 - `service.go`: `PremarketService` bundle and per-card failure isolation for CLI/HTTP
+
+**`postclose/`**: Market Intel postclose analysis plane (pure compute, zero IBKR/gRPC)
+- `earnings.go`: yfinance EPS consensus/report rows for the earnings quick read
+- `movers.go`: regular + after-hours + combined move extraction from raw 5m prepost bars
+- `read_across.go`: same-sector read-across edges via the embedded sector map
+- `timeline.go`: structured postclose event timeline
+- `service.go`: `PostcloseService` bundle and per-card failure isolation for CLI/HTTP
 
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
@@ -147,7 +154,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

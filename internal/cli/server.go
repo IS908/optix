@@ -13,6 +13,7 @@ import (
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/intel"
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
 	"github.com/IS908/optix/internal/scheduler"
 	"github.com/IS908/optix/internal/server"
@@ -131,10 +132,15 @@ Examples:
 			// 4b. Market Intel API：phase 状态机 + pulse 快照 + judgment journal（零 IBKR，yfinance 路由）
 			// HTTP pulse 路径跑在 r.Context() 下，受服务器 120s WriteTimeout 约束，无需 CLI 式 2 分钟 ctx。
 			intelPulse := marketdata.NewPulseService(marketdata.NewYFinanceRouter(pythonBin), store)
+			postcloseSvc, err := postclose.NewDefaultService(pythonBin)
+			if err != nil {
+				return fmt.Errorf("postclose service: %w", err)
+			}
 			srv.AttachIntel(&intel.Handlers{
 				Pulse:     intelPulse,
 				Journal:   intel.NewIntelJournal(store, intelPulse),
 				Premarket: premarket.NewService(premarket.NewMarketAdapter(pythonBin), store),
+				Postclose: postcloseSvc,
 				Watchlist: func(ctx context.Context) ([]string, error) {
 					items, err := store.GetWatchlist(ctx)
 					return watchlistSymbols(items), err

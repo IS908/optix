@@ -220,6 +220,23 @@ Agents should read `premarket --format json` at the 08:00 剧本 checkpoint befo
 writing the playbook narrative. It complements `pulse --format json`: `pulse`
 gives the multi-asset board; `premarket` gives the four-card premarket read.
 
+### Postclose View (收盘后四卡 / M5)
+
+Four pure-compute postclose cards: earnings quick read vs free yfinance EPS
+consensus, structured postclose timeline, same-sector read-across edges, and
+combined regular-session plus after-hours movers. **No IBKR and no Python gRPC
+engine required** — uses yfinance subprocesses plus the embedded sector map.
+
+```bash
+bash bin/optix.sh postclose
+bash bin/optix.sh postclose --format json
+```
+
+Agents should read `postclose --format json` at the 16:30 对账 / 收盘后
+checkpoint. It complements `intel journal` reconciliation: `postclose` supplies
+structured market facts; the agent writes narrative and judgments through
+`optix intel`.
+
 ### Market Intel — 判断日记检查点工作流 (judgment journal)
 
 A closed judgment loop: at daily checkpoints an agent writes narrative prose and

@@ -163,3 +163,73 @@ export interface SentimentDTO {
   degraded_note: string
   warnings?: string[]
 }
+
+export interface EarningsReport {
+  symbol: string
+  event_time: string
+  timing: string
+  eps_estimate?: number
+  eps_reported?: number
+  eps_surprise_pct?: number
+  surprise_label: string
+  stale: boolean
+}
+
+export interface PostcloseEarningsDTO {
+  as_of: string
+  source: string
+  universe_note: string
+  reports: EarningsReport[]
+  warnings?: string[]
+}
+
+export interface TimelineEvent {
+  ts: string
+  symbol?: string
+  kind: string
+  title: string
+  detail: string
+  severity: string
+}
+
+export interface PostcloseTimelineDTO {
+  as_of: string
+  events: TimelineEvent[]
+  warnings?: string[]
+}
+
+export interface ReadAcrossEdge {
+  driver: string
+  peer: string
+  sector_id: string
+  sector_label: string
+  direction: string
+  confidence: number
+  lag: string
+  driver_after_hours_pct: number
+  note: string
+}
+
+export interface ReadAcrossDTO {
+  as_of: string
+  sector_source: string
+  edges: ReadAcrossEdge[]
+  warnings?: string[]
+}
+
+export interface PostcloseMover {
+  symbol: string
+  regular_pct: number
+  after_hours_pct: number
+  combined_pct: number
+  volume: number
+  watchlist: boolean
+}
+
+export interface PostcloseMoversDTO {
+  as_of: string
+  universe_note: string
+  gainers: PostcloseMover[]
+  losers: PostcloseMover[]
+  warnings?: string[]
+}

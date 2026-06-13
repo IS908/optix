@@ -46,6 +46,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build SPA
+        run: make web
+
       # Resolve and validate the version. We pipe the externally-influenced
       # values (event_name, inputs.version, ref_name) through env vars so they
       # never appear inline in the script body, and we reject anything that

@@ -118,7 +118,8 @@ make clean  # Removes bin/ and data/optix.db
 **`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
-- `handlers.go`: `GET /api/intel/state` (phase + next transition) and `/api/intel/pulse` (same DTO as `optix pulse --format json`, lifted here and shared by CLI + HTTP)
+- `checkpoints.go`/`journal.go`/`scorer.go`: judgment-journal domain — daily checkpoint schedule (剧本/首验/定调/对账), `IntelJournal` service (narrative + falsifiable-judgment writes via CLI, price capture, reconciliation, hit-rate), append-only over migration 006 tables
+- `handlers.go`: `GET /api/intel/state` (phase + next transition), `/api/intel/pulse` (same DTO as `optix pulse --format json`, lifted here and shared by CLI + HTTP), and `/api/intel/journal` (read-only journal snapshot for the SPA narrative panel)
 
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
@@ -143,7 +144,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`: CLI subcommands
+- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

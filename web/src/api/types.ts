@@ -233,3 +233,84 @@ export interface PostcloseMoversDTO {
   losers: PostcloseMover[]
   warnings?: string[]
 }
+
+export interface EventRatePathRow {
+  id: string
+  label: string
+  kind: string
+  source: string
+  basis: string
+  as_of: string
+  pre_event: number
+  current: number
+  change: number
+  change_pct: number
+  missing?: boolean
+  note?: string
+}
+
+export interface EventRatesDTO {
+  as_of: string
+  source: string
+  universe_note: string
+  rows: EventRatePathRow[]
+  warnings?: string[]
+}
+
+export interface EventStatementSentence {
+  text: string
+  status: string
+  hits?: string[]
+}
+
+export interface EventDiffDTO {
+  as_of: string
+  source: string
+  prior_title: string
+  current_title: string
+  prior_published_at: string
+  current_published_at: string
+  added: EventStatementSentence[]
+  removed: EventStatementSentence[]
+  unchanged: EventStatementSentence[]
+  hawkish_hits: number
+  dovish_hits: number
+  verdict: string
+  warnings?: string[]
+}
+
+export interface EventPatternRow {
+  id: string
+  label: string
+  source: string
+  basis: string
+  sample_n: number
+  avg_event_move_pct: number
+  avg_next_move_pct: number
+  directional_consistency: number
+  note?: string
+}
+
+export interface EventPatternsDTO {
+  as_of: string
+  source: string
+  rows: EventPatternRow[]
+  warnings?: string[]
+}
+
+export interface EventSensitivityRow {
+  id: string
+  label: string
+  risk_on: number
+  rates_up: number
+  dollar_up: number
+  sample_n: number
+  note?: string
+}
+
+export interface EventSensitivityDTO {
+  as_of: string
+  source: string
+  rows: EventSensitivityRow[]
+  warnings?: string[]
+}

@@ -8,6 +8,10 @@ import { PostcloseEarningsCard } from '../components/PostcloseEarningsCard'
 import { PostcloseTimelineCard } from '../components/PostcloseTimelineCard'
 import { ReadAcrossCard } from '../components/ReadAcrossCard'
 import { PostcloseMoversCard } from '../components/PostcloseMoversCard'
+import { EventRatesCard } from '../components/EventRatesCard'
+import { EventDiffCard } from '../components/EventDiffCard'
+import { EventPatternsCard } from '../components/EventPatternsCard'
+import { EventSensitivityCard } from '../components/EventSensitivityCard'
 import { viewSlots, type SlotDef } from './slots'
 
 function liveComponent(live: SlotDef['live']) {
@@ -30,6 +34,14 @@ function liveComponent(live: SlotDef['live']) {
       return <ReadAcrossCard />
     case 'postclose-movers':
       return <PostcloseMoversCard />
+    case 'event-rates':
+      return <EventRatesCard />
+    case 'event-diff':
+      return <EventDiffCard />
+    case 'event-patterns':
+      return <EventPatternsCard />
+    case 'event-sensitivity':
+      return <EventSensitivityCard />
     default:
       return null
   }

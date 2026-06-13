@@ -12,7 +12,11 @@ export interface SlotDef {
     | 'postclose-earnings'
     | 'postclose-timeline'
     | 'postclose-read-across'
-    | 'postclose-movers' // 已上线槽：渲染真实组件而非占位卡
+    | 'postclose-movers'
+    | 'event-rates'
+    | 'event-diff'
+    | 'event-patterns'
+    | 'event-sensitivity' // 已上线槽：渲染真实组件而非占位卡
 }
 
 export const viewSlots: Record<string, SlotDef[]> = {
@@ -34,10 +38,10 @@ export const viewSlots: Record<string, SlotDef[]> = {
     { title: '全天合并异动', desc: '正股+盘后合并异动列表', milestone: 'M5', live: 'postclose-movers' },
   ],
   event: [
-    { title: '利率路径定价', desc: '事前冻结 vs T+0 重定价对比', milestone: 'M6', span: 2 },
-    { title: '声明措辞 Diff', desc: 'FOMC 声明逐句对比与鹰鸽分类', milestone: 'M6' },
-    { title: '历史事件日模式', desc: '同类事件日的资产路径统计', milestone: 'M6' },
-    { title: '资产敏感度矩阵', desc: '事件冲击下各资产 beta 矩阵', milestone: 'M6' },
+    { title: '利率路径定价', desc: '事前冻结 vs T+0 重定价对比', milestone: 'M6', span: 2, live: 'event-rates' },
+    { title: '声明措辞 Diff', desc: 'FOMC 声明逐句对比与鹰鸽分类', milestone: 'M6', live: 'event-diff' },
+    { title: '历史事件日模式', desc: '同类事件日的资产路径统计', milestone: 'M6', live: 'event-patterns' },
+    { title: '资产敏感度矩阵', desc: '事件冲击下各资产 beta 矩阵', milestone: 'M6', live: 'event-sensitivity' },
   ],
   shock: [
     { title: 'Regime 触发器', desc: 'VIX σ + 跨资产确认的触发状态', milestone: 'M7', span: 2 },

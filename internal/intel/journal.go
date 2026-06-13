@@ -3,6 +3,7 @@ package intel
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -119,7 +120,7 @@ func (j *IntelJournal) RegisterJudgment(ctx context.Context, in JudgmentInput) (
 	return jd, nil
 }
 
-// currentCheckpoint 返回 now 所处的最近已到期日程检查点 kind（登记归属）；都未到 → "premarket-open"。
+// currentCheckpoint 返回 now 所处的最近已到期日程检查点 kind（登记归属）；都未到 → "script"。
 func currentCheckpoint(now time.Time) string {
 	et := now.In(nyLoc)
 	cur := "script"
@@ -146,7 +147,12 @@ func (j *IntelJournal) Reconcile(ctx context.Context) (ReconcileResult, error) {
 	}
 	settled := 0
 	for _, jd := range pending {
-		price, _, ok, _ := j.store.PulseCloseNear(ctx, jd.AssetID, jd.ExpiryAt, reconcileTolerance)
+		price, _, ok, perr := j.store.PulseCloseNear(ctx, jd.AssetID, jd.ExpiryAt, reconcileTolerance)
+		if perr != nil {
+			// 真实 DB 错误（如 WAL 争用 SQLITE_BUSY）不当缺价：中止本批并传播。
+			// 否则会把判断永久误判 void（结算行 INSERT OR IGNORE 终态、不可重算）。
+			return ReconcileResult{Settled: settled}, fmt.Errorf("reconcile %s: %w", jd.JudgmentID, perr)
+		}
 		var rec model.IntelReconciliation
 		if !ok {
 			rec = model.IntelReconciliation{JudgmentID: jd.JudgmentID, ExpiryPrice: 0,
@@ -228,6 +234,8 @@ func (j *IntelJournal) ReadJournal(ctx context.Context, tradingDate string) (Jou
 	for _, n := range latest {
 		narr = append(narr, n)
 	}
+	// map 迭代无序 → 按 created_at 定序，保证 SPA/快照输出稳定。
+	sort.Slice(narr, func(a, b int) bool { return narr[a].CreatedAt.Before(narr[b].CreatedAt) })
 	// written 集（用于检查点状态）—— 仅当 tradingDate 是今天才反映 due/pending；
 	// 历史日查询时 now 仍是当前，检查点状态以历史日时钟无意义，此处按是否有条目标 written/否则 pending。
 	written := map[string]bool{}

@@ -12,6 +12,12 @@ above it.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.12.0] - 2026-06-13
+
+Minor release: Market Intel M5 — the postclose view of epic #120.
+
 ### Added
 
 - **Market Intel postclose view (`optix postclose`, `/intel/` postclose cards)
@@ -1170,7 +1176,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/IS908/optix/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/IS908/optix/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/IS908/optix/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/IS908/optix/compare/v0.8.0...v0.9.0

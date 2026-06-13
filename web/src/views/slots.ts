@@ -3,6 +3,7 @@ export interface SlotDef {
   desc: string
   milestone: 'M3' | 'M4' | 'M5' | 'M6' | 'M7'
   span?: 1 | 2 // 栅格跨度（2 列布局）
+  live?: 'narrative' // 已上线槽：渲染真实组件而非占位卡
 }
 
 export const viewSlots: Record<string, SlotDef[]> = {
@@ -15,7 +16,7 @@ export const viewSlots: Record<string, SlotDef[]> = {
   intraday: [
     { title: '盘中异动', desc: '实时异动与板块轮动', milestone: 'M4', span: 2 },
     { title: '板块热力', desc: '行业板块涨跌热力图', milestone: 'M4' },
-    { title: '叙事流', desc: '检查点叙事与判断登记（agent 填槽）', milestone: 'M3' },
+    { title: '叙事流', desc: '检查点叙事与判断登记（agent 填槽）', milestone: 'M3', live: 'narrative' },
   ],
   postclose: [
     { title: '财报速递', desc: '盘后财报 vs 共识速览', milestone: 'M5', span: 2 },

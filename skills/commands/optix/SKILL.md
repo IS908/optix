@@ -244,9 +244,10 @@ structured market facts; the agent writes narrative and judgments through
 Four pure-compute event-day cards: rate/yield proxy repricing, deterministic
 FOMC statement wording diff, historical FOMC/CPI event-day patterns, and a
 signed cross-asset sensitivity matrix. **No IBKR and no Python gRPC engine
-required** — M6 v1 uses yfinance for market rows plus local deterministic
-statement/calendar fixtures. Each row carries explicit source/basis/as_of and
-warnings when degraded; it is not trading-grade live Fed Funds futures pricing.
+required** — M6 uses yfinance for market rows plus Fed.gov FOMC
+calendar/statement and BLS CPI schedule fetchers with local deterministic
+fallback. Each row carries explicit source/basis/as_of and warnings when
+degraded; it is not trading-grade live Fed Funds futures pricing.
 
 ```bash
 bash bin/optix.sh event
@@ -264,8 +265,10 @@ policy shock fingerprints, local historical analog matching, and ETF liquidity
 state. M7 is **IBKR-preferred by contract** for realtime L1, bid/ask spread,
 market depth, tick-by-tick, and option IV/Greeks/OI/volume. v1 already overlays
 broker-backed ETF top-of-book bid/ask data when IBKR is available, and remains
-runnable without IBKR through yfinance quote fallback. Dedicated market depth
-and exact option stress still explicitly degrade with warnings.
+runnable without IBKR through yfinance quote fallback. Follow-up patches add an
+IBKR SMART market-depth adapter for core ETFs and option-stress metrics from
+broker/yfinance option chains; missing subscriptions or source failures still
+degrade explicitly with warnings.
 
 ```bash
 bash bin/optix.sh shock

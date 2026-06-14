@@ -141,14 +141,14 @@ make clean  # Removes bin/ and data/optix.db
 - `diff.go`: deterministic FOMC statement sentence diff plus hawkish/dovish keyword scoring
 - `patterns.go`: built-in FOMC/CPI calendar windows with T-1/T/T+1 historical pattern aggregation
 - `sensitivity.go`: signed risk-on/rates-up/dollar-up sensitivity matrix from event-window returns
-- `source.go`/`service.go`: yfinance adapter plus local statement/calendar fixtures; degraded sources return warnings with non-nil DTO slices
+- `source.go`/`service.go`: yfinance adapter plus Fed.gov FOMC and BLS CPI official-source fetchers with local fixture fallback; degraded sources return warnings with non-nil DTO slices
 
 **`shockintel/`**: Market Intel shock analysis plane (pure compute, IBKR-preferred by contract)
 - `regime.go`: VIX-sigma plus cross-asset/liquidity confirmation into normal/watch/shock/critical trigger state
 - `fingerprint.go`: supply/demand/liquidity/policy shock fingerprint scoring
 - `analogs.go`: local historical shock-template similarity matching
 - `liquidity.go`: ETF spread/depth liquidity state for SPY/QQQ/IWM/TLT/HYG/LQD
-- `source.go`/`service.go`: broker-backed top-of-book quote adapter overlays IBKR/Yahoo ETF bid/ask data on yfinance macro sensors; market depth and option stress explicitly degrade until dedicated adapters are wired
+- `source.go`/`service.go`: broker-backed top-of-book quote adapter overlays IBKR/Yahoo ETF bid/ask data on yfinance macro sensors; IBKR SMART depth and broker/yfinance option-chain stress metrics populate where available, with explicit warnings when sources degrade
 
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists

@@ -1,8 +1,9 @@
 # Market Intel M7 — 突发冲击视图 Design Spec
 
-> Status: M7 kickoff approved after IBKR data-source review.
+> Status: shipped in PR #135 / v0.14.0, with follow-up data transparency,
+> IBKR depth, option-stress, and shock override patches in #137-#140.
 > Preceded by M1 v0.8.0 through M6 v0.13.0.
-> Branch `codex/m7-shock` off master -> target **v0.14.0**.
+> Branch `codex/m7-shock` off master -> released **v0.14.0**.
 > Sub-issue: #134.
 
 ## 1. Goal
@@ -33,14 +34,15 @@ Use an IBKR-backed adapter when available for:
 2. **Bid/ask and spread** for ETFs and futures. These feed liquidity state and
    help distinguish real stress from stale last-price moves.
 3. **ETF Level II / market depth** for SPY, QQQ, IWM, TLT, HYG, and LQD.
-   M7 v1 stores the interface and DTO shape; market-depth rows explicitly
-   degrade until a broker depth adapter is added.
+   M7 v1 shipped the interface and DTO shape; #138 added an IBKR SMART
+   market-depth adapter that fills top-of-book and top-5 depth when subscribed
+   data is available, with explicit warnings when depth degrades.
 4. **Tick-by-tick bid/ask and last** for a small core set such as SPY, QQQ,
    TLT, HYG, and VIXY. This is a future adapter path, not required for M7 v1.
 5. **Option IV, Greeks, OI, and volume** for SPX/SPY, QQQ, IWM, and VIX/VIXY.
-   M7 v1 exposes vol-repricing fields that can use yfinance option-chain
-   fallbacks first; IBKR becomes the preferred source when OPRA subscriptions
-   are present.
+   #139 added option-stress metrics from broker/yfinance option chains. IBKR
+   remains preferred when OPRA subscriptions are present; free-source fallback
+   keeps the card usable with explicit source/basis/warning labels.
 6. **Account positions and exposure** only when a future portfolio-shock overlay
    is added. Free sources cannot supply account data.
 
@@ -129,10 +131,12 @@ type Source interface {
 ```
 
 `YFinanceAdapter` implements quotes/bars and returns explicit warnings for
-depth and exact option stress. `BrokerQuoteAdapter` is wired in M7 v1 as the
+degraded depth or option stress. `BrokerQuoteAdapter` is wired as the
 IBKR-preferred path for ETF top-of-book quote/bid/ask data, with yfinance used
-for macro/index sensors and as the broker fallback. Market depth and exact
-option stress remain explicit degraded paths.
+for macro/index sensors and as the broker fallback. Follow-up adapters now fill
+IBKR SMART depth and broker/yfinance option-stress metrics where available,
+while preserving explicit degradation warnings when subscriptions or sources
+are missing.
 
 ## 5. CLI and HTTP
 

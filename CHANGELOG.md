@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.9] - 2026-06-14
+
+Patch release for Market Intel roadmap documentation sync.
+
 ### Fixed
 
 - Sync Market Intel M4-M7 roadmap/status docs with shipped releases and mark

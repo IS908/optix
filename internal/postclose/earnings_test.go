@@ -1,6 +1,7 @@
 package postclose
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -37,6 +38,13 @@ func TestBuildEarningsReportsFiltersWindowAndClassifies(t *testing.T) {
 	}
 	if got[1].Symbol != "MSFT" || got[1].SurpriseLabel != "scheduled" {
 		t.Fatalf("second report = %+v", got[1])
+	}
+	var row map[string]any
+	if err := json.Unmarshal(mustJSON(t, got[0]), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row["source"] != "yfinance" || row["basis"] != "delayed" {
+		t.Fatalf("source/basis = %v/%v, want yfinance/delayed; row=%+v", row["source"], row["basis"], row)
 	}
 }
 

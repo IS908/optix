@@ -9,10 +9,17 @@ import (
 )
 
 const viewOverrideTimeout = 1500 * time.Millisecond
+const viewOverrideCacheTTL = 60 * time.Second
 
 type viewOverride struct {
 	Source string `json:"source"`
 	Reason string `json:"reason"`
+}
+
+type shockOverrideCacheEntry struct {
+	override *viewOverride
+	ok       bool
+	expiry   time.Time
 }
 
 type viewResolution struct {
@@ -41,14 +48,40 @@ func (h *Handlers) resolveShockOverride(ctx context.Context) (*viewOverride, boo
 	if h.Shock == nil {
 		return nil, false
 	}
+	now := h.now()
+	if override, ok, cached := h.cachedShockOverride(now); cached {
+		return override, ok
+	}
 	ctx, cancel := context.WithTimeout(ctx, viewOverrideTimeout)
 	defer cancel()
 	regime, err := h.Shock.Regime(ctx)
 	if err != nil || regime.TriggeredView != string(marketdata.ViewShock) {
+		h.storeShockOverride(nil, false, now)
 		return nil, false
 	}
 	reason := fmt.Sprintf("shock regime: %s, score %.0f", regime.State, regime.Score)
-	return &viewOverride{Source: "shock_regime", Reason: reason}, true
+	override := &viewOverride{Source: "shock_regime", Reason: reason}
+	h.storeShockOverride(override, true, now)
+	return override, true
+}
+
+func (h *Handlers) cachedShockOverride(now time.Time) (*viewOverride, bool, bool) {
+	h.shockOverrideMu.Lock()
+	defer h.shockOverrideMu.Unlock()
+	if h.shockOverrideCache == nil || !now.Before(h.shockOverrideCache.expiry) {
+		return nil, false, false
+	}
+	return h.shockOverrideCache.override, h.shockOverrideCache.ok, true
+}
+
+func (h *Handlers) storeShockOverride(override *viewOverride, ok bool, now time.Time) {
+	h.shockOverrideMu.Lock()
+	defer h.shockOverrideMu.Unlock()
+	h.shockOverrideCache = &shockOverrideCacheEntry{
+		override: override,
+		ok:       ok,
+		expiry:   now.Add(viewOverrideCacheTTL),
+	}
 }
 
 func (h *Handlers) resolveEventOverride(ctx context.Context, now time.Time) (*viewOverride, bool) {

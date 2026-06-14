@@ -12,7 +12,6 @@ import (
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
-	"github.com/IS908/optix/internal/broker/yfinance"
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/pkg/model"
 )
@@ -297,11 +296,10 @@ func (a *YFinanceAdapter) Depth(context.Context, []string, int) (map[string]Dept
 }
 
 func (a *YFinanceAdapter) OptionMetrics(ctx context.Context, underlyings []string) (map[string]OptionStress, error) {
-	b := yfinance.New(yfinance.Config{PythonBin: a.pythonBin})
 	out := map[string]OptionStress{}
 	var warnParts []string
 	for _, underlying := range uniqueStrings(underlyings) {
-		chain, err := b.GetOptionChainWithOI(ctx, underlying, "")
+		chain, err := marketdata.OptionChainWithOI(ctx, a.pythonBin, underlying, "")
 		if err != nil {
 			warnParts = append(warnParts, fmt.Sprintf("%s: %v", underlying, err))
 			continue
@@ -433,36 +431,20 @@ func averagePositive(values ...float64) float64 {
 }
 
 func shockRefsForIDs(ids []string) []marketdata.AssetRef {
-	classes := shockAssetClasses()
 	refs := make([]marketdata.AssetRef, 0, len(ids))
 	seen := map[string]struct{}{}
 	for _, id := range ids {
 		if _, ok := seen[id]; ok {
 			continue
 		}
-		class, ok := classes[id]
+		ref, ok := marketdata.LookupAssetRef(id)
 		if !ok {
 			continue
 		}
-		refs = append(refs, marketdata.AssetRef{ID: id, Class: class})
+		refs = append(refs, ref)
 		seen[id] = struct{}{}
 	}
 	return refs
-}
-
-func shockAssetClasses() map[string]marketdata.AssetClass {
-	return map[string]marketdata.AssetClass{
-		"SPY": marketdata.ClassStock, "QQQ": marketdata.ClassStock,
-		"IWM": marketdata.ClassStock, "TLT": marketdata.ClassStock,
-		"HYG": marketdata.ClassStock, "LQD": marketdata.ClassStock,
-		"GLD": marketdata.ClassStock, "USO": marketdata.ClassStock,
-		"UUP": marketdata.ClassStock, "VIXY": marketdata.ClassStock,
-		"VIX":   marketdata.ClassIndex,
-		"US10Y": marketdata.ClassYield,
-		"ES":    marketdata.ClassFuture, "NQ": marketdata.ClassFuture,
-		"RTY_F": marketdata.ClassFuture, "YM": marketdata.ClassFuture,
-		"WTI": marketdata.ClassFuture, "GOLD": marketdata.ClassFuture,
-	}
 }
 
 func brokerQuoteIDs(ids []string) []string {
@@ -556,11 +538,10 @@ func normalizeSourceName(name string) string {
 }
 
 func basisForSource(source string) string {
-	if source == "yfinance" {
-		return "delayed"
+	switch source {
+	case "yfinance", "ibkr":
+		return string(marketdata.BasisDelayed)
+	default:
+		return string(marketdata.BasisDelayed)
 	}
-	if source == "ibkr" {
-		return "realtime_or_delayed"
-	}
-	return "unknown"
 }

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -71,7 +73,7 @@ func TestServiceFingerprintIncludesOptionStressRows(t *testing.T) {
 	now := fixedShockNow()
 	svc := NewService(&fakeShockSource{optionMetrics: map[string]OptionStress{
 		"SPY": {
-			Underlying: "SPY", Source: "ibkr", Basis: "realtime_or_delayed", AsOf: now,
+			Underlying: "SPY", Source: "ibkr", Basis: string(marketdata.BasisDelayed), AsOf: now,
 			IVSkew: 0.08, Volume: 2500, OpenInt: 12000, Note: "atm_iv=0.42 skew=0.08",
 		},
 	}})
@@ -105,6 +107,84 @@ func TestServiceFingerprintIncludesOptionStressRows(t *testing.T) {
 	}
 	if !fingerprintEvidenceContains(dto.Rows, "option IV skew elevated") {
 		t.Fatalf("fingerprint rows = %#v, want option IV skew evidence", dto.Rows)
+	}
+}
+
+func TestServiceBundleDedupesShockMarketFetches(t *testing.T) {
+	src := &countingShockSource{inner: &fakeShockSource{}}
+	svc := NewService(src)
+	svc.Now = fixedShockNow
+
+	if _, err := svc.Bundle(context.Background()); err != nil {
+		t.Fatalf("Bundle error = %v", err)
+	}
+
+	if got := src.quoteFetches("SPY"); got != 1 {
+		t.Fatalf("SPY quote fetches = %d, want 1", got)
+	}
+	if got := src.quoteFetches("VIX"); got != 1 {
+		t.Fatalf("VIX quote fetches = %d, want 1", got)
+	}
+	if got := src.depthCalls; got != 1 {
+		t.Fatalf("depth calls = %d, want 1", got)
+	}
+}
+
+func TestServiceRegimeDedupesNestedLiquidityFetches(t *testing.T) {
+	src := &countingShockSource{inner: &fakeShockSource{}}
+	svc := NewService(src)
+	svc.Now = fixedShockNow
+
+	if _, err := svc.Regime(context.Background()); err != nil {
+		t.Fatalf("Regime error = %v", err)
+	}
+
+	if got := src.quoteFetches("SPY"); got != 1 {
+		t.Fatalf("SPY quote fetches = %d, want 1", got)
+	}
+	if got := src.depthCalls; got != 1 {
+		t.Fatalf("depth calls = %d, want 1", got)
+	}
+}
+
+func TestServiceCachesMarketFetchesAcrossShockCards(t *testing.T) {
+	src := &countingShockSource{inner: &fakeShockSource{}}
+	svc := NewService(src)
+	svc.Now = fixedShockNow
+
+	if _, err := svc.Regime(context.Background()); err != nil {
+		t.Fatalf("Regime error = %v", err)
+	}
+	if _, err := svc.Fingerprint(context.Background()); err != nil {
+		t.Fatalf("Fingerprint error = %v", err)
+	}
+	if _, err := svc.Analogs(context.Background()); err != nil {
+		t.Fatalf("Analogs error = %v", err)
+	}
+	if _, err := svc.Liquidity(context.Background()); err != nil {
+		t.Fatalf("Liquidity error = %v", err)
+	}
+
+	if got := src.quoteFetches("SPY"); got != 1 {
+		t.Fatalf("SPY quote fetches across cards = %d, want 1", got)
+	}
+	if got := src.depthCalls; got != 1 {
+		t.Fatalf("depth calls across cards = %d, want 1", got)
+	}
+}
+
+func TestBasisForSourceUsesCanonicalMarketdataValues(t *testing.T) {
+	for _, tc := range []struct {
+		source string
+		want   marketdata.Basis
+	}{
+		{source: "yfinance", want: marketdata.BasisDelayed},
+		{source: "ibkr", want: marketdata.BasisDelayed},
+		{source: "", want: marketdata.BasisDelayed},
+	} {
+		if got := basisForSource(tc.source); got != string(tc.want) {
+			t.Fatalf("basisForSource(%q) = %q, want %q", tc.source, got, tc.want)
+		}
 	}
 }
 
@@ -207,8 +287,8 @@ func TestBrokerQuoteAdapterDepthUsesBrokerMarketDepth(t *testing.T) {
 		t.Fatalf("Depth error = %v", err)
 	}
 	spy := depth["SPY"]
-	if spy.Source != "ibkr" || spy.Basis != "realtime_or_delayed" {
-		t.Fatalf("SPY depth source/basis = %q/%q, want ibkr/realtime_or_delayed", spy.Source, spy.Basis)
+	if spy.Source != "ibkr" || spy.Basis != string(marketdata.BasisDelayed) {
+		t.Fatalf("SPY depth source/basis = %q/%q, want ibkr/%s", spy.Source, spy.Basis, marketdata.BasisDelayed)
 	}
 	if len(spy.Levels) != 4 {
 		t.Fatalf("SPY depth levels = %d, want 4", len(spy.Levels))
@@ -387,6 +467,49 @@ func (f *fakeShockSource) OptionMetrics(context.Context, []string) (map[string]O
 		return f.optionMetrics, nil
 	}
 	return map[string]OptionStress{}, nil
+}
+
+type countingShockSource struct {
+	inner *fakeShockSource
+
+	mu          sync.Mutex
+	quoteCounts map[string]int
+	depthCalls  int
+}
+
+func (c *countingShockSource) Quotes(ctx context.Context, ids []string) (map[string]ShockQuote, error) {
+	quotes, err := c.inner.Quotes(ctx, ids)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.quoteCounts == nil {
+		c.quoteCounts = map[string]int{}
+	}
+	for _, id := range uniqueStrings(ids) {
+		c.quoteCounts[id]++
+	}
+	return quotes, err
+}
+
+func (c *countingShockSource) Bars(ctx context.Context, ids []string, interval string, lookback time.Duration) (map[string][]model.OHLCV, error) {
+	return c.inner.Bars(ctx, ids, interval, lookback)
+}
+
+func (c *countingShockSource) Depth(ctx context.Context, ids []string, levels int) (map[string]DepthSnapshot, error) {
+	depth, err := c.inner.Depth(ctx, ids, levels)
+	c.mu.Lock()
+	c.depthCalls++
+	c.mu.Unlock()
+	return depth, err
+}
+
+func (c *countingShockSource) OptionMetrics(ctx context.Context, underlyings []string) (map[string]OptionStress, error) {
+	return c.inner.OptionMetrics(ctx, underlyings)
+}
+
+func (c *countingShockSource) quoteFetches(id string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.quoteCounts[id]
 }
 
 func warningsContain(warnings []string, needle string) bool {

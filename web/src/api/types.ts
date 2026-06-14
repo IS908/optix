@@ -175,6 +175,8 @@ export interface SentimentDTO {
 
 export interface EarningsReport {
   symbol: string
+  source: string
+  basis: string
   event_time: string
   timing: string
   eps_estimate?: number
@@ -228,6 +230,8 @@ export interface ReadAcrossDTO {
 
 export interface PostcloseMover {
   symbol: string
+  source: string
+  basis: string
   regular_pct: number
   after_hours_pct: number
   combined_pct: number

@@ -6,6 +6,7 @@ import (
 )
 
 const shockBarLookback = 30 * 24 * time.Hour
+const shockMarketCacheTTL = 60 * time.Second
 
 type Service struct {
 	src MarketSource
@@ -13,6 +14,11 @@ type Service struct {
 }
 
 func NewService(src MarketSource) *Service {
+	if src != nil {
+		if _, ok := src.(*ttlMarketCache); !ok {
+			src = newTTLMarketCache(src, shockMarketCacheTTL)
+		}
+	}
 	return &Service{src: src}
 }
 
@@ -27,7 +33,22 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 
+func (s *Service) withRequestCache() (*Service, bool) {
+	if s.src == nil {
+		return s, false
+	}
+	if _, ok := s.src.(*bundleMarketCache); ok {
+		return s, false
+	}
+	cached := *s
+	cached.src = newBundleMarketCache(s.src)
+	return &cached, true
+}
+
 func (s *Service) Regime(ctx context.Context) (RegimeDTO, error) {
+	if cached, ok := s.withRequestCache(); ok {
+		return cached.Regime(ctx)
+	}
 	now := s.now().UTC()
 	quotes, warnings := s.quotes(ctx, shockQuoteIDs())
 	liquidity, _ := s.Liquidity(ctx)
@@ -37,6 +58,9 @@ func (s *Service) Regime(ctx context.Context) (RegimeDTO, error) {
 }
 
 func (s *Service) Fingerprint(ctx context.Context) (FingerprintDTO, error) {
+	if cached, ok := s.withRequestCache(); ok {
+		return cached.Fingerprint(ctx)
+	}
 	now := s.now().UTC()
 	quotes, warnings := s.quotes(ctx, shockQuoteIDs())
 	liquidity, _ := s.Liquidity(ctx)
@@ -72,10 +96,14 @@ func (s *Service) Liquidity(ctx context.Context) (LiquidityDTO, error) {
 }
 
 func (s *Service) Bundle(ctx context.Context) (BundleDTO, error) {
-	regime, _ := s.Regime(ctx)
-	fingerprint, _ := s.Fingerprint(ctx)
-	analogs, _ := s.Analogs(ctx)
-	liquidity, _ := s.Liquidity(ctx)
+	bundleSvc := *s
+	if s.src != nil {
+		bundleSvc.src = newBundleMarketCache(s.src)
+	}
+	regime, _ := bundleSvc.Regime(ctx)
+	fingerprint, _ := bundleSvc.Fingerprint(ctx)
+	analogs, _ := bundleSvc.Analogs(ctx)
+	liquidity, _ := bundleSvc.Liquidity(ctx)
 	return BundleDTO{Regime: regime, Fingerprint: fingerprint, Analogs: analogs, Liquidity: liquidity}, nil
 }
 

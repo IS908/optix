@@ -153,6 +153,37 @@ func TestStateShockOverrideTakesPriorityOverEvent(t *testing.T) {
 	}
 }
 
+func TestStateShockOverrideCachesRegimeProbe(t *testing.T) {
+	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
+	src := &countingStateShockSource{}
+	shockSvc := shockintel.NewService(src)
+	shockSvc.Now = func() time.Time { return now }
+	handlers := &Handlers{
+		Shock: shockSvc,
+		Now:   func() time.Time { return now },
+	}
+	mux := newTestMuxWithHandlers(handlers)
+
+	_, first := get(t, mux, "/api/intel/state")
+	if first["view"] != "shock" {
+		t.Fatalf("first state should resolve shock, got %v", first)
+	}
+	callsAfterFirst := src.quoteCalls
+
+	_, second := get(t, mux, "/api/intel/state")
+	if second["view"] != "shock" {
+		t.Fatalf("second state should resolve cached shock, got %v", second)
+	}
+	if src.quoteCalls != callsAfterFirst {
+		t.Fatalf("shock quote calls after second state = %d, want cached %d", src.quoteCalls, callsAfterFirst)
+	}
+
+	now = now.Add(viewOverrideCacheTTL + time.Second)
+	if _, _, cached := handlers.cachedShockOverride(now); cached {
+		t.Fatal("shock override cache should expire after TTL")
+	}
+}
+
 func TestPulseEndpoint(t *testing.T) {
 	price := 100.0
 	fp := &fakePulse{snap: &marketdata.PulseSnapshot{
@@ -196,6 +227,16 @@ func TestPulseEndpoint(t *testing.T) {
 	if body["missing"].([]any)[0] != "US10Y" {
 		t.Errorf("missing = %v", body["missing"])
 	}
+}
+
+type countingStateShockSource struct {
+	staticShockSource
+	quoteCalls int
+}
+
+func (s *countingStateShockSource) Quotes(ctx context.Context, ids []string) (map[string]shockintel.ShockQuote, error) {
+	s.quoteCalls++
+	return s.staticShockSource.Quotes(ctx, ids)
 }
 
 func TestPulseDefaultUsesResolvedOverride(t *testing.T) {

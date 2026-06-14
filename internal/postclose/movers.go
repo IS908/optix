@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/intelshared"
+	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -111,6 +112,8 @@ func extractPostcloseMove(symbol string, bars []model.OHLCV, inWatchlist bool, n
 	}
 	return Mover{
 		Symbol:        symbol,
+		Source:        "yfinance",
+		Basis:         string(marketdata.BasisDelayed),
 		RegularPct:    (regularClose - prevClose) / prevClose * 100,
 		AfterHoursPct: (afterClose - regularClose) / regularClose * 100,
 		CombinedPct:   (afterClose - prevClose) / prevClose * 100,

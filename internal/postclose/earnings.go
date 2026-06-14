@@ -24,6 +24,8 @@ func BuildEarningsReports(raw map[string][]marketdata.EarningsEvent, now time.Ti
 			}
 			out = append(out, EarningsReport{
 				Symbol:         symbol,
+				Source:         "yfinance",
+				Basis:          string(marketdata.BasisDelayed),
 				EventTime:      r.EventTime.UTC(),
 				Timing:         r.Timing,
 				EPSEstimate:    r.EPSEstimate,

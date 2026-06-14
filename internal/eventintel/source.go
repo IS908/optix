@@ -72,37 +72,20 @@ func (a *YFinanceAdapter) EventDates(ctx context.Context) ([]EventDate, error) {
 }
 
 func refsForIDs(ids []string) []marketdata.AssetRef {
-	classes := assetClasses()
 	refs := make([]marketdata.AssetRef, 0, len(ids))
 	seen := map[string]struct{}{}
 	for _, id := range ids {
 		if _, ok := seen[id]; ok {
 			continue
 		}
-		class, ok := classes[id]
+		ref, ok := marketdata.LookupAssetRef(id)
 		if !ok {
 			continue
 		}
-		refs = append(refs, marketdata.AssetRef{ID: id, Class: class})
+		refs = append(refs, ref)
 		seen[id] = struct{}{}
 	}
 	return refs
-}
-
-func assetClasses() map[string]marketdata.AssetClass {
-	out := map[string]marketdata.AssetClass{}
-	for _, asset := range ratePathAssets {
-		out[asset.ID] = asset.Class
-	}
-	for _, asset := range patternAssets {
-		out[asset.ID] = asset.Class
-	}
-	for _, asset := range sensitivityAssets {
-		if asset.Class != "" {
-			out[asset.ID] = asset.Class
-		}
-	}
-	return out
 }
 
 func defaultStatementFixtures() (StatementFixture, StatementFixture) {

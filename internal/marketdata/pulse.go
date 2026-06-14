@@ -160,6 +160,9 @@ func (s *PulseService) build(ctx context.Context, view View, refs []AssetRef, wi
 			continue
 		}
 		for id, q := range quotes {
+			if q.Source == "" {
+				q.Source = src.Name()
+			}
 			got[id] = q
 		}
 		for _, r := range srcRefs {

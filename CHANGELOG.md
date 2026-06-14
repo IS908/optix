@@ -12,6 +12,12 @@ above it.
 
 ## [Unreleased]
 
+### Added
+
+- Add per-asset `source` and `basis_note` fields to Market Intel M1 Pulse
+  API/CLI output and surface them in the WebUI pulse cards, making yfinance
+  delayed/frozen rows and yield/SOX proxy approximations explicit.
+
 ## [0.14.6] - 2026-06-14
 
 Patch release for Market Intel M6 event-source upgrades.

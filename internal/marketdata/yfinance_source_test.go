@@ -53,6 +53,9 @@ func TestParseBatchQuotes_MixedSuccessAndMissing(t *testing.T) {
 	if q := quotes["SPX"]; math.Abs(q.Price-6012.24) > 1e-9 || q.Basis != BasisDelayed {
 		t.Errorf("SPX = %+v", q)
 	}
+	if q := quotes["SPX"]; q.Source != "yfinance" {
+		t.Errorf("SPX source = %q, want yfinance", q.Source)
+	}
 	// ^FVX 直接透传：4.19（不缩放），basis=approx（CBOE 指数仍为国债收益率代理）。
 	if q := quotes["US5Y"]; math.Abs(q.Price-4.19) > 1e-9 || q.Basis != BasisApprox {
 		t.Errorf("US5Y = %+v (want direct yield 4.19, approx)", q)

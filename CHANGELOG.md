@@ -12,6 +12,16 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.17] - 2026-06-14
+
+Patch release for Shock liquidity metric-label correctness.
+
+### Fixed
+
+- Rename Shock liquidity `spread_z` to `spread_ratio` and expose
+  `normal_spread_bps`, so API/CLI/WebUI labels describe a multiple of the
+  static baseline spread instead of implying a statistical z-score.
+
 ## [0.14.16] - 2026-06-14
 
 Patch release for yfinance fallback bar robustness.
@@ -1427,7 +1437,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.16...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.17...HEAD
+[0.14.17]: https://github.com/IS908/optix/compare/v0.14.16...v0.14.17
 [0.14.16]: https://github.com/IS908/optix/compare/v0.14.15...v0.14.16
 [0.14.15]: https://github.com/IS908/optix/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/IS908/optix/compare/v0.14.13...v0.14.14

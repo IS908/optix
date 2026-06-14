@@ -8,6 +8,9 @@ import (
 )
 
 var sentenceEndRE = regexp.MustCompile(`[.!?]+[\s\n]*`)
+var initialPeriodRE = regexp.MustCompile(`\b([A-Z])\.`)
+
+const protectedPeriod = "<DOT>"
 
 var hawkishTerms = []string{
 	"elevated",
@@ -67,10 +70,11 @@ func BuildStatementDiff(prior, current StatementFixture, asOf time.Time) Stateme
 }
 
 func splitSentences(text string) []string {
-	parts := sentenceEndRE.Split(text, -1)
+	protected := initialPeriodRE.ReplaceAllString(text, "${1}"+protectedPeriod)
+	parts := sentenceEndRE.Split(protected, -1)
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {
-		s := strings.TrimSpace(part)
+		s := strings.TrimSpace(strings.ReplaceAll(part, protectedPeriod, "."))
 		if s != "" {
 			out = append(out, s)
 		}

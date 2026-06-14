@@ -61,13 +61,18 @@ func (s *Service) Diff(ctx context.Context) (StatementDiffDTO, error) {
 	}
 	prior, current, err := s.src.Statements(ctx)
 	if err != nil {
-		out := emptyDiff(now)
-		out.Warnings = append(out.Warnings, "statement fixtures: "+err.Error())
-		return out, nil
+		if prior.Text == "" || current.Text == "" {
+			out := emptyDiff(now)
+			out.Warnings = append(out.Warnings, "statement fixtures: "+err.Error())
+			return out, nil
+		}
 	}
 	out := BuildStatementDiff(prior, current, now)
 	if out.Source == "" {
 		out.Source = "local_statement_fixture"
+	}
+	if err != nil {
+		out.Warnings = append(out.Warnings, "statements: "+err.Error())
 	}
 	return out, nil
 }
@@ -126,7 +131,10 @@ func (s *Service) eventDates(ctx context.Context) ([]EventDate, []string) {
 	}
 	events, err := s.src.EventDates(ctx)
 	if err != nil {
-		return nil, []string{"event calendar: " + err.Error()}
+		if len(events) == 0 {
+			return nil, []string{"event calendar: " + err.Error()}
+		}
+		return events, []string{"event calendar: " + err.Error()}
 	}
 	if len(events) == 0 {
 		return nil, []string{"event calendar: empty"}

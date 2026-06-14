@@ -31,8 +31,6 @@ export const viewSlots: Record<string, SlotDef[]> = {
     { title: '情绪定位', desc: 'P/C 比、VIX 期限升水的情绪坐标', milestone: 'M4', live: 'sentiment' },
   ],
   intraday: [
-    { title: '盘中异动', desc: '实时异动与板块轮动', milestone: 'M4', span: 2 },
-    { title: '板块热力', desc: '行业板块涨跌热力图', milestone: 'M4' },
     { title: '叙事流', desc: '检查点叙事与判断登记（agent 填槽）', milestone: 'M3', live: 'narrative' },
   ],
   postclose: [

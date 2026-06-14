@@ -43,6 +43,27 @@ func TestServiceBundleKeepsNonNilSlices(t *testing.T) {
 	}
 }
 
+func TestServiceKeepsFallbackEventDataWithWarnings(t *testing.T) {
+	svc := NewService(&fallbackEventSource{})
+	svc.Now = fixedNow
+
+	diff, err := svc.Diff(context.Background())
+	if err != nil {
+		t.Fatalf("Diff error = %v", err)
+	}
+	if len(diff.Warnings) == 0 || len(diff.Added) == 0 {
+		t.Fatalf("diff should include fallback data plus warning: %#v", diff)
+	}
+
+	patterns, err := svc.Patterns(context.Background())
+	if err != nil {
+		t.Fatalf("Patterns error = %v", err)
+	}
+	if len(patterns.Warnings) == 0 || len(patterns.Rows) == 0 {
+		t.Fatalf("patterns should include fallback events plus warning: %#v", patterns)
+	}
+}
+
 func fixedNow() time.Time {
 	return time.Date(2026, 6, 13, 14, 0, 0, 0, time.UTC)
 }
@@ -115,4 +136,20 @@ func (f *fakeEventSource) EventDates(context.Context) ([]EventDate, error) {
 		{Date: dateUTC(2026, 5, 6), Kind: "FOMC", Label: "May FOMC"},
 		{Date: dateUTC(2026, 6, 10), Kind: "CPI", Label: "Jun CPI"},
 	}, nil
+}
+
+type fallbackEventSource struct {
+	fakeEventSource
+}
+
+func (f *fallbackEventSource) Statements(context.Context) (StatementFixture, StatementFixture, error) {
+	prior, current := defaultStatementFixtures()
+	return prior, current, errors.New("remote statements down")
+}
+
+func (f *fallbackEventSource) EventDates(context.Context) ([]EventDate, error) {
+	return []EventDate{
+		{Date: dateUTC(2026, 5, 6), Kind: "FOMC", Label: "May FOMC"},
+		{Date: dateUTC(2026, 6, 10), Kind: "CPI", Label: "Jun CPI"},
+	}, errors.New("remote calendar down")
 }

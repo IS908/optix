@@ -22,7 +22,7 @@ var patternAssets = []eventAsset{
 func BuildEventPatterns(bars map[string][]model.OHLCV, events []EventDate, asOf time.Time) EventPatternsDTO {
 	out := EventPatternsDTO{
 		AsOf:   asOf.UTC(),
-		Source: "yfinance daily bars + built-in event calendar",
+		Source: "yfinance daily bars + Fed/BLS/local event calendar",
 		Rows:   []EventPatternRow{},
 	}
 	for _, asset := range patternAssets {

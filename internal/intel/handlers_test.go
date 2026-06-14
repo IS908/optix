@@ -75,6 +75,20 @@ func TestStateEndpoint(t *testing.T) {
 	}
 }
 
+func TestStateEndpoint2028EarlyCloseNotStale(t *testing.T) {
+	mux := newTestMux(nil, dET(2028, 7, 3, 11, 0))
+	rec, body := get(t, mux, "/api/intel/state")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if body["phase"] != "intraday" || body["early_close"] != true || body["calendar_stale"] != false {
+		t.Fatalf("2028 early-close state wrong: %v", body)
+	}
+	if !strings.HasPrefix(body["next_transition"].(string), "2028-07-03T13:00:00") {
+		t.Errorf("next_transition = %v", body["next_transition"])
+	}
+}
+
 func TestStateClosedWeekend(t *testing.T) {
 	mux := newTestMux(nil, dET(2026, 6, 13, 12, 0)) // 周六
 	_, body := get(t, mux, "/api/intel/state")

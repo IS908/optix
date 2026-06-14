@@ -12,6 +12,11 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Sync Market Intel M4-M7 roadmap/status docs with shipped releases and mark
+  the M7 implementation plan release step complete.
+
 ## [0.14.8] - 2026-06-14
 
 Patch release for Market Intel NYSE calendar freshness.

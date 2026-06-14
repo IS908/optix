@@ -74,4 +74,8 @@ Spec: `docs/superpowers/specs/2026-06-13-market-intel-m7-shock-design.md`
 - [x] Run `go test ./... -count=1`, `go vet ./...`, `cd web && npm test`, `cd web && npm run build -- --outDir /tmp/optix-web-dist-m7-verify`, and `make build`.
 - [x] Start local server and capture `/intel/` Shock view screenshot.
 - [x] Self-review diff and fix bugs with tests first.
-- [ ] Commit, push, open PR closing #134, merge, tag `v0.14.0`, and create GitHub Release.
+- [x] Commit, push, open PR #135 closing #134, merge, tag `v0.14.0`, and create GitHub Release.
+
+Post-release follow-ups tracked in #136 also shipped the M7 warning
+transparency, IBKR market-depth, option-stress, and shock override patches in
+#137, #138, #139, and #140.

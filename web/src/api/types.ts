@@ -356,7 +356,7 @@ export interface ShockFingerprintRow {
   kind: string
   label: string
   score: number
-  confidence: number
+  normalized_score: number
   active: boolean
   evidence: string[]
   missing: string[]

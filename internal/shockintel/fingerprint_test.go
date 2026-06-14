@@ -1,6 +1,10 @@
 package shockintel
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
 
 func TestBuildShockFingerprintClassifiesLiquidityAndPolicyStress(t *testing.T) {
 	now := fixedShockNow()
@@ -41,6 +45,24 @@ func TestBuildShockFingerprintKeepsAllRowsWhenDataMissing(t *testing.T) {
 		if row.Missing == nil {
 			t.Fatalf("%s missing slice is nil", row.Kind)
 		}
+	}
+}
+
+func TestBuildShockFingerprintJSONRenamesConfidenceToNormalizedScore(t *testing.T) {
+	dto := BuildShockFingerprint(map[string]ShockQuote{
+		"VIX": {ID: "VIX", ChangePct: 28, Source: "ibkr", Basis: "realtime", AsOf: fixedShockNow()},
+		"HYG": {ID: "HYG", ChangePct: -1.4, Source: "ibkr", Basis: "realtime", AsOf: fixedShockNow()},
+	}, LiquidityDTO{}, nil, fixedShockNow())
+
+	raw, err := json.Marshal(dto.Rows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("confidence")) {
+		t.Fatalf("fingerprint row JSON must not expose confidence: %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("normalized_score")) {
+		t.Fatalf("fingerprint row JSON must expose normalized_score: %s", string(raw))
 	}
 }
 

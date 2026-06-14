@@ -160,7 +160,7 @@ func (j *IntelJournal) Reconcile(ctx context.Context) (ReconcileResult, error) {
 		} else {
 			outcome, delta := Score(jd.Direction, jd.ThresholdPct, jd.RegisteredPrice, price)
 			rec = model.IntelReconciliation{JudgmentID: jd.JudgmentID, ExpiryPrice: price,
-				ExpiryBasis: jd.RegisteredBasis, Outcome: outcome, DeltaPct: delta, SettledAt: now.UTC()}
+				ExpiryBasis: string(marketdata.BasisFrozen), Outcome: outcome, DeltaPct: delta, SettledAt: now.UTC()}
 		}
 		if err := j.store.InsertIntelReconciliation(ctx, rec); err != nil {
 			return ReconcileResult{Settled: settled}, err
@@ -209,7 +209,7 @@ func (j *IntelJournal) ReadJournal(ctx context.Context, tradingDate string) (Jou
 		return JournalSnapshot{}, err
 	}
 	// 内联结算 + 命中率
-	hr := HitRate{Window: "today"}
+	hr := HitRate{Window: tradingDate}
 	for i := range judgments {
 		if r, ok := recs[judgments[i].JudgmentID]; ok {
 			rc := r

@@ -26,8 +26,8 @@ describe('ShockFingerprintCard', () => {
           as_of: '2026-06-13T15:30:00Z',
           source: 'computed',
           rows: [
-            { kind: 'liquidity', label: 'Liquidity shock', score: 90, confidence: 0.9, active: true, evidence: ['VIX up'], missing: [] },
-            { kind: 'policy', label: 'Policy shock', score: 55, confidence: 0.55, active: true, evidence: ['rates up'], missing: [] },
+            { kind: 'liquidity', label: 'Liquidity shock', score: 90, normalized_score: 0.9, active: true, evidence: ['VIX up'], missing: [] },
+            { kind: 'policy', label: 'Policy shock', score: 55, normalized_score: 0.55, active: true, evidence: ['rates up'], missing: [] },
           ],
         }),
       }),
@@ -49,7 +49,7 @@ describe('ShockFingerprintCard', () => {
           as_of: '2026-06-13T15:30:00Z',
           source: 'computed',
           rows: [
-            { kind: 'liquidity', label: 'Liquidity shock', score: 70, confidence: 0.7, active: true, evidence: ['SPY option IV skew elevated'], missing: [] },
+            { kind: 'liquidity', label: 'Liquidity shock', score: 70, normalized_score: 0.7, active: true, evidence: ['SPY option IV skew elevated'], missing: [] },
           ],
           option_stress: [
             {

@@ -123,7 +123,7 @@ func (*priceErr) Error() string { return "price down" }
 
 func TestReconcileSettlesAndHitRate(t *testing.T) {
 	regTime := dET(2026, 6, 12, 10, 30)
-	j, store := newJournal(t, fakePrice{price: 100, basis: "delayed"}, regTime)
+	j, store := newJournal(t, fakePrice{price: 100, basis: "realtime"}, regTime)
 	ctx := context.Background()
 	// 登记两条判断（expiry reconcile=16:30 当日）
 	up, _ := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "up",
@@ -150,11 +150,17 @@ func TestReconcileSettlesAndHitRate(t *testing.T) {
 	if byID[up.JudgmentID] == nil || byID[up.JudgmentID].Outcome != "hit" {
 		t.Errorf("up should be hit: %+v", byID[up.JudgmentID])
 	}
+	if byID[up.JudgmentID].ExpiryBasis != string(marketdata.BasisFrozen) {
+		t.Errorf("expiry_basis = %q, want %q for cached pulse bar", byID[up.JudgmentID].ExpiryBasis, marketdata.BasisFrozen)
+	}
 	if byID[down.JudgmentID] == nil || byID[down.JudgmentID].Outcome != "miss" {
 		t.Errorf("down should be miss: %+v", byID[down.JudgmentID])
 	}
 	if snap.HitRate.Hit != 1 || snap.HitRate.Miss != 1 || snap.HitRate.Rate != 0.5 {
 		t.Errorf("hit_rate = %+v, want 1/1/0.5", snap.HitRate)
+	}
+	if snap.HitRate.Window != TradingDate(regTime) {
+		t.Errorf("hit_rate.window = %q, want queried trading date %q", snap.HitRate.Window, TradingDate(regTime))
 	}
 	// 幂等：再跑 reconcile 不重复结算
 	res2, _ := j.Reconcile(ctx)

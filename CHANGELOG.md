@@ -12,6 +12,22 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-06-14
+
+Patch release for Market Intel M6 event-source upgrades.
+
+### Added
+
+- Add Fed.gov FOMC calendar and statement fetchers for M6 Event Diff and
+  event-window dates, with local fixture fallback and visible warnings.
+- Add a BLS CPI release schedule fetcher for CPI event dates, with local CPI
+  calendar fallback when BLS blocks or fails.
+
+### Fixed
+
+- Preserve abbreviations such as `U.S.` and FOMC member initials when splitting
+  official Fed statements into sentences for deterministic diffs.
+
 ## [0.14.5] - 2026-06-14
 
 Patch release for Market Intel Intraday placeholder cleanup.

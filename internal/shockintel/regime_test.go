@@ -64,6 +64,39 @@ func TestBuildRegimeTriggerJSONNamesVIXProxyHonestly(t *testing.T) {
 	}
 }
 
+func TestBuildRegimeTriggerVIXContributionMatchesScore(t *testing.T) {
+	now := fixedShockNow()
+	dto := BuildRegimeTrigger(map[string]ShockQuote{
+		"VIX": {ID: "VIX", Label: "VIX", Price: 24, ChangePct: 20, Source: "ibkr", Basis: "realtime", AsOf: now},
+	}, LiquidityDTO{}, now)
+
+	vix, ok := confirmationByID(dto.Confirmations, "VIX")
+	if !ok {
+		t.Fatalf("VIX confirmation missing: %+v", dto.Confirmations)
+	}
+	if vix.Contribution != dto.Score {
+		t.Fatalf("VIX contribution = %.1f, score = %.1f; want same contribution breakdown", vix.Contribution, dto.Score)
+	}
+}
+
+func TestBuildRegimeTriggerModerateVIXWatchHasConfirmation(t *testing.T) {
+	now := fixedShockNow()
+	dto := BuildRegimeTrigger(map[string]ShockQuote{
+		"VIX": {ID: "VIX", Label: "VIX", Price: 22, ChangePct: 13, Source: "ibkr", Basis: "realtime", AsOf: now},
+	}, LiquidityDTO{}, now)
+
+	if dto.State != "watch" {
+		t.Fatalf("state = %s, want watch; dto=%+v", dto.State, dto)
+	}
+	vix, ok := confirmationByID(dto.Confirmations, "VIX")
+	if !ok {
+		t.Fatalf("VIX confirmation missing for watch score %.1f: %+v", dto.Score, dto.Confirmations)
+	}
+	if vix.Contribution != dto.Score {
+		t.Fatalf("VIX contribution = %.1f, score = %.1f; want same contribution breakdown", vix.Contribution, dto.Score)
+	}
+}
+
 func TestBuildRegimeTriggerNormalWhenSignalsAreQuiet(t *testing.T) {
 	now := fixedShockNow()
 	quotes := map[string]ShockQuote{
@@ -83,6 +116,15 @@ func TestBuildRegimeTriggerNormalWhenSignalsAreQuiet(t *testing.T) {
 	if dto.Score >= 25 {
 		t.Fatalf("score = %.1f, want < 25", dto.Score)
 	}
+}
+
+func confirmationByID(rows []RegimeConfirmation, id string) (RegimeConfirmation, bool) {
+	for _, row := range rows {
+		if row.ID == id {
+			return row, true
+		}
+	}
+	return RegimeConfirmation{}, false
 }
 
 func fixedShockNow() time.Time {

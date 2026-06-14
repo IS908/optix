@@ -14,9 +14,10 @@ func BuildRegimeTrigger(quotes map[string]ShockQuote, liquidity LiquidityDTO, as
 	}
 	if vix, ok := quotes["VIX"]; ok {
 		out.VIXChangeRatio = math.Max(0, vix.ChangePct/10)
-		out.Score += out.VIXChangeRatio * 20
-		if out.VIXChangeRatio >= 1.5 {
-			out.Confirmations = append(out.Confirmations, confirmation(vix, "volatility", 1.2, out.VIXChangeRatio*12, "VIX change stress"))
+		contribution := out.VIXChangeRatio * 20
+		out.Score += contribution
+		if contribution > 0 {
+			out.Confirmations = append(out.Confirmations, confirmation(vix, "volatility", 1.2, contribution, "VIX change stress"))
 		}
 	} else {
 		out.Warnings = append(out.Warnings, "VIX quote missing")

@@ -8,6 +8,15 @@ afterEach(() => {
 })
 
 describe('ShockFingerprintCard', () => {
+  it('labels the loading state', () => {
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+
+    render(<ShockFingerprintCard />)
+
+    expect(screen.getByText('冲击指纹')).toBeInTheDocument()
+    expect(screen.getByTestId('shock-fingerprint-loading')).toBeInTheDocument()
+  })
+
   it('renders active fingerprints', async () => {
     vi.stubGlobal(
       'fetch',

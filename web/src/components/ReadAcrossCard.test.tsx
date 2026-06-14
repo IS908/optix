@@ -39,4 +39,24 @@ describe('ReadAcrossCard', () => {
     expect(screen.getByText(/Mega-cap Tech/)).toBeInTheDocument()
     expect(screen.getByText(/65%/)).toBeInTheDocument()
   })
+
+  it('renders warnings and treats null edges as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          sector_source: '<embedded>',
+          edges: null,
+          warnings: ['sector map degraded'],
+        }),
+      }),
+    )
+
+    render(<ReadAcrossCard />)
+
+    await waitFor(() => expect(screen.getByText('未触发同板块传导边')).toBeInTheDocument())
+    expect(screen.getByText('sector map degraded')).toBeInTheDocument()
+  })
 })

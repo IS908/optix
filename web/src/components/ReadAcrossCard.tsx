@@ -1,12 +1,15 @@
 import { usePoll } from '../api/usePoll'
 import type { ReadAcrossDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 export function ReadAcrossCard() {
   const { data } = usePoll<ReadAcrossDTO>('/api/intel/postclose/read-across', 60_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="read-across-loading" />
+    return <LoadingCard title="Read-across 传导" testId="read-across-loading" />
   }
+  const edges = data.edges ?? []
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
@@ -14,11 +17,11 @@ export function ReadAcrossCard() {
         <h3 className="text-sm font-medium text-zinc-300">Read-across 传导</h3>
         <span className="text-[10px] text-zinc-600">{data.sector_source}</span>
       </div>
-      {data.edges.length === 0 ? (
+      {edges.length === 0 ? (
         <div className="mt-3 text-xs text-zinc-600">未触发同板块传导边</div>
       ) : (
         <div className="mt-3 space-y-2">
-          {data.edges.slice(0, 8).map((edge) => (
+          {edges.slice(0, 8).map((edge) => (
             <div key={`${edge.driver}-${edge.peer}`} className="text-xs">
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-zinc-200">
@@ -36,6 +39,7 @@ export function ReadAcrossCard() {
           ))}
         </div>
       )}
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

@@ -42,4 +42,25 @@ describe('PremarketMoversCard', () => {
 
     await waitFor(() => expect(screen.getByText(/盘前无数据/)).toBeInTheDocument())
   })
+
+  it('renders warnings and treats null mover lists as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          universe_note: '范围',
+          gainers: null,
+          losers: null,
+          warnings: ['premarket bars unavailable'],
+        }),
+      }),
+    )
+
+    render(<PremarketMoversCard />)
+
+    await waitFor(() => expect(screen.getByText(/盘前无数据/)).toBeInTheDocument())
+    expect(screen.getByText('premarket bars unavailable')).toBeInTheDocument()
+  })
 })

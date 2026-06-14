@@ -1,5 +1,7 @@
 import { usePoll } from '../api/usePoll'
 import type { PostcloseMover, PostcloseMoversDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 function pct(v: number) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
@@ -23,7 +25,7 @@ export function PostcloseMoversCard() {
   const { data } = usePoll<PostcloseMoversDTO>('/api/intel/postclose/movers', 30_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="postclose-movers-loading" />
+    return <LoadingCard title="全天合并异动" testId="postclose-movers-loading" />
   }
 
   const gainers = data.gainers ?? []
@@ -46,6 +48,7 @@ export function PostcloseMoversCard() {
           ))}
         </div>
       )}
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

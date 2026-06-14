@@ -1,5 +1,7 @@
 import { usePoll } from '../api/usePoll'
 import type { EarningsReport, PostcloseEarningsDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 function labelClass(label: string) {
   if (label === 'beat') return 'text-emerald-400'
@@ -19,8 +21,9 @@ export function PostcloseEarningsCard() {
   const { data, stale } = usePoll<PostcloseEarningsDTO>('/api/intel/postclose/earnings', 60_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="postclose-earnings-loading" />
+    return <LoadingCard title="财报速递" testId="postclose-earnings-loading" />
   }
+  const reports = data.reports ?? []
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
@@ -33,11 +36,11 @@ export function PostcloseEarningsCard() {
         <span className="text-right text-[10px] text-zinc-600">{data.source}</span>
       </div>
 
-      {data.reports.length === 0 ? (
+      {reports.length === 0 ? (
         <div className="mt-3 text-xs text-zinc-600">暂无近期财报行</div>
       ) : (
         <div className="mt-3 space-y-2">
-          {data.reports.slice(0, 6).map((report) => (
+          {reports.slice(0, 6).map((report) => (
             <div key={`${report.symbol}-${report.event_time}`} className="flex items-center justify-between gap-3 text-xs">
               <div className="min-w-0">
                 <span className="font-medium text-zinc-200">{report.symbol}</span>
@@ -49,6 +52,7 @@ export function PostcloseEarningsCard() {
           ))}
         </div>
       )}
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

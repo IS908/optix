@@ -1,5 +1,7 @@
 import { usePoll } from '../api/usePoll'
 import type { Mover, MoversDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 function MoverRow({ mover, direction }: { mover: Mover; direction: '↑' | '↓' }) {
   return (
@@ -22,10 +24,12 @@ export function PremarketMoversCard() {
   const { data } = usePoll<MoversDTO>('/api/intel/premarket/movers', 30_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="movers-loading" />
+    return <LoadingCard title="盘前异动" testId="movers-loading" />
   }
 
-  const empty = data.gainers.length === 0 && data.losers.length === 0
+  const gainers = data.gainers ?? []
+  const losers = data.losers ?? []
+  const empty = gainers.length === 0 && losers.length === 0
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
@@ -35,14 +39,15 @@ export function PremarketMoversCard() {
         <div className="mt-3 text-xs text-zinc-600">盘前无数据（非交易时段/周末）</div>
       ) : (
         <div className="mt-2 space-y-1">
-          {data.gainers.map((mover) => (
+          {gainers.map((mover) => (
             <MoverRow key={`g-${mover.symbol}`} mover={mover} direction="↑" />
           ))}
-          {data.losers.map((mover) => (
+          {losers.map((mover) => (
             <MoverRow key={`l-${mover.symbol}`} mover={mover} direction="↓" />
           ))}
         </div>
       )}
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

@@ -1,15 +1,18 @@
 import { usePoll } from '../api/usePoll'
 import type { GapsDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 export function GapFillCard() {
   const { data } = usePoll<GapsDTO>('/api/intel/premarket/gaps', 60_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="gaps-loading" />
+    return <LoadingCard title="隐含开盘 + 跳空回补" testId="gaps-loading" />
   }
 
   const direction = data.direction === 'down' ? '↓' : '↑'
   const directionClass = data.implied_gap_pct >= 0 ? 'text-emerald-400' : 'text-red-400'
+  const byBand = data.by_band ?? []
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
@@ -32,10 +35,10 @@ export function GapFillCard() {
         <div className="mt-1 text-xs text-zinc-600">历史统计不可用</div>
       )}
 
-      {data.by_band.length > 0 && (
+      {byBand.length > 0 && (
         <table className="mt-3 w-full text-[11px] text-zinc-500">
           <tbody>
-            {data.by_band.map((band) => (
+            {byBand.map((band) => (
               <tr key={`${band.direction}-${band.band}`}>
                 <td>
                   {band.direction === 'down' ? '↓' : '↑'} {band.band}
@@ -47,6 +50,7 @@ export function GapFillCard() {
           </tbody>
         </table>
       )}
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

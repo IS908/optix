@@ -30,4 +30,24 @@ describe('OvernightChainCard', () => {
     expect(screen.getByText('+1.20%')).toBeInTheDocument()
     expect(screen.getByText(/方向一致/)).toBeInTheDocument()
   })
+
+  it('renders warnings from degraded source paths', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          links: [{ id: 'ES', label: '美期 ES', pct: 0.3, basis: 'delayed', as_of: '' }],
+          consistency: { same_dir: 1, total: 1, note: '单点观察' },
+          warnings: ['N225 quote stale'],
+        }),
+      }),
+    )
+
+    render(<OvernightChainCard />)
+
+    await waitFor(() => expect(screen.getByText('美期 ES')).toBeInTheDocument())
+    expect(screen.getByText('N225 quote stale')).toBeInTheDocument()
+  })
 })

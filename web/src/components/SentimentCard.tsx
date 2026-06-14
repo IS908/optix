@@ -1,11 +1,13 @@
 import { usePoll } from '../api/usePoll'
 import type { SentimentDTO } from '../api/types'
+import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 export function SentimentCard() {
   const { data } = usePoll<SentimentDTO>('/api/intel/premarket/sentiment', 30_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="sentiment-loading" />
+    return <LoadingCard title="情绪定位" testId="sentiment-loading" />
   }
 
   const term = data.vix_term_premium
@@ -26,6 +28,7 @@ export function SentimentCard() {
         </div>
       </div>
       <div className="mt-2 text-[10px] text-zinc-600">{data.degraded_note}</div>
+      <DataWarnings warnings={data.warnings} />
     </div>
   )
 }

@@ -39,4 +39,25 @@ describe('PostcloseEarningsCard', () => {
     expect(screen.getByText(/beat/)).toBeInTheDocument()
     expect(screen.getByText(/EPS 1.10 vs 1.00/)).toBeInTheDocument()
   })
+
+  it('renders warnings and treats null reports as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          source: 'yfinance earnings_dates',
+          universe_note: '自选股 + 内置精选集',
+          reports: null,
+          warnings: ['earnings calendar unavailable'],
+        }),
+      }),
+    )
+
+    render(<PostcloseEarningsCard />)
+
+    await waitFor(() => expect(screen.getByText('暂无近期财报行')).toBeInTheDocument())
+    expect(screen.getByText('earnings calendar unavailable')).toBeInTheDocument()
+  })
 })

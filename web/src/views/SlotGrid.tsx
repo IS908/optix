@@ -17,11 +17,12 @@ import { ShockFingerprintCard } from '../components/ShockFingerprintCard'
 import { ShockAnalogsCard } from '../components/ShockAnalogsCard'
 import { ShockLiquidityCard } from '../components/ShockLiquidityCard'
 import { viewSlots, type SlotDef } from './slots'
+import type { ViewName } from '../api/types'
 
 function liveComponent(live: SlotDef['live']) {
   switch (live) {
     case 'narrative':
-      return <IntelJournalPanel />
+      return <IntelJournalPanel contextView="intraday" />
     case 'overnight':
       return <OvernightChainCard />
     case 'gaps':
@@ -59,6 +60,10 @@ function liveComponent(live: SlotDef['live']) {
   }
 }
 
+function hasJournalWorkflow(view: string): view is Extract<ViewName, 'postclose' | 'event' | 'shock'> {
+  return view === 'postclose' || view === 'event' || view === 'shock'
+}
+
 export function SlotGrid({ view }: { view: string }) {
   const slots = viewSlots[view] ?? []
   return (
@@ -71,6 +76,11 @@ export function SlotGrid({ view }: { view: string }) {
         ) : (
           <SlotCard key={s.title} slot={s} />
         ),
+      )}
+      {hasJournalWorkflow(view) && (
+        <div className="md:col-span-2">
+          <IntelJournalPanel contextView={view} />
+        </div>
       )}
     </div>
   )

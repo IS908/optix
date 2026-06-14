@@ -49,4 +49,14 @@ describe('IntelJournalPanel', () => {
     // 文本被转义渲染,DOM 里没有真实 <script> 元素
     expect(container.querySelector('script')).toBeNull()
   })
+
+  it('surfaces a view-specific judgment registration affordance', async () => {
+    render(<IntelJournalPanel contextView="shock" />)
+
+    await waitFor(() => expect(screen.getByText('从当前视图登记判断')).toBeInTheDocument())
+    expect(screen.getAllByText('SPX').length).toBeGreaterThan(1)
+    expect(screen.getAllByText('VIX').length).toBeGreaterThan(1)
+    expect(screen.getByText(/optix intel judge --asset SPX/)).toBeInTheDocument()
+    expect(screen.getByText(/--expiry reconcile/)).toBeInTheDocument()
+  })
 })

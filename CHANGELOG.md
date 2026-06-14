@@ -12,6 +12,15 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.16] - 2026-06-14
+
+Patch release for yfinance fallback bar robustness.
+
+### Fixed
+
+- Coerce NaN volume values in yfinance `fetch_bars` to zero via `_safe_int` so
+  degraded historical-bar fallback keeps valid bars instead of crashing.
+
 ## [0.14.15] - 2026-06-14
 
 Patch release for Market Intel metric-label correctness.
@@ -1418,7 +1427,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.15...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.16...HEAD
+[0.14.16]: https://github.com/IS908/optix/compare/v0.14.15...v0.14.16
 [0.14.15]: https://github.com/IS908/optix/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/IS908/optix/compare/v0.14.13...v0.14.14
 [0.14.13]: https://github.com/IS908/optix/compare/v0.14.12...v0.14.13

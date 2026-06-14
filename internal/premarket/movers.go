@@ -19,13 +19,48 @@ func premarketWindow(bars []model.OHLCV) (vol int64, last float64) {
 	ny := nyLoc
 	for _, b := range bars {
 		et := b.Timestamp.In(ny)
-		mins := et.Hour()*60 + et.Minute()
-		if mins >= 4*60 && mins < 9*60+30 {
+		if isPremarket(et) {
 			vol += b.Volume
 			last = b.Close
 		}
 	}
 	return vol, last
+}
+
+func premarketWindowForDay(bars []model.OHLCV, now time.Time) (vol int64, last float64) {
+	todayKey := now.In(nyLoc).Format("2006-01-02")
+	for _, b := range bars {
+		et := b.Timestamp.In(nyLoc)
+		if et.Format("2006-01-02") != todayKey || !isPremarket(et) {
+			continue
+		}
+		vol += b.Volume
+		last = b.Close
+	}
+	return vol, last
+}
+
+func priorRegularCloseBefore(bars []model.OHLCV, now time.Time, fallback float64) float64 {
+	todayKey := now.In(nyLoc).Format("2006-01-02")
+	close := 0.0
+	var closeAt time.Time
+	for _, b := range bars {
+		if b.Close <= 0 {
+			continue
+		}
+		et := b.Timestamp.In(nyLoc)
+		if et.Format("2006-01-02") >= todayKey || !isRegular(et) {
+			continue
+		}
+		if closeAt.IsZero() || et.After(closeAt) {
+			close = b.Close
+			closeAt = et
+		}
+	}
+	if close > 0 {
+		return close
+	}
+	return fallback
 }
 
 type moverInput struct {
@@ -84,14 +119,12 @@ func moverUniverse(watchlist []string) (symbols []string, inWL map[string]bool) 
 }
 
 // computeVolRatio：今日盘前窗量 / 近 N 日盘前窗均量（按交易日分组）。
-func computeVolRatio(today int64, histBars []model.OHLCV) float64 {
-	ny := nyLoc
+func computeVolRatio(today int64, histBars []model.OHLCV, now time.Time) float64 {
 	byDay := map[string]int64{}
-	todayKey := time.Now().In(ny).Format("2006-01-02")
+	todayKey := now.In(nyLoc).Format("2006-01-02")
 	for _, b := range histBars {
-		et := b.Timestamp.In(ny)
-		mins := et.Hour()*60 + et.Minute()
-		if mins < 4*60 || mins >= 9*60+30 {
+		et := b.Timestamp.In(nyLoc)
+		if !isPremarket(et) {
 			continue
 		}
 		day := et.Format("2006-01-02")
@@ -112,4 +145,14 @@ func computeVolRatio(today int64, histBars []model.OHLCV) float64 {
 		return 0
 	}
 	return float64(today) / avg
+}
+
+func isPremarket(t time.Time) bool {
+	mins := t.Hour()*60 + t.Minute()
+	return mins >= 4*60 && mins < 9*60+30
+}
+
+func isRegular(t time.Time) bool {
+	mins := t.Hour()*60 + t.Minute()
+	return mins >= 9*60+30 && mins <= 16*60
 }

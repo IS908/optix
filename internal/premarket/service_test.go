@@ -3,6 +3,7 @@ package premarket
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -51,6 +52,46 @@ func newSvc(t *testing.T, src MarketSource, now time.Time) (*Service, *sqlite.St
 	svc := NewService(src, s)
 	svc.Now = func() time.Time { return now }
 	return svc, s
+}
+
+func premarketMoverBar(y int, m time.Month, d, hour, minute int, close float64, volume int64) model.OHLCV {
+	return model.OHLCV{
+		Timestamp: time.Date(y, m, d, hour, minute, 0, 0, nyLoc),
+		Close:     close,
+		Volume:    volume,
+	}
+}
+
+func TestMoversUsesTodayPremarketAgainstPriorRegularClose(t *testing.T) {
+	now := time.Date(2026, time.June, 12, 9, 15, 0, 0, nyLoc)
+	src := &fakeSource{premkt: map[string][]model.OHLCV{
+		"AAPL": {
+			premarketMoverBar(2026, time.June, 10, 4, 0, 90, 400),
+			premarketMoverBar(2026, time.June, 10, 9, 0, 91, 600),
+			premarketMoverBar(2026, time.June, 10, 16, 0, 95, 1_000),
+			premarketMoverBar(2026, time.June, 11, 4, 0, 96, 200),
+			premarketMoverBar(2026, time.June, 11, 9, 0, 97, 300),
+			premarketMoverBar(2026, time.June, 11, 16, 0, 100, 1_000),
+			premarketMoverBar(2026, time.June, 12, 4, 0, 108, 100),
+			premarketMoverBar(2026, time.June, 12, 9, 0, 110, 200),
+		},
+	}}
+	svc, _ := newSvc(t, src, now)
+
+	movers, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(movers.Gainers) == 0 || movers.Gainers[0].Symbol != "AAPL" {
+		t.Fatalf("gainers = %#v, want AAPL", movers.Gainers)
+	}
+	got := movers.Gainers[0]
+	if math.Abs(got.Pct-10) > 0.001 {
+		t.Fatalf("pct = %.4f, want 10.0000", got.Pct)
+	}
+	if math.Abs(got.VolRatio-0.4) > 0.001 {
+		t.Fatalf("vol_ratio = %.4f, want 0.4000", got.VolRatio)
+	}
 }
 
 func dailySeries() []model.OHLCV {

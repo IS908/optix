@@ -170,24 +170,25 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 		out.Warnings = append(out.Warnings, "movers: "+err.Error())
 		return out, nil
 	}
+	now := s.now()
 	var inputs []moverInput
 	for _, sym := range syms {
 		series := bars[sym]
 		if len(series) == 0 {
 			continue
 		}
-		todayVol, last := premarketWindow(series)
+		todayVol, last := premarketWindowForDay(series, now)
 		if last <= 0 {
 			continue
 		}
-		prevClose := priorClose(series, last)
+		prevClose := priorRegularCloseBefore(series, now, last)
 		if prevClose <= 0 {
 			continue
 		}
 		inputs = append(inputs, moverInput{
 			Symbol:      sym,
 			Pct:         (last - prevClose) / prevClose * 100,
-			VolRatio:    computeVolRatio(todayVol, series),
+			VolRatio:    computeVolRatio(todayVol, series, now),
 			InWatchlist: inWL[sym],
 		})
 	}
@@ -198,13 +199,6 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 		out.Warnings = append(out.Warnings, "movers: 盘前无数据（非交易时段/周末）")
 	}
 	return out, nil
-}
-
-func priorClose(series []model.OHLCV, fallback float64) float64 {
-	if len(series) > 0 && series[0].Close > 0 {
-		return series[0].Close
-	}
-	return fallback
 }
 
 func toMovers(in []moverInput) []Mover {

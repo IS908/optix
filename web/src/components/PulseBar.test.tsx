@@ -8,8 +8,8 @@ const pulse: PulseResponse = {
   view: 'intraday',
   view_inferred: true,
   assets: [
-    { id: 'SPX', class: 'index', label: 'SPX', price: 7361.59, change: 93.9, change_pct: 1.29, basis: 'delayed', as_of: '2026-06-12T13:00:00Z' },
-    { id: 'SOX_PROXY', class: 'stock', label: 'SOX (via SOXX)', price: null, change: 0, change_pct: -1.38, basis: 'approx', as_of: '2026-06-12T13:00:00Z' },
+    { id: 'SPX', class: 'index', label: 'SPX', price: 7361.59, change: 93.9, change_pct: 1.29, basis: 'delayed', source: 'yfinance', basis_note: 'yfinance delayed quote', as_of: '2026-06-12T13:00:00Z' },
+    { id: 'SOX_PROXY', class: 'stock', label: 'SOX (via SOXX)', price: null, change: 0, change_pct: -1.38, basis: 'approx', source: 'yfinance', basis_note: 'SOXX ETF pct-only proxy for SOX premarket; no SOX index level', as_of: '2026-06-12T13:00:00Z' },
   ],
   missing: ['US10Y'],
 }
@@ -21,6 +21,8 @@ describe('PulseBar', () => {
     expect(screen.getByText('—')).toBeInTheDocument() // pctOnly 无点位
     expect(screen.getByText('US10Y')).toBeInTheDocument()
     expect(screen.getByText('缺席')).toBeInTheDocument()
+    expect(screen.getByText('yfinance · delayed')).toBeInTheDocument()
+    expect(screen.getByText(/SOXX ETF pct-only proxy/)).toBeInTheDocument()
   })
 
   it('shows stale banner and loading skeleton', () => {

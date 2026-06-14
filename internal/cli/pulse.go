@@ -31,8 +31,11 @@ The view defaults to the shared market phase clock (America/New_York):
 premarket / intraday / postclose. Outside trading hours (overnight /
 weekends / NYSE holidays) the view maps to postclose — the last session's
 frozen snapshot. event/shock views are reachable only via --view. Data
-basis (delayed / approx / frozen) is labeled per asset; assets that fail
-to fetch are listed in missing[] without failing the whole snapshot.`,
+basis (delayed / approx / frozen), source and basis_note are labeled per
+asset. M1 intentionally keeps FRED/CBOE official historical feeds out of the
+30s Pulse loop; yield and proxy rows say when they are yfinance approximations.
+Assets that fail to fetch are listed in missing[] without failing the whole
+snapshot.`,
 		Example: `  optix pulse
   optix pulse --view premarket --format json
   optix pulse --format json --with-sparkline`,
@@ -110,22 +113,22 @@ func renderPulseText(snap *marketdata.PulseSnapshot, inferred bool) {
 	}
 	fmt.Printf("═══ MARKET PULSE (%s · %s) ═══  %s\n\n",
 		snap.View, mode, snap.SnapshotAt.In(intel.NY()).Format("2006-01-02 15:04 MST"))
-	fmt.Printf("%-10s %12s %8s   %-8s %s\n", "ID", "Price", "Chg%", "Basis", "As-of")
+	fmt.Printf("%-10s %12s %8s   %-8s %-10s %s\n", "ID", "Price", "Chg%", "Basis", "Source", "As-of")
 	for _, a := range snap.Assets {
 		price := "—"
 		if !a.PctOnly {
 			price = fmt.Sprintf("%.2f", a.Price)
 		}
-		fmt.Printf("%-10s %12s %+7.2f%%   %-8s %s\n",
-			a.Ref.ID, price, a.ChangePct, a.Basis, a.AsOf.In(intel.NY()).Format("15:04"))
+		fmt.Printf("%-10s %12s %+7.2f%%   %-8s %-10s %s\n",
+			a.Ref.ID, price, a.ChangePct, a.Basis, a.Source, a.AsOf.In(intel.NY()).Format("15:04"))
 	}
 	for _, id := range snap.Missing {
 		fmt.Printf("%-10s %12s %8s   %-8s\n", id, "—", "—", "missing")
 	}
-	// proxy note: one line per pct-only asset (Price unavailable, ChangePct only).
+	// Source notes are intentionally explicit for approx/frozen assets.
 	for _, a := range snap.Assets {
-		if a.PctOnly {
-			fmt.Printf("note: %s = %s, 涨跌幅代理, 无点位\n", a.Ref.ID, a.Label)
+		if a.PctOnly || a.Basis == marketdata.BasisApprox || a.Basis == marketdata.BasisFrozen {
+			fmt.Printf("source: %s = %s\n", a.Ref.ID, marketdata.BasisNote(a.Quote))
 		}
 	}
 	if len(snap.Warnings) > 0 {

@@ -130,9 +130,9 @@ func TestPulseEndpoint(t *testing.T) {
 		SnapshotAt: time.Now().UTC(), View: marketdata.ViewIntraday,
 		Assets: []marketdata.PulseAsset{
 			{Quote: marketdata.Quote{Ref: marketdata.AssetRef{ID: "SPX", Class: marketdata.ClassIndex},
-				Label: "SPX", Price: price, ChangePct: 1.2, Basis: marketdata.BasisDelayed}},
+				Label: "SPX", Price: price, ChangePct: 1.2, Basis: marketdata.BasisDelayed, Source: "yfinance"}},
 			{Quote: marketdata.Quote{Ref: marketdata.AssetRef{ID: "SOX_PROXY", Class: marketdata.ClassStock},
-				Label: "SOX (via SOXX pre-mkt)", PctOnly: true, ChangePct: -1.3, Basis: marketdata.BasisApprox}},
+				Label: "SOX (via SOXX pre-mkt)", PctOnly: true, ChangePct: -1.3, Basis: marketdata.BasisApprox, Source: "yfinance"}},
 		},
 		Missing: []string{"US10Y"}, Warnings: []string{"US10Y: timeout"},
 	}}
@@ -151,13 +151,18 @@ func TestPulseEndpoint(t *testing.T) {
 	assets := body["assets"].([]any)
 	a0 := assets[0].(map[string]any)
 	// CLI 同构字段名（spec：逐字段同构）
-	for _, k := range []string{"id", "class", "label", "price", "change", "change_pct", "basis", "as_of"} {
+	for _, k := range []string{"id", "class", "label", "price", "change", "change_pct", "basis", "source", "basis_note", "as_of"} {
 		if _, ok := a0[k]; !ok {
 			t.Errorf("asset missing field %q", k)
 		}
 	}
+	if a0["source"] != "yfinance" || !strings.Contains(a0["basis_note"].(string), "delayed") {
+		t.Fatalf("SPX source/basis_note = %v / %v", a0["source"], a0["basis_note"])
+	}
 	if a1 := assets[1].(map[string]any); a1["price"] != nil {
 		t.Errorf("pctOnly price must be null, got %v", a1["price"])
+	} else if !strings.Contains(a1["basis_note"].(string), "SOXX") {
+		t.Errorf("pctOnly basis_note should explain SOXX proxy, got %v", a1["basis_note"])
 	}
 	if body["missing"].([]any)[0] != "US10Y" {
 		t.Errorf("missing = %v", body["missing"])

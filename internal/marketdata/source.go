@@ -8,6 +8,7 @@ package marketdata
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/IS908/optix/pkg/model"
@@ -48,6 +49,32 @@ type Quote struct {
 	ChangePct float64
 	AsOf      time.Time
 	Basis     Basis
+	Source    string
+}
+
+func BasisNote(q Quote) string {
+	source := q.Source
+	if source == "" {
+		source = "unknown source"
+	}
+	switch q.Basis {
+	case BasisRealtime:
+		return fmt.Sprintf("%s realtime quote", source)
+	case BasisDelayed:
+		return fmt.Sprintf("%s delayed quote", source)
+	case BasisFrozen:
+		return fmt.Sprintf("%s frozen from the last delayed regular-session quote", source)
+	case BasisApprox:
+		if q.PctOnly && q.Ref.ID == "SOX_PROXY" {
+			return fmt.Sprintf("%s approx: SOXX ETF pct-only proxy for SOX premarket; no SOX index level", source)
+		}
+		if q.Ref.Class == ClassYield {
+			return fmt.Sprintf("%s approx: Yahoo/CBOE yield-index proxy; not FRED/Treasury official close", source)
+		}
+		return fmt.Sprintf("%s approx proxy quote", source)
+	default:
+		return source
+	}
 }
 
 // Source 是数据源实现接口，批量优先。不支持/失败的 ref 在结果 map 缺席（不报错）。

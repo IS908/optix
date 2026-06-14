@@ -380,6 +380,8 @@ type AssetDTO struct {
 	Change    float64   `json:"change"`
 	ChangePct float64   `json:"change_pct"`
 	Basis     string    `json:"basis"`
+	Source    string    `json:"source"`
+	BasisNote string    `json:"basis_note"`
 	AsOf      time.Time `json:"as_of"`
 	Spark     []float64 `json:"spark,omitempty"`
 	SparkWin  string    `json:"spark_window,omitempty"`
@@ -406,7 +408,8 @@ func ToPulseDTO(snap *marketdata.PulseSnapshot, inferred bool) PulseDTO {
 		dto := AssetDTO{
 			ID: a.Ref.ID, Class: string(a.Ref.Class), Label: a.Label,
 			Change: a.Change, ChangePct: a.ChangePct,
-			Basis: string(a.Basis), AsOf: a.AsOf,
+			Basis: string(a.Basis), Source: a.Source,
+			BasisNote: marketdata.BasisNote(a.Quote), AsOf: a.AsOf,
 			Spark: a.Spark, SparkWin: a.SparkWindow,
 		}
 		if !a.PctOnly {

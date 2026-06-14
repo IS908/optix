@@ -73,11 +73,13 @@ var yahooAssets = map[string]yahooAsset{
 // YFinanceSource 通过既有 fetcher.py（batch 子命令）取数。
 type YFinanceSource struct{ PythonBin string }
 
+const yfinanceSourceName = "yfinance"
+
 func NewYFinanceSource(pythonBin string) *YFinanceSource {
 	return &YFinanceSource{PythonBin: pythonBin}
 }
 
-func (s *YFinanceSource) Name() string { return "yfinance" }
+func (s *YFinanceSource) Name() string { return yfinanceSourceName }
 
 func (s *YFinanceSource) BatchQuotes(ctx context.Context, refs []AssetRef) (map[string]Quote, error) {
 	symbols := make([]string, 0, len(refs))
@@ -129,6 +131,7 @@ func parseBatchQuotes(raw []byte, refs []AssetRef) (map[string]Quote, error) {
 			ChangePct: rq.ChangePct,
 			AsOf:      now,
 			Basis:     ya.basis,
+			Source:    yfinanceSourceName,
 		}
 		if ya.pctOnly {
 			// 代理资产只代理涨跌幅：把代理标的自身的价格清零，防止粗心的

@@ -28,6 +28,8 @@ export interface PulseAsset {
   change: number
   change_pct: number
   basis: 'realtime' | 'delayed' | 'approx' | 'frozen'
+  source: string
+  basis_note: string
   as_of: string
   spark?: number[]
   spark_window?: string

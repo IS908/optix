@@ -213,7 +213,7 @@ export interface ReadAcrossEdge {
   sector_id: string
   sector_label: string
   direction: string
-  confidence: number
+  signal_strength: number
   lag: string
   driver_after_hours_pct: number
   note: string
@@ -342,7 +342,7 @@ export interface ShockRegimeDTO {
   source: string
   state: string
   score: number
-  vix_sigma: number
+  vix_change_ratio: number
   triggered_view?: string
   confirmations: ShockRegimeConfirmation[]
   warnings?: string[]
@@ -363,7 +363,7 @@ export interface ShockOptionStress {
   source: string
   basis: string
   as_of: string
-  iv_change: number
+  iv_skew: number
   volume: number
   open_interest: number
   note?: string

@@ -18,7 +18,7 @@ describe('ShockRegimeCard', () => {
           source: 'ibkr',
           state: 'critical',
           score: 88,
-          vix_sigma: 3.5,
+          vix_change_ratio: 3.5,
           triggered_view: 'shock',
           confirmations: [
             { id: 'VIX', label: 'VIX', dimension: 'volatility', change_pct: 35, weight: 1.2, contribution: 42, source: 'ibkr', basis: 'realtime', as_of: '2026-06-13T15:30:00Z' },
@@ -45,7 +45,7 @@ describe('ShockRegimeCard', () => {
           source: 'yfinance',
           state: 'watch',
           score: 32,
-          vix_sigma: 1.3,
+          vix_change_ratio: 1.3,
           confirmations: [],
           warnings: ['quotes: broker quotes degraded: ibkr offline'],
         }),

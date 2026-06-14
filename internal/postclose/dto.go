@@ -42,7 +42,7 @@ type ReadAcrossEdge struct {
 	SectorID            string  `json:"sector_id"`
 	SectorLabel         string  `json:"sector_label"`
 	Direction           string  `json:"direction"`
-	Confidence          float64 `json:"confidence"`
+	SignalStrength      float64 `json:"signal_strength"`
 	Lag                 string  `json:"lag"`
 	DriverAfterHoursPct float64 `json:"driver_after_hours_pct"`
 	Note                string  `json:"note"`

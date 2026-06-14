@@ -56,9 +56,9 @@ func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO, options []O
 		row.Missing = append(row.Missing, "liquidity")
 	}
 	for _, stress := range options {
-		if stress.IVChange >= 0.05 {
+		if stress.IVSkew >= 0.05 {
 			row.Score += 20
-			row.Evidence = append(row.Evidence, stress.Underlying+" option IV elevated")
+			row.Evidence = append(row.Evidence, stress.Underlying+" option IV skew elevated")
 			break
 		}
 	}

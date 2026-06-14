@@ -50,7 +50,7 @@ depth and exact option stress degrade explicitly until an IBKR adapter is wired.
 
 func renderShock(b shockintel.BundleDTO) {
 	fmt.Println("═══ SHOCK ═══")
-	fmt.Printf("\nRegime: %s · score %.0f · VIX σ %.1f\n", b.Regime.State, b.Regime.Score, b.Regime.VIXSigma)
+	fmt.Printf("\nRegime: %s · score %.0f · VIX Δ/10 %.1f\n", b.Regime.State, b.Regime.Score, b.Regime.VIXChangeRatio)
 	for _, c := range topRegimeConfirmations(b.Regime.Confirmations, 5) {
 		fmt.Printf("  %-5s %-10s %+5.2f%% · %s/%s\n", c.ID, c.Dimension, c.ChangePct, c.Source, c.Basis)
 	}

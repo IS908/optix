@@ -1,6 +1,9 @@
 package postclose
 
 import (
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/IS908/optix/internal/portfolio"
@@ -32,7 +35,20 @@ func TestBuildReadAcrossEdgesUsesSameSectorPeers(t *testing.T) {
 	if edges[0].SectorLabel != "Mega-cap Tech" || edges[0].Direction != "positive" {
 		t.Fatalf("edge metadata = %+v", edges[0])
 	}
-	if edges[0].Confidence <= 0.6 || edges[0].Lag != "T+1 open" {
-		t.Fatalf("confidence/lag = %+v", edges[0])
+	if edges[0].SignalStrength <= 0.6 || edges[0].Lag != "T+1 open" {
+		t.Fatalf("signal strength/lag = %+v", edges[0])
+	}
+	raw, err := json.Marshal(edges[0])
+	if err != nil {
+		t.Fatalf("marshal edge = %v", err)
+	}
+	if bytes.Contains(raw, []byte("confidence")) {
+		t.Fatalf("read-across JSON must not expose confidence for magnitude-only signal: %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("signal_strength")) {
+		t.Fatalf("read-across JSON missing signal_strength: %s", string(raw))
+	}
+	if !strings.Contains(edges[0].Note, "非历史命中率") {
+		t.Fatalf("note should disclose signal-strength semantics: %+v", edges[0])
 	}
 }

@@ -1,6 +1,7 @@
 package shockintel
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -33,11 +34,33 @@ func TestBuildRegimeTriggerCriticalOnVIXAndCrossAssetStress(t *testing.T) {
 	if dto.Score < 80 {
 		t.Fatalf("score = %.1f, want >= 80", dto.Score)
 	}
-	if dto.VIXSigma < 3 {
-		t.Fatalf("vix sigma = %.2f, want >= 3", dto.VIXSigma)
+	if dto.VIXChangeRatio < 3 {
+		t.Fatalf("vix change ratio = %.2f, want >= 3", dto.VIXChangeRatio)
 	}
 	if len(dto.Confirmations) < 4 {
 		t.Fatalf("confirmations = %d, want at least 4", len(dto.Confirmations))
+	}
+}
+
+func TestBuildRegimeTriggerJSONNamesVIXProxyHonestly(t *testing.T) {
+	now := fixedShockNow()
+	dto := BuildRegimeTrigger(map[string]ShockQuote{
+		"VIX": {ID: "VIX", Label: "VIX", Price: 29, ChangePct: 35, Source: "ibkr", Basis: "realtime", AsOf: now},
+	}, LiquidityDTO{}, now)
+
+	raw, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["vix_sigma"]; ok {
+		t.Fatalf("regime JSON must not expose pseudo-sigma field: %s", string(raw))
+	}
+	if got, ok := body["vix_change_ratio"].(float64); !ok || got < 3 {
+		t.Fatalf("vix_change_ratio missing/wrong in JSON: %s", string(raw))
 	}
 }
 

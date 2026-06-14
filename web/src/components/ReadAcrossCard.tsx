@@ -25,7 +25,7 @@ export function ReadAcrossCard() {
                   {edge.driver} → {edge.peer}
                 </span>
                 <span className={edge.direction === 'positive' ? 'text-emerald-400' : 'text-red-400'}>
-                  {(edge.confidence * 100).toFixed(0)}%
+                  {(edge.signal_strength * 100).toFixed(0)}%
                 </span>
               </div>
               <div className="mt-0.5 flex items-center justify-between gap-3 text-[10px] text-zinc-500">

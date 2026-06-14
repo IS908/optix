@@ -1,6 +1,7 @@
 package shockintel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,7 +70,7 @@ func TestServiceFingerprintIncludesOptionStressRows(t *testing.T) {
 	svc := NewService(&fakeShockSource{optionMetrics: map[string]OptionStress{
 		"SPY": {
 			Underlying: "SPY", Source: "ibkr", Basis: "realtime_or_delayed", AsOf: now,
-			IVChange: 0.08, Volume: 2500, OpenInt: 12000, Note: "atm_iv=0.42 skew=0.08",
+			IVSkew: 0.08, Volume: 2500, OpenInt: 12000, Note: "atm_iv=0.42 skew=0.08",
 		},
 	}})
 	svc.Now = fixedShockNow
@@ -94,8 +95,14 @@ func TestServiceFingerprintIncludesOptionStressRows(t *testing.T) {
 	if body.OptionStress[0].Underlying != "SPY" || body.OptionStress[0].Source != "ibkr" || body.OptionStress[0].Basis == "" {
 		t.Fatalf("option_stress row missing source semantics: %#v", body.OptionStress[0])
 	}
-	if !fingerprintEvidenceContains(dto.Rows, "option IV elevated") {
-		t.Fatalf("fingerprint rows = %#v, want option IV evidence", dto.Rows)
+	if bytes.Contains(raw, []byte("iv_change")) {
+		t.Fatalf("option_stress JSON must not expose temporal iv_change field: %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("iv_skew")) {
+		t.Fatalf("option_stress JSON missing iv_skew field: %s", string(raw))
+	}
+	if !fingerprintEvidenceContains(dto.Rows, "option IV skew elevated") {
+		t.Fatalf("fingerprint rows = %#v, want option IV skew evidence", dto.Rows)
 	}
 }
 
@@ -141,7 +148,7 @@ func TestBrokerQuoteAdapterOptionMetricsUsesBrokerChain(t *testing.T) {
 	if spy.Source != "ibkr" || spy.Basis == "" || spy.AsOf.IsZero() {
 		t.Fatalf("SPY source semantics = %#v", spy)
 	}
-	if spy.IVChange <= 0.08 || spy.Volume != 3300 || spy.OpenInt != 16100 {
+	if spy.IVSkew <= 0.08 || spy.Volume != 3300 || spy.OpenInt != 16100 {
 		t.Fatalf("SPY metrics = %#v, want skew/volume/OI aggregation", spy)
 	}
 }

@@ -40,7 +40,7 @@ describe('ShockFingerprintCard', () => {
           as_of: '2026-06-13T15:30:00Z',
           source: 'computed',
           rows: [
-            { kind: 'liquidity', label: 'Liquidity shock', score: 70, confidence: 0.7, active: true, evidence: ['SPY option IV elevated'], missing: [] },
+            { kind: 'liquidity', label: 'Liquidity shock', score: 70, confidence: 0.7, active: true, evidence: ['SPY option IV skew elevated'], missing: [] },
           ],
           option_stress: [
             {
@@ -48,7 +48,7 @@ describe('ShockFingerprintCard', () => {
               source: 'ibkr',
               basis: 'realtime_or_delayed',
               as_of: '2026-06-13T15:30:00Z',
-              iv_change: 0.08,
+              iv_skew: 0.08,
               volume: 2500,
               open_interest: 12000,
               note: 'exp=20260717 atm_iv=0.42 put_call_iv_skew=0.08',

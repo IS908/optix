@@ -41,3 +41,27 @@ func TestBuildStatementDiffClassifiesSentenceChanges(t *testing.T) {
 		t.Fatalf("verdict = %q, want mixed", dto.Verdict)
 	}
 }
+
+func TestBuildStatementDiffKeepsFedAbbreviationsInsideSentences(t *testing.T) {
+	now := time.Date(2026, 6, 13, 18, 0, 0, 0, time.UTC)
+	prior := StatementFixture{
+		Title:       "FOMC prior",
+		Source:      "fed.gov FOMC statement",
+		PublishedAt: now.AddDate(0, -1, 0),
+		Text:        "The implications of developments in the Middle East for the U.S. economy are uncertain. Voting for the monetary policy action were Jerome H. Powell, Chair; John C. Williams, Vice Chair; and Christopher J. Waller.",
+	}
+	current := prior
+	current.Title = "FOMC current"
+	current.PublishedAt = now
+
+	dto := BuildStatementDiff(prior, current, now)
+
+	if len(dto.Unchanged) != 2 {
+		t.Fatalf("unchanged = %#v, want two complete sentences", dto.Unchanged)
+	}
+	for _, row := range dto.Unchanged {
+		if row.Text == "U" || row.Text == "S" || row.Text == "Powell, Chair; John C" || row.Text == "Waller" {
+			t.Fatalf("sentence splitter emitted abbreviation fragment: %#v", dto.Unchanged)
+		}
+	}
+}

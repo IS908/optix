@@ -48,3 +48,12 @@ func TestSurpriseLabelFallsBackToReportedVsEstimate(t *testing.T) {
 		t.Fatalf("inline label = %q", got)
 	}
 }
+
+func TestSurpriseLabelUsesAbsoluteNegativeEstimate(t *testing.T) {
+	if got := surpriseLabel(fptr(-0.90), fptr(-1.00), nil); got != "beat" {
+		t.Fatalf("negative estimate beat label = %q", got)
+	}
+	if got := surpriseLabel(fptr(-1.10), fptr(-1.00), nil); got != "miss" {
+		t.Fatalf("negative estimate miss label = %q", got)
+	}
+}

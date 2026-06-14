@@ -13,6 +13,7 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 - **Options pricing** — Black-Scholes, Greeks, implied volatility, max pain
 - **Strategy recommendations** — Covered calls, cash-secured puts, credit spreads, iron condors
 - **Account holdings & trade journal** — positions snapshot with P&L, plus a persistent execution log with FIFO round-trip matching and retrospective stats (works around IBKR's 7-day history limit)
+- **Market Intel** — phase-aware premarket, postclose, event-day, and shock dashboards with explicit source/basis/warnings
 - **Web dashboard** with auto-refresh and data freshness tracking
 
 > **Read-only with respect to IBKR.** Optix never places, modifies, or cancels orders. All trading operations must be performed by the user directly in TWS or Gateway.
@@ -24,7 +25,7 @@ Optix combines Interactive Brokers market data with a Python-powered analysis en
 Pick the latest release at <https://github.com/IS908/optix/releases> and download the tarball matching your OS/arch. The tarball contains a prebuilt binary, the Python engine source, the skill descriptor, and an `install.sh`.
 
 ```bash
-VERSION=v0.7.25
+VERSION=v0.14.10
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')        # darwin | linux
 ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 
@@ -123,9 +124,16 @@ optix/
 │   ├── analysis/           # gRPC client to Python engine
 │   ├── cli/                # Cobra command definitions
 │   ├── datastore/sqlite/   # SQLite persistence & caching
+│   ├── marketdata/         # Multi-asset pulse, yfinance helpers, source/basis labels
+│   ├── intel/              # Market Intel phase clock, API handlers, judgment journal
+│   ├── premarket/          # M4 premarket cards
+│   ├── postclose/          # M5 postclose cards
+│   ├── eventintel/         # M6 event-day cards
+│   ├── shockintel/         # M7 shock cards
 │   ├── webui/              # HTTP server, templates, handlers
 │   ├── scheduler/          # Background async refresh
 │   └── server/             # gRPC server for market data
+├── web/                    # Embedded Market Intel SPA served at /intel/
 ├── python/src/optix_engine/
 │   ├── grpc_server/        # gRPC service implementation
 │   ├── options/            # Black-Scholes, Greeks, IV
@@ -155,10 +163,16 @@ optix/
 | `./bin/optix journal list [--symbol] [--since] [--until]` | List persisted executions (auto-syncs; `--no-sync` to skip) |
 | `./bin/optix journal trips [--status open\|closed\|expired]` | FIFO-matched round trips with realized P&L |
 | `./bin/optix journal review [--since] [--until]` | Retrospective summary: win rate, total P&L, by-symbol breakdown |
+| `./bin/optix intel state` | Market Intel clock state and resolved view |
+| `./bin/optix intel narrative\|judge\|reconcile\|journal` | Judgment journal workflow for intraday hypotheses and reconciliation |
+| `./bin/optix premarket [--format json]` | M4 premarket bundle: overnight chain, gap-fill stats, movers, sentiment |
+| `./bin/optix postclose [--format json]` | M5 postclose bundle: earnings, timeline, read-across, after-hours movers |
+| `./bin/optix event [--format json]` | M6 event-day bundle: rates path, FOMC diff, event patterns, sensitivity |
+| `./bin/optix shock [--format json]` | M7 shock bundle: regime trigger, fingerprint, analogs, liquidity |
 | `./bin/optix watch list` | List watchlist symbols |
 | `./bin/optix watch add <SYMBOL>` | Add symbol to watchlist |
 | `./bin/optix watch remove <SYMBOL>` | Remove symbol from watchlist |
-| `./bin/optix pulse [--view premarket\|intraday\|postclose]` | Multi-asset market snapshot (indices/futures/yields/vol/FX, no IBKR required; exposes per-asset `source` + `basis_note`) |
+| `./bin/optix pulse [--view premarket\|intraday\|postclose\|event\|shock]` | Multi-asset market snapshot (indices/futures/yields/vol/FX, no IBKR required; exposes per-asset `source` + `basis_note`) |
 | `./bin/optix server` | Start web UI server |
 
 ### Web UI
@@ -171,6 +185,7 @@ Start with `./bin/optix-server` (default: `http://127.0.0.1:8080`).
 | `/analyze/{symbol}` | Per-symbol deep analysis |
 | `/watchlist` | Manage watchlist (add/remove) |
 | `/journal` | Trade journal — Trades / Round Trips / Review tabs |
+| `/intel/` | Embedded Market Intel SPA with auto phase routing and manual premarket/intraday/postclose/event/shock views |
 | `/help` | Field reference documentation |
 | `/api/dashboard` | JSON API for dashboard data |
 | `/api/analyze/{symbol}` | JSON API for analysis data |
@@ -178,6 +193,12 @@ Start with `./bin/optix-server` (default: `http://127.0.0.1:8080`).
 | `/api/journal/trips` | JSON: FIFO-matched round trips |
 | `/api/journal/review` | JSON: aggregate stats |
 | `POST /api/journal/sync` | Trigger sync from IBKR (502 + `ibkr_ok:false` on broker failure) |
+| `/api/intel/state` | JSON: Market Intel phase, resolved view, and override reason |
+| `/api/intel/pulse` | JSON: multi-asset pulse DTO shared with `optix pulse --format json` |
+| `/api/intel/premarket/{overnight,gaps,movers,sentiment}` | JSON: M4 premarket cards |
+| `/api/intel/postclose/{earnings,timeline,read-across,movers}` | JSON: M5 postclose cards |
+| `/api/intel/event/{rates,diff,patterns,sensitivity}` | JSON: M6 event-day cards |
+| `/api/intel/shock/{regime,fingerprint,analogs,liquidity}` | JSON: M7 shock cards |
 
 Append `?refresh=true` to any page to fetch fresh data from IBKR instead of cache.
 

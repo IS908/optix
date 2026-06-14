@@ -1,6 +1,7 @@
 package postclose
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func surpriseLabel(reported, estimate, surprisePct *float64) string {
 	if surprisePct != nil {
 		pct = *surprisePct
 	} else if estimate != nil && *estimate != 0 {
-		pct = (*reported - *estimate) / *estimate * 100
+		pct = (*reported - *estimate) / math.Abs(*estimate) * 100
 	} else {
 		return "reported"
 	}

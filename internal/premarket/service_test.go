@@ -110,6 +110,30 @@ func TestGapsEmptyStatsReturnsArray(t *testing.T) {
 	}
 }
 
+func TestGapsDegradesWhenStoreUnavailable(t *testing.T) {
+	now := time.Now().UTC()
+	src := &fakeSource{
+		quotes: map[string]marketdata.Quote{"ES": {ChangePct: -0.8, Basis: marketdata.BasisDelayed}},
+	}
+	svc := NewService(src, nil)
+	svc.Now = func() time.Time { return now }
+
+	g, err := svc.Gaps(context.Background())
+
+	if err != nil {
+		t.Fatalf("Gaps returned error: %v", err)
+	}
+	if g.Symbol != "SPX" || g.ByBand == nil {
+		t.Fatalf("degraded gaps should keep stable shape, got %+v", g)
+	}
+	if g.Direction != "down" || g.Band != "0.5-1" {
+		t.Fatalf("degraded gaps should still expose implied ES gap, got %+v", g)
+	}
+	if len(g.Warnings) == 0 {
+		t.Fatal("degraded gaps should carry warning")
+	}
+}
+
 func TestBundleIsolatesFailure(t *testing.T) {
 	src := &fakeSource{
 		quotes: map[string]marketdata.Quote{
@@ -136,6 +160,30 @@ func TestBundleIsolatesFailure(t *testing.T) {
 	}
 	if b.Overnight.Consistency.Total != 4 {
 		t.Errorf("overnight still works, total=%d", b.Overnight.Consistency.Total)
+	}
+}
+
+func TestBundleDegradesWhenGapsStoreUnavailable(t *testing.T) {
+	src := &fakeSource{
+		quotes: map[string]marketdata.Quote{
+			"VIX": {Price: 20}, "VIX3M": {Price: 22},
+			"N225": {ChangePct: 1.0}, "TSMC_TW": {ChangePct: 0.8},
+			"SX5E": {ChangePct: 0.5}, "ES": {ChangePct: 0.3},
+		},
+	}
+	svc := NewService(src, nil)
+	svc.Now = func() time.Time { return time.Now().UTC() }
+
+	b, err := svc.Bundle(context.Background(), nil)
+
+	if err != nil {
+		t.Fatalf("Bundle returned error: %v", err)
+	}
+	if len(b.Gaps.Warnings) == 0 {
+		t.Fatal("bundle gaps should degrade with warning")
+	}
+	if b.Overnight.Consistency.Total != 4 {
+		t.Errorf("overnight should still work, total=%d", b.Overnight.Consistency.Total)
 	}
 }
 

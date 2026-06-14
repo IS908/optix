@@ -26,7 +26,9 @@ export function PostcloseMoversCard() {
     return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="postclose-movers-loading" />
   }
 
-  const empty = data.gainers.length === 0 && data.losers.length === 0
+  const gainers = data.gainers ?? []
+  const losers = data.losers ?? []
+  const empty = gainers.length === 0 && losers.length === 0
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
@@ -36,10 +38,10 @@ export function PostcloseMoversCard() {
         <div className="mt-3 text-xs text-zinc-600">收盘后 bar 不足</div>
       ) : (
         <div className="mt-2 space-y-1">
-          {data.gainers.map((mover) => (
+          {gainers.map((mover) => (
             <MoverRow key={`g-${mover.symbol}`} mover={mover} direction="↑" />
           ))}
-          {data.losers.map((mover) => (
+          {losers.map((mover) => (
             <MoverRow key={`l-${mover.symbol}`} mover={mover} direction="↓" />
           ))}
         </div>

@@ -79,6 +79,12 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 	moves, warnings := ExtractPostcloseMoves(bars, inWL, s.now())
 	out.Warnings = append(out.Warnings, warnings...)
 	out.Gainers, out.Losers = rankPostcloseMovers(moves)
+	if out.Gainers == nil {
+		out.Gainers = []Mover{}
+	}
+	if out.Losers == nil {
+		out.Losers = []Mover{}
+	}
 	if len(out.Gainers) == 0 && len(out.Losers) == 0 {
 		out.Warnings = append(out.Warnings, "movers: 收盘后 bar 不足")
 	}

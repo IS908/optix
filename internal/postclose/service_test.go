@@ -76,6 +76,19 @@ func TestServiceDegradesSourceFailureWithNonNilSlices(t *testing.T) {
 	}
 }
 
+func TestServiceMoversKeepsEmptyRanksAsNonNilSlices(t *testing.T) {
+	svc := NewService(fakeSource{bars: map[string][]model.OHLCV{}}, testSectorMap(), "<test>")
+	svc.Now = func() time.Time { return time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC) }
+
+	movers, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if movers.Gainers == nil || movers.Losers == nil {
+		t.Fatalf("empty movers should serialize as arrays, got %+v", movers)
+	}
+}
+
 func TestServiceBundleBuildsAllCards(t *testing.T) {
 	now := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
 	src := fakeSource{

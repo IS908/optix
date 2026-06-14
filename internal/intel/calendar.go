@@ -25,13 +25,13 @@ const (
 )
 
 // calendarMaxYear：表覆盖上限。超出按「仅周末」降级判定 + CalendarStale 警示。
-const calendarMaxYear = 2027
+const calendarMaxYear = 2028
 
-// nyseCalendar：NYSE 2026-2027 假日/半日（手工维护；完整性测试钉条目数）。
+// nyseCalendar：NYSE 2026-2028 假日/半日（手工维护；完整性测试钉条目数）。
+// 来源：https://www.nyse.com/trade/hours-calendars（NYSE Holidays & Trading Hours）
 // 规则来源：7/4 落周六→前一周五休；落周日→下周一休；圣诞/Juneteenth 同理。
 // 半日：感恩节后周五、12/24（当其为交易日时）、7/3（当其为交易日时，即 7/4 落
-// 周二至周五）。2026 的 7/3 是观察假日、2027 的 7/3 落周六，故两年均无 7 月半日；
-// 2027 的 12/24 本身是观察假日，故无 12 月半日。扩表到其它年份时须补 7/3 半日判断。
+// 周二至周五）。2028 的 1/1 落周六，NYSE 官方表明确不补休。
 var nyseCalendar = map[string]dayRule{
 	// 2026 整日
 	"2026-01-01": ruleHoliday, "2026-01-19": ruleHoliday, "2026-02-16": ruleHoliday,
@@ -47,6 +47,12 @@ var nyseCalendar = map[string]dayRule{
 	"2027-12-24": ruleHoliday,
 	// 2027 半日
 	"2027-11-26": ruleEarlyClose,
+	// 2028 整日（1/1 周六不补休，故 2028 年内只有 9 个整日休市）
+	"2028-01-17": ruleHoliday, "2028-02-21": ruleHoliday, "2028-04-14": ruleHoliday,
+	"2028-05-29": ruleHoliday, "2028-06-19": ruleHoliday, "2028-07-04": ruleHoliday,
+	"2028-09-04": ruleHoliday, "2028-11-23": ruleHoliday, "2028-12-25": ruleHoliday,
+	// 2028 半日
+	"2028-07-03": ruleEarlyClose, "2028-11-24": ruleEarlyClose,
 }
 
 func isTradingDay(t time.Time) bool {

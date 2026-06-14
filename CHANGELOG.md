@@ -12,6 +12,12 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Extend the built-in NYSE trading calendar through 2028 so Market Intel state
+  does not raise `calendar_stale` during normal 2028 sessions and correctly
+  handles 2028 early closes.
+
 ## [0.14.7] - 2026-06-14
 
 Patch release for Market Intel M1 Pulse source transparency.

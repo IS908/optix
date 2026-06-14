@@ -43,7 +43,8 @@ func BuildRegimeTrigger(quotes map[string]ShockQuote, liquidity LiquidityDTO, as
 	}
 	for _, row := range liquidity.Rows {
 		if row.State == "stressed" || row.State == "severe" {
-			c := math.Min(8+row.SpreadZ*3, 22)
+			spreadExcessRatio := math.Max(0, row.SpreadRatio-1)
+			c := math.Min(8+spreadExcessRatio*3, 22)
 			out.Score += c
 			out.Confirmations = append(out.Confirmations, RegimeConfirmation{
 				ID: row.ID, Label: nonEmpty(row.Label, row.ID), Dimension: "liquidity",

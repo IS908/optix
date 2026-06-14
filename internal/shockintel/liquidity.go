@@ -25,7 +25,7 @@ func BuildLiquidityState(quotes map[string]ShockQuote, depth map[string]DepthSna
 	out := LiquidityDTO{AsOf: asOf.UTC(), Source: aggregateSource(quotes, "computed"), Rows: []LiquidityRow{}}
 	for _, asset := range liquidityAssets {
 		q, ok := quotes[asset.ID]
-		row := LiquidityRow{ID: asset.ID, Label: asset.Label, State: "missing"}
+		row := LiquidityRow{ID: asset.ID, Label: asset.Label, NormalSpreadBps: asset.NormalSpreadBps, State: "missing"}
 		if !ok {
 			row.Missing = true
 			row.Note = "quote missing"
@@ -69,8 +69,8 @@ func BuildLiquidityState(quotes map[string]ShockQuote, depth map[string]DepthSna
 			out.Rows = append(out.Rows, row)
 			continue
 		}
-		row.SpreadZ = spreadZ(row.SpreadBps, asset.NormalSpreadBps)
-		row.State = liquidityState(row.SpreadZ, row.SpreadBps)
+		row.SpreadRatio = spreadRatio(row.SpreadBps, asset.NormalSpreadBps)
+		row.State = liquidityState(row.SpreadRatio, row.SpreadBps)
 		out.Rows = append(out.Rows, row)
 	}
 	return out
@@ -94,20 +94,20 @@ func spreadBps(q ShockQuote) float64 {
 	return (q.Ask - q.Bid) / mid * 10000
 }
 
-func spreadZ(spread, normal float64) float64 {
+func spreadRatio(spread, normal float64) float64 {
 	if normal <= 0 || spread <= 0 {
 		return 0
 	}
-	return math.Max(0, (spread-normal)/normal)
+	return math.Max(0, spread/normal)
 }
 
-func liquidityState(z, spread float64) string {
+func liquidityState(ratio, spread float64) string {
 	switch {
-	case z >= 7 || spread >= 75:
+	case ratio >= 8 || spread >= 75:
 		return "severe"
-	case z >= 2.5 || spread >= 20:
+	case ratio >= 3.5 || spread >= 20:
 		return "stressed"
-	case z >= 1.5:
+	case ratio >= 2.5:
 		return "watch"
 	default:
 		return "normal"

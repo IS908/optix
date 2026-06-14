@@ -14,7 +14,7 @@ function LiquidityRowView({ row }: { row: ShockLiquidityRow }) {
   }
   const tone = row.state === 'severe' || row.state === 'stressed' ? 'text-red-400' : row.state === 'watch' ? 'text-amber-300' : 'text-emerald-400'
   return (
-    <div className="grid grid-cols-[52px_1fr_72px] items-center gap-2 text-xs">
+    <div className="grid grid-cols-[52px_1fr_86px] items-center gap-2 text-xs">
       <div>
         <div className="font-medium text-zinc-300">{row.id}</div>
         <div className="text-[10px] text-zinc-600">{row.basis}</div>
@@ -25,7 +25,7 @@ function LiquidityRowView({ row }: { row: ShockLiquidityRow }) {
         <span>{row.spread_bps.toFixed(1)}bp</span>
         {row.depth_available ? <span className="ml-1 text-zinc-600">depth</span> : null}
       </div>
-      <div className="text-right tabular-nums text-zinc-500">z {row.spread_z.toFixed(1)}</div>
+      <div className="whitespace-nowrap text-right tabular-nums text-zinc-500">{row.spread_ratio.toFixed(1)}× normal</div>
     </div>
   )
 }

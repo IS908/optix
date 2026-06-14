@@ -1,6 +1,11 @@
 package shockintel
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"math"
+	"testing"
+)
 
 func TestBuildLiquidityStateUsesSpreadAndDepth(t *testing.T) {
 	now := fixedShockNow()
@@ -97,6 +102,31 @@ func TestBuildLiquidityStateCanDeriveSpreadFromDepth(t *testing.T) {
 	}
 	if spy.State != "normal" {
 		t.Fatalf("SPY state = %s, want normal", spy.State)
+	}
+}
+
+func TestBuildLiquidityStateJSONNamesSpreadRatioHonestly(t *testing.T) {
+	now := fixedShockNow()
+	dto := BuildLiquidityState(map[string]ShockQuote{
+		"HYG": {ID: "HYG", Label: "HYG", Price: 75, Bid: 74.80, Ask: 75.20, Source: "ibkr", Basis: "realtime", AsOf: now},
+	}, nil, now)
+
+	hyg := findLiquidityRow(t, dto.Rows, "HYG")
+	if math.Abs(hyg.SpreadRatio-6.67) > 0.1 {
+		t.Fatalf("HYG spread ratio = %.2f, want about 6.67x normal; row=%#v", hyg.SpreadRatio, hyg)
+	}
+	raw, err := json.Marshal(hyg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("spread_z")) {
+		t.Fatalf("liquidity row JSON must not expose pseudo-z-score: %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("spread_ratio")) {
+		t.Fatalf("liquidity row JSON must expose spread_ratio: %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("normal_spread_bps")) {
+		t.Fatalf("liquidity row JSON must expose normal_spread_bps baseline: %s", string(raw))
 	}
 }
 

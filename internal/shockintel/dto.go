@@ -121,24 +121,25 @@ type AnalogsDTO struct {
 }
 
 type LiquidityRow struct {
-	ID             string    `json:"id"`
-	Label          string    `json:"label"`
-	Source         string    `json:"source"`
-	Basis          string    `json:"basis"`
-	AsOf           time.Time `json:"as_of"`
-	Bid            float64   `json:"bid"`
-	Ask            float64   `json:"ask"`
-	Mid            float64   `json:"mid"`
-	SpreadBps      float64   `json:"spread_bps"`
-	SpreadZ        float64   `json:"spread_z"`
-	TopBidSize     float64   `json:"top_bid_size"`
-	TopAskSize     float64   `json:"top_ask_size"`
-	Top5BidDepth   float64   `json:"top5_bid_depth"`
-	Top5AskDepth   float64   `json:"top5_ask_depth"`
-	DepthAvailable bool      `json:"depth_available"`
-	State          string    `json:"state"`
-	Missing        bool      `json:"missing,omitempty"`
-	Note           string    `json:"note,omitempty"`
+	ID              string    `json:"id"`
+	Label           string    `json:"label"`
+	Source          string    `json:"source"`
+	Basis           string    `json:"basis"`
+	AsOf            time.Time `json:"as_of"`
+	Bid             float64   `json:"bid"`
+	Ask             float64   `json:"ask"`
+	Mid             float64   `json:"mid"`
+	SpreadBps       float64   `json:"spread_bps"`
+	NormalSpreadBps float64   `json:"normal_spread_bps"`
+	SpreadRatio     float64   `json:"spread_ratio"`
+	TopBidSize      float64   `json:"top_bid_size"`
+	TopAskSize      float64   `json:"top_ask_size"`
+	Top5BidDepth    float64   `json:"top5_bid_depth"`
+	Top5AskDepth    float64   `json:"top5_ask_depth"`
+	DepthAvailable  bool      `json:"depth_available"`
+	State           string    `json:"state"`
+	Missing         bool      `json:"missing,omitempty"`
+	Note            string    `json:"note,omitempty"`
 }
 
 type LiquidityDTO struct {

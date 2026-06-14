@@ -407,7 +407,8 @@ export interface ShockLiquidityRow {
   ask: number
   mid: number
   spread_bps: number
-  spread_z: number
+  normal_spread_bps: number
+  spread_ratio: number
   top_bid_size: number
   top_ask_size: number
   top5_bid_depth: number

@@ -12,6 +12,19 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.13] - 2026-06-14
+
+Patch release for Market Intel data-source consistency.
+
+### Fixed
+
+- Deduplicate Shock Intel quote, depth, and option-stress market fetches across
+  bundle cards, nested liquidity reads, and the `/api/intel/state` hot path.
+- Normalize Market Intel source/basis metadata to canonical marketdata basis
+  values and expose delayed postclose row basis in the WebUI.
+- Route Event/Shock asset-class lookup and yfinance option-chain fallback
+  through shared `marketdata` helpers instead of local duplicated maps/imports.
+
 ## [0.14.12] - 2026-06-14
 
 Patch release for Market Intel SPA degraded-data and judgment workflow
@@ -1378,7 +1391,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.12...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.13...HEAD
+[0.14.13]: https://github.com/IS908/optix/compare/v0.14.12...v0.14.13
 [0.14.12]: https://github.com/IS908/optix/compare/v0.14.11...v0.14.12
 [0.14.11]: https://github.com/IS908/optix/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/IS908/optix/compare/v0.14.9...v0.14.10

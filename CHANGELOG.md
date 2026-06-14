@@ -12,6 +12,19 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.14] - 2026-06-14
+
+Patch release for Market Intel M4/M7 compute correctness.
+
+### Fixed
+
+- Compute premarket mover percent from today's premarket last price versus the
+  latest prior regular-session close instead of a stale multi-day-old bar.
+- Compute premarket volume ratio from today's premarket-window volume versus
+  prior-day premarket averages instead of a multi-day numerator.
+- Keep Shock Regime VIX score contribution and confirmation rows in sync,
+  including moderate VIX moves that trigger `watch`.
+
 ## [0.14.13] - 2026-06-14
 
 Patch release for Market Intel data-source consistency.
@@ -1391,7 +1404,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.13...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.14...HEAD
+[0.14.14]: https://github.com/IS908/optix/compare/v0.14.13...v0.14.14
 [0.14.13]: https://github.com/IS908/optix/compare/v0.14.12...v0.14.13
 [0.14.12]: https://github.com/IS908/optix/compare/v0.14.11...v0.14.12
 [0.14.11]: https://github.com/IS908/optix/compare/v0.14.10...v0.14.11

@@ -32,9 +32,9 @@ func BuildReadAcrossEdges(movers []Mover, sm *portfolio.SectorMap) []ReadAcrossE
 			if d.AfterHoursPct < 0 {
 				dir = "negative"
 			}
-			conf := 0.35 + abs(d.AfterHoursPct)/10
-			if conf > 0.95 {
-				conf = 0.95
+			strength := 0.35 + abs(d.AfterHoursPct)/10
+			if strength > 0.95 {
+				strength = 0.95
 			}
 			edges = append(edges, ReadAcrossEdge{
 				Driver:              d.Symbol,
@@ -42,10 +42,10 @@ func BuildReadAcrossEdges(movers []Mover, sm *portfolio.SectorMap) []ReadAcrossE
 				SectorID:            sector,
 				SectorLabel:         sm.Label(sector),
 				Direction:           dir,
-				Confidence:          conf,
+				SignalStrength:      strength,
 				Lag:                 "T+1 open",
 				DriverAfterHoursPct: d.AfterHoursPct,
-				Note:                fmt.Sprintf("%s 盘后 %.2f%%，同板块观察 %s", d.Symbol, d.AfterHoursPct, p.Symbol),
+				Note:                fmt.Sprintf("%s 盘后 %.2f%%，同板块观察 %s；强度仅反映驱动股盘后波动幅度，非历史命中率", d.Symbol, d.AfterHoursPct, p.Symbol),
 			})
 			count++
 			if count == 3 {

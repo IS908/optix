@@ -15,7 +15,7 @@ function OptionStressRow({ row }: { row: ShockOptionStress }) {
         <div className="text-[10px] text-zinc-600">{row.basis}</div>
       </div>
       <div className="min-w-0 text-zinc-500">
-        <span className={row.iv_change >= 0.05 ? 'text-amber-300' : 'text-zinc-500'}>IV skew {formatSignedPct(row.iv_change)}</span>
+        <span className={row.iv_skew >= 0.05 ? 'text-amber-300' : 'text-zinc-500'}>IV skew {formatSignedPct(row.iv_skew)}</span>
         <span className="mx-1 text-zinc-700">·</span>
         <span>Vol {row.volume}</span>
       </div>

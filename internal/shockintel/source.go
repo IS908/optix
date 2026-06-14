@@ -384,7 +384,7 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 		Source:     source,
 		Basis:      basisForSource(source),
 		AsOf:       asOf.UTC(),
-		IVChange:   ivSkew,
+		IVSkew:     ivSkew,
 		Volume:     volume,
 		OpenInt:    openInt,
 		Note:       note,

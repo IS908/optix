@@ -15,7 +15,7 @@ export function ShockRegimeCard() {
 
   const tone = data.state === 'critical' || data.state === 'shock' ? 'text-red-400' : data.state === 'watch' ? 'text-amber-300' : 'text-emerald-400'
   const scoreLine = `score ${data.score.toFixed(0)}`
-  const vixLine = `VIX σ ${data.vix_sigma.toFixed(1)}`
+  const vixLine = `VIX Δ/10 ${data.vix_change_ratio.toFixed(1)}`
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">

@@ -80,7 +80,7 @@ func renderPostclose(b postclose.BundleDTO) {
 
 	fmt.Printf("\nRead-across: %d edges\n", len(b.ReadAcross.Edges))
 	for _, e := range topEdges(b.ReadAcross.Edges, 5) {
-		fmt.Printf("  %s → %s · %s · %.0f%%\n", e.Driver, e.Peer, e.Direction, e.Confidence*100)
+		fmt.Printf("  %s → %s · %s · strength %.0f%%\n", e.Driver, e.Peer, e.Direction, e.SignalStrength*100)
 	}
 
 	fmt.Printf("\n时间轴: %d events\n", len(b.Timeline.Events))

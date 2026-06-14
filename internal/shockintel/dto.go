@@ -38,7 +38,7 @@ type OptionStress struct {
 	Source     string    `json:"source"`
 	Basis      string    `json:"basis"`
 	AsOf       time.Time `json:"as_of"`
-	IVChange   float64   `json:"iv_change"`
+	IVSkew     float64   `json:"iv_skew"`
 	Volume     int64     `json:"volume"`
 	OpenInt    int64     `json:"open_interest"`
 	Note       string    `json:"note,omitempty"`
@@ -58,14 +58,14 @@ type RegimeConfirmation struct {
 }
 
 type RegimeDTO struct {
-	AsOf          time.Time            `json:"as_of"`
-	Source        string               `json:"source"`
-	State         string               `json:"state"`
-	Score         float64              `json:"score"`
-	VIXSigma      float64              `json:"vix_sigma"`
-	TriggeredView string               `json:"triggered_view,omitempty"`
-	Confirmations []RegimeConfirmation `json:"confirmations"`
-	Warnings      []string             `json:"warnings,omitempty"`
+	AsOf           time.Time            `json:"as_of"`
+	Source         string               `json:"source"`
+	State          string               `json:"state"`
+	Score          float64              `json:"score"`
+	VIXChangeRatio float64              `json:"vix_change_ratio"`
+	TriggeredView  string               `json:"triggered_view,omitempty"`
+	Confirmations  []RegimeConfirmation `json:"confirmations"`
+	Warnings       []string             `json:"warnings,omitempty"`
 }
 
 type FingerprintRow struct {

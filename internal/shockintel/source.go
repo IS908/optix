@@ -17,7 +17,7 @@ import (
 	"github.com/IS908/optix/pkg/model"
 )
 
-type Source interface {
+type MarketSource interface {
 	Quotes(ctx context.Context, ids []string) (map[string]ShockQuote, error)
 	Bars(ctx context.Context, ids []string, interval string, lookback time.Duration) (map[string][]model.OHLCV, error)
 	Depth(ctx context.Context, ids []string, levels int) (map[string]DepthSnapshot, error)
@@ -28,7 +28,7 @@ type BrokerConnector func(ctx context.Context) (broker.Broker, string, error)
 
 type BrokerQuoteAdapter struct {
 	connect        BrokerConnector
-	fallback       Source
+	fallback       MarketSource
 	overlayTimeout time.Duration
 }
 
@@ -55,7 +55,7 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerQuot
 	}, fallback)
 }
 
-func NewBrokerQuoteAdapter(connect BrokerConnector, fallback Source) *BrokerQuoteAdapter {
+func NewBrokerQuoteAdapter(connect BrokerConnector, fallback MarketSource) *BrokerQuoteAdapter {
 	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond}
 }
 

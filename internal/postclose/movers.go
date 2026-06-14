@@ -2,19 +2,13 @@ package postclose
 
 import (
 	"sort"
-	"strings"
 	"time"
 
+	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/pkg/model"
 )
 
-var nyLoc = func() *time.Location {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		return time.FixedZone("EST", -5*3600)
-	}
-	return loc
-}()
+var nyLoc = intelshared.NY()
 
 var curatedUniverse = []string{"AAPL", "NVDA", "MSFT", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "AMD", "SPY", "QQQ"}
 
@@ -22,7 +16,7 @@ func Universe(watchlist []string) (symbols []string, inWL map[string]bool) {
 	inWL = map[string]bool{}
 	seen := map[string]bool{}
 	add := func(s string, wl bool) {
-		s = normSym(s)
+		s = intelshared.NormalizeSymbol(s)
 		if s == "" {
 			return
 		}
@@ -48,7 +42,11 @@ func ExtractPostcloseMoves(bySymbol map[string][]model.OHLCV, watchlist map[stri
 	out := []Mover{}
 	warnings := []string{}
 	for sym, bars := range bySymbol {
-		move, ok, warning := extractPostcloseMove(strings.ToUpper(sym), bars, watchlist[strings.ToUpper(sym)], now)
+		symbol := intelshared.NormalizeSymbol(sym)
+		if symbol == "" {
+			continue
+		}
+		move, ok, warning := extractPostcloseMove(symbol, bars, watchlist[symbol], now)
 		if warning != "" {
 			warnings = append(warnings, warning)
 		}
@@ -149,10 +147,6 @@ func rankPostcloseMovers(in []Mover) (gainers, losers []Mover) {
 		losers = losers[:top]
 	}
 	return gainers, losers
-}
-
-func normSym(s string) string {
-	return strings.ToUpper(strings.TrimSpace(s))
 }
 
 func abs(v float64) float64 {

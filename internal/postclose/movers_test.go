@@ -62,3 +62,13 @@ func TestRankPostcloseMoversSplitsGainersAndLosers(t *testing.T) {
 		t.Fatalf("losers = %+v", l)
 	}
 }
+
+func TestUniverseNormalizesInteriorWhitespace(t *testing.T) {
+	symbols, inWL := Universe([]string{" brk b ", "BRK\tB"})
+	if len(symbols) == 0 || symbols[0] != "BRKB" {
+		t.Fatalf("symbols = %#v, want BRKB first", symbols)
+	}
+	if !inWL["BRKB"] {
+		t.Fatalf("watchlist map = %#v, want BRKB marked", inWL)
+	}
+}

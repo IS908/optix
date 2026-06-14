@@ -8,11 +8,11 @@ import (
 const shockBarLookback = 30 * 24 * time.Hour
 
 type Service struct {
-	src Source
+	src MarketSource
 	Now func() time.Time
 }
 
-func NewService(src Source) *Service {
+func NewService(src MarketSource) *Service {
 	return &Service{src: src}
 }
 

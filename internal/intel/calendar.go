@@ -3,16 +3,14 @@
 // 与 /api/intel/* HTTP 契约。零 IBKR、零 LLM。
 package intel
 
-import "time"
+import (
+	"time"
+
+	"github.com/IS908/optix/internal/intelshared"
+)
 
 // nyLoc：America/New_York（二进制已嵌 time/tzdata —— cmd 两个 main 均 import）。
-var nyLoc = func() *time.Location {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		return time.FixedZone("EST", -5*3600) // 极端环境兜底
-	}
-	return loc
-}()
+var nyLoc = intelshared.NY()
 
 // NY 返回 America/New_York 时区（CLI 渲染与测试共用）。
 func NY() *time.Location { return nyLoc }

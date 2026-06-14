@@ -12,6 +12,22 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.12] - 2026-06-14
+
+Patch release for Market Intel SPA degraded-data and judgment workflow
+contracts.
+
+### Fixed
+
+- Render Market Intel `DataWarnings` in all M4 premarket and M5 postclose
+  cards so degraded/partial readings are visible consistently across the SPA.
+- Treat nullable premarket/postclose DTO lists as empty degraded data in the
+  WebUI instead of relying on Go-side empty-slice JSON invariants.
+- Surface the judgment-journal workflow on postclose, event, and shock views
+  with view-specific asset chips and `optix intel judge` command context.
+- Keep slow-loading intel cards visibly labeled while degraded yfinance-backed
+  requests are still pending.
+
 ## [0.14.11] - 2026-06-14
 
 Patch release for Market Intel shared helper correctness.
@@ -1362,7 +1378,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.11...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.12...HEAD
+[0.14.12]: https://github.com/IS908/optix/compare/v0.14.11...v0.14.12
 [0.14.11]: https://github.com/IS908/optix/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/IS908/optix/compare/v0.14.9...v0.14.10
 [0.14.9]: https://github.com/IS908/optix/compare/v0.14.8...v0.14.9

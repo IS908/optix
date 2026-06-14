@@ -1,5 +1,5 @@
 import { usePoll } from '../api/usePoll'
-import type { IntelJournalSnapshot, IntelJudgment } from '../api/types'
+import type { IntelJournalSnapshot, IntelJudgment, ViewName } from '../api/types'
 
 const cpStatusStyle: Record<string, string> = {
   written: 'bg-emerald-900 text-emerald-300',
@@ -14,6 +14,41 @@ const outcomeStyle: Record<string, string> = {
   miss: 'text-red-400',
   void: 'text-zinc-500',
   push: 'text-zinc-400',
+}
+
+const judgmentGuides: Partial<
+  Record<
+    ViewName,
+    {
+      label: string
+      checkpoint: string
+      expiry: string
+      assets: string[]
+      rationale: string
+    }
+  >
+> = {
+  postclose: {
+    label: '收盘后',
+    checkpoint: 'reconcile',
+    expiry: 'reconcile',
+    assets: ['SPX', 'NDX', 'VIX', 'US10Y', 'DXY', 'WTI'],
+    rationale: 'postclose read-across',
+  },
+  event: {
+    label: '事件日',
+    checkpoint: 'interrupt',
+    expiry: 'reconcile',
+    assets: ['SPX', 'NDX', 'US2Y', 'US10Y', 'DXY', 'GOLD', 'VIX'],
+    rationale: 'event repricing',
+  },
+  shock: {
+    label: '冲击',
+    checkpoint: 'interrupt',
+    expiry: 'reconcile',
+    assets: ['SPX', 'NDX', 'VIX', 'WTI', 'GOLD', 'US10Y', 'DXY', 'RTY'],
+    rationale: 'shock regime',
+  },
 }
 
 function JudgmentRow({ j }: { j: IntelJudgment }) {
@@ -35,7 +70,34 @@ function JudgmentRow({ j }: { j: IntelJudgment }) {
   )
 }
 
-export function IntelJournalPanel() {
+function JudgmentAffordance({ contextView }: { contextView?: ViewName }) {
+  const guide = contextView ? judgmentGuides[contextView] : undefined
+  if (!guide) return null
+
+  const asset = guide.assets[0] ?? 'SPX'
+  const command = `optix intel judge --asset ${asset} --direction up --threshold 0.50 --confidence 60 --expiry ${guide.expiry} --rationale "${guide.rationale}"`
+
+  return (
+    <div className="mt-4 border-t border-zinc-800 pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-medium text-zinc-300">从当前视图登记判断</h4>
+        <span className="text-[10px] text-zinc-600">
+          {guide.label} · {guide.checkpoint} → {guide.expiry}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {guide.assets.map((id) => (
+          <span key={id} className="rounded border border-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+            {id}
+          </span>
+        ))}
+      </div>
+      <code className="mt-2 block whitespace-normal break-all text-[11px] leading-5 text-zinc-500">{command}</code>
+    </div>
+  )
+}
+
+export function IntelJournalPanel({ contextView }: { contextView?: ViewName } = {}) {
   const { data, stale } = usePoll<IntelJournalSnapshot>('/api/intel/journal', 30_000)
 
   if (!data) {
@@ -83,6 +145,7 @@ export function IntelJournalPanel() {
           ))}
         </div>
       )}
+      <JudgmentAffordance contextView={contextView} />
     </div>
   )
 }

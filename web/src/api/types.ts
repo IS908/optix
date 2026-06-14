@@ -117,7 +117,7 @@ export interface OvernightLink {
 
 export interface OvernightDTO {
   as_of: string
-  links: OvernightLink[]
+  links: OvernightLink[] | null
   consistency: { same_dir: number; total: number; note: string }
   warnings?: string[]
 }
@@ -140,7 +140,7 @@ export interface GapsDTO {
   hist_fill_rate: number
   sample_n: number
   lookback_days: number
-  by_band: GapStat[]
+  by_band: GapStat[] | null
   as_of: string
   warnings?: string[]
 }
@@ -155,8 +155,8 @@ export interface Mover {
 export interface MoversDTO {
   as_of: string
   universe_note: string
-  gainers: Mover[]
-  losers: Mover[]
+  gainers: Mover[] | null
+  losers: Mover[] | null
   warnings?: string[]
 }
 
@@ -188,7 +188,7 @@ export interface PostcloseEarningsDTO {
   as_of: string
   source: string
   universe_note: string
-  reports: EarningsReport[]
+  reports: EarningsReport[] | null
   warnings?: string[]
 }
 
@@ -203,7 +203,7 @@ export interface TimelineEvent {
 
 export interface PostcloseTimelineDTO {
   as_of: string
-  events: TimelineEvent[]
+  events: TimelineEvent[] | null
   warnings?: string[]
 }
 
@@ -222,7 +222,7 @@ export interface ReadAcrossEdge {
 export interface ReadAcrossDTO {
   as_of: string
   sector_source: string
-  edges: ReadAcrossEdge[]
+  edges: ReadAcrossEdge[] | null
   warnings?: string[]
 }
 
@@ -238,8 +238,8 @@ export interface PostcloseMover {
 export interface PostcloseMoversDTO {
   as_of: string
   universe_note: string
-  gainers: PostcloseMover[]
-  losers: PostcloseMover[]
+  gainers: PostcloseMover[] | null
+  losers: PostcloseMover[] | null
   warnings?: string[]
 }
 

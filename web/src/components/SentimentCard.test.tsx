@@ -33,4 +33,29 @@ describe('SentimentCard', () => {
     expect(screen.getByText('不可用')).toBeInTheDocument()
     expect(screen.getByText(/contango/)).toBeInTheDocument()
   })
+
+  it('renders source warnings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          pc_oi: 0,
+          pc_vol: 0,
+          pc_available: false,
+          vix: 20,
+          vix3m: 22,
+          vix_term_premium: 1.1,
+          regime: '偏多',
+          degraded_note: '降级口径',
+          warnings: ['put/call unavailable'],
+        }),
+      }),
+    )
+
+    render(<SentimentCard />)
+
+    await waitFor(() => expect(screen.getByText('put/call unavailable')).toBeInTheDocument())
+  })
 })

@@ -1,6 +1,7 @@
 import { usePoll } from '../api/usePoll'
 import type { ShockFingerprintDTO, ShockOptionStress } from '../api/types'
 import { DataWarnings } from './DataWarnings'
+import { LoadingCard } from './LoadingCard'
 
 function formatSignedPct(value: number) {
   const sign = value > 0 ? '+' : ''
@@ -28,7 +29,7 @@ export function ShockFingerprintCard() {
   const { data } = usePoll<ShockFingerprintDTO>('/api/intel/shock/fingerprint', 60_000)
 
   if (!data) {
-    return <div className="h-40 animate-pulse rounded-lg bg-zinc-900" data-testid="shock-fingerprint-loading" />
+    return <LoadingCard title="冲击指纹" testId="shock-fingerprint-loading" />
   }
 
   return (

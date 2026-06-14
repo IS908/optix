@@ -33,4 +33,31 @@ describe('GapFillCard', () => {
     expect(screen.getByText('↑0.70%')).toBeInTheDocument()
     expect(screen.getAllByText('62%').length).toBeGreaterThan(0)
   })
+
+  it('renders warnings and treats null band stats as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          symbol: 'SPX',
+          implied_gap_pct: -0.4,
+          direction: 'down',
+          band: '',
+          hist_fill_rate: 0,
+          sample_n: 0,
+          lookback_days: 504,
+          by_band: null,
+          as_of: '',
+          warnings: ['gap stats cache unavailable'],
+        }),
+      }),
+    )
+
+    render(<GapFillCard />)
+
+    await waitFor(() => expect(screen.getByText(/SPX 隐含跳空/)).toBeInTheDocument())
+    expect(screen.getByText('历史统计不可用')).toBeInTheDocument()
+    expect(screen.getByText('gap stats cache unavailable')).toBeInTheDocument()
+  })
 })

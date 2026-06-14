@@ -8,6 +8,15 @@ afterEach(() => {
 })
 
 describe('PostcloseTimelineCard', () => {
+  it('labels the loading state', () => {
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+
+    render(<PostcloseTimelineCard />)
+
+    expect(screen.getByText('要点时间轴')).toBeInTheDocument()
+    expect(screen.getByTestId('postclose-timeline-loading')).toBeInTheDocument()
+  })
+
   it('renders structured events', async () => {
     vi.stubGlobal(
       'fetch',
@@ -33,5 +42,24 @@ describe('PostcloseTimelineCard', () => {
 
     await waitFor(() => expect(screen.getByText(/AAPL 盘后异动/)).toBeInTheDocument())
     expect(screen.getByText(/全天合并/)).toBeInTheDocument()
+  })
+
+  it('renders warnings and treats null events as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          events: null,
+          warnings: ['timeline degraded'],
+        }),
+      }),
+    )
+
+    render(<PostcloseTimelineCard />)
+
+    await waitFor(() => expect(screen.getByText('暂无结构化收盘后事件')).toBeInTheDocument())
+    expect(screen.getByText('timeline degraded')).toBeInTheDocument()
   })
 })

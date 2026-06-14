@@ -48,4 +48,24 @@ describe('PostcloseMoversCard', () => {
 
     await waitFor(() => expect(screen.getByText('收盘后 bar 不足')).toBeInTheDocument())
   })
+
+  it('renders warnings from degraded source paths', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          universe_note: '自选股 + 内置精选集',
+          gainers: null,
+          losers: null,
+          warnings: ['after-hours bars unavailable'],
+        }),
+      }),
+    )
+
+    render(<PostcloseMoversCard />)
+
+    await waitFor(() => expect(screen.getByText('after-hours bars unavailable')).toBeInTheDocument())
+  })
 })

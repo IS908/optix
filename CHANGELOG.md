@@ -12,6 +12,20 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.15] - 2026-06-14
+
+Patch release for Market Intel metric-label correctness.
+
+### Fixed
+
+- Label journal hit-rate windows with the queried trading date instead of
+  hardcoded `today` for historical reads.
+- Stamp judgment reconciliation expiry prices from cached pulse bars as
+  `frozen` instead of reusing the registration quote basis.
+- Rename Shock fingerprint row `confidence` to `normalized_score` in JSON and
+  CLI output, since it is a direct score normalization rather than an
+  independent confidence signal.
+
 ## [0.14.14] - 2026-06-14
 
 Patch release for Market Intel M4/M7 compute correctness.
@@ -1404,7 +1418,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.14...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.15...HEAD
+[0.14.15]: https://github.com/IS908/optix/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/IS908/optix/compare/v0.14.13...v0.14.14
 [0.14.13]: https://github.com/IS908/optix/compare/v0.14.12...v0.14.13
 [0.14.12]: https://github.com/IS908/optix/compare/v0.14.11...v0.14.12

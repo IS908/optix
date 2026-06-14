@@ -68,6 +68,35 @@ func (*mockBroker) GetOptionChain(_ context.Context, _ string, _ string) (*model
 // Ensure compile-time satisfaction of broker.Broker.
 var _ broker.Broker = (*mockBroker)(nil)
 
+// fallbackMock is a connected broker that reports it is running on the degraded
+// (yfinance) fallback source, so it exercises the pool's IBKR switchback path
+// without needing a real *broker.FallbackBroker.
+type fallbackMock struct{ mockBroker }
+
+func (*fallbackMock) UsingFallback() bool { return true }
+
+var _ fallbackReporter = (*fallbackMock)(nil)
+
+// liveMock is a connected broker that reports it is NOT on the fallback (i.e.
+// live on IBKR), used to exercise the backoff-clearing branch.
+type liveMock struct{ mockBroker }
+
+func (*liveMock) UsingFallback() bool { return false }
+
+// testClock is a race-free injectable clock. The pool's health-checker goroutine
+// may read it concurrently with a test advancing it, so the time is held in an
+// atomic rather than a plain field.
+type testClock struct{ nanos atomic.Int64 }
+
+func newTestClock(t time.Time) *testClock {
+	c := &testClock{}
+	c.nanos.Store(t.UnixNano())
+	return c
+}
+
+func (c *testClock) now() time.Time          { return time.Unix(0, c.nanos.Load()) }
+func (c *testClock) advance(d time.Duration) { c.nanos.Add(int64(d)) }
+
 // ─── factory helpers ──────────────────────────────────────────────────────────
 
 // alwaysConnectedFactory returns a brokerFactory that creates a new already-
@@ -305,6 +334,145 @@ func TestPoolHealthCheckReconnectsDropped(t *testing.T) {
 	// mock1 was the replacement broker — it must have been connected.
 	if atomic.LoadInt32(&mock1.connectCalls) == 0 {
 		t.Error("mock1.connectCalls == 0: health check did not trigger reconnect via factory")
+	}
+}
+
+// TestPoolSwitchbackBackoff verifies that when a slot is stuck on the yfinance
+// fallback (IBKR unreachable), the health checker does NOT re-attempt the IBKR
+// switchback on every cycle — it backs off exponentially. This prevents the
+// reconnect storm that hammers TWS's 32-connection limit and repeatedly drives
+// the racy ibapi connect/teardown path (see #171).
+func TestPoolSwitchbackBackoff(t *testing.T) {
+	var created int32
+	// Factory always returns a broker that reports it's on the degraded fallback,
+	// so every switchback attempt "fails" to reach IBKR and stays on fallback.
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		atomic.AddInt32(&created, 1)
+		return &fallbackMock{mockBroker{connected: true}}, nil
+	}
+
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	pool := newBrokerPoolWithClock(1, factory, clock.now)
+	defer pool.close()
+
+	// Warm up: acquire creates broker #1 (on fallback), release back to pool.
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	base := atomic.LoadInt32(&created) // factory calls so far (lazy init)
+
+	// First health cycle: nextRetry is unset → switchback attempt fires once,
+	// then sets a backoff window of backoffFor(1) from now.
+	pool.checkIdleConnections()
+	if got := atomic.LoadInt32(&created) - base; got != 1 {
+		t.Fatalf("first health cycle: switchback attempts = %d, want 1", got)
+	}
+
+	// Within the backoff window: no further attempts, no matter how many health
+	// cycles run (this is the storm that #171 must prevent).
+	clock.advance(backoffFor(1) - time.Second)
+	for i := 0; i < 3; i++ {
+		pool.checkIdleConnections()
+	}
+	if got := atomic.LoadInt32(&created) - base; got != 1 {
+		t.Fatalf("during backoff window: switchback attempts = %d, want 1 (no storm)", got)
+	}
+
+	// Once the backoff window elapses, exactly one more attempt is allowed.
+	clock.advance(2 * time.Second) // now past nextRetry
+	pool.checkIdleConnections()
+	if got := atomic.LoadInt32(&created) - base; got != 2 {
+		t.Fatalf("after backoff elapsed: switchback attempts = %d, want 2", got)
+	}
+}
+
+// TestBackoffFor verifies the exponential schedule and that it saturates at the
+// cap rather than overflowing.
+func TestBackoffFor(t *testing.T) {
+	cases := []struct {
+		failCount int
+		want      time.Duration
+	}{
+		{-1, 0},
+		{0, 0},
+		{1, 2 * healthCheckInterval},  // 60s
+		{2, 4 * healthCheckInterval},  // 120s
+		{3, 8 * healthCheckInterval},  // 240s
+		{4, 16 * healthCheckInterval}, // 480s
+		{5, maxReconnectBackoff},      // 960s ≥ 900s cap → capped
+		{6, maxReconnectBackoff},
+		{100, maxReconnectBackoff}, // no overflow, stays capped
+	}
+	for _, c := range cases {
+		if got := backoffFor(c.failCount); got != c.want {
+			t.Errorf("backoffFor(%d) = %v, want %v", c.failCount, got, c.want)
+		}
+	}
+}
+
+// TestPoolSwitchbackRecoveryClearsBackoff verifies the recovery half of
+// trackReconnectOutcome: once a slot reconnects live on IBKR (not on the
+// fallback), its backoff is cleared so normal health probing resumes.
+func TestPoolSwitchbackRecoveryClearsBackoff(t *testing.T) {
+	// First reconnect lands on fallback (grows backoff); the second comes back
+	// live on IBKR (should clear it).
+	var calls int32
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			return &fallbackMock{mockBroker{connected: true}}, nil
+		}
+		return &liveMock{mockBroker{connected: true}}, nil
+	}
+
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	pool := newBrokerPoolWithClock(1, factory, clock.now)
+	defer pool.close()
+
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+
+	// Cycle 1: slot on fallback → switchback fires, lands on fallback again is
+	// not the case here (factory call #2 returns liveMock), so backoff clears.
+	pool.checkIdleConnections()
+	if conn.failCount != 0 || !conn.nextRetry.IsZero() {
+		t.Fatalf("after recovery to IBKR: failCount=%d nextRetry=%v, want 0/zero",
+			conn.failCount, conn.nextRetry)
+	}
+}
+
+// TestPoolHealthyIBKRNeverSwitchesBack verifies that a slot already live on IBKR
+// (not on the fallback) is never reconnected by the health checker, no matter
+// how many cycles run — the switchback short-circuits on UsingFallback()==false.
+func TestPoolHealthyIBKRNeverSwitchesBack(t *testing.T) {
+	var created int32
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		atomic.AddInt32(&created, 1)
+		return &liveMock{mockBroker{connected: true}}, nil
+	}
+
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	pool := newBrokerPoolWithClock(1, factory, clock.now)
+	defer pool.close()
+
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	base := atomic.LoadInt32(&created)
+
+	for i := 0; i < 5; i++ {
+		clock.advance(healthCheckInterval)
+		pool.checkIdleConnections()
+	}
+	if got := atomic.LoadInt32(&created) - base; got != 0 {
+		t.Errorf("healthy IBKR slot: reconnect attempts = %d, want 0", got)
 	}
 }
 

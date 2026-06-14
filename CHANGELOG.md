@@ -12,6 +12,17 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Broker pool now applies per-slot exponential backoff (2×health-interval up to
+  15 min) before re-probing IBKR for an idle slot stuck on the yfinance
+  fallback. Previously every idle fallback slot attempted an IBKR switchback on
+  every 30s health cycle; when IBKR was unreachable this storm of connect
+  attempts could exhaust TWS's 32-connection limit and repeatedly drive a racy
+  connect/teardown path in the `scmhub/ibapi` reader (`panic: sync: negative
+  WaitGroup counter`), crashing the whole process instead of degrading to
+  delayed data. ([#171](https://github.com/IS908/optix/issues/171))
+
 ## [0.14.17] - 2026-06-14
 
 Patch release for Shock liquidity metric-label correctness.

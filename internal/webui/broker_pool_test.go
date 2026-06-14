@@ -68,6 +68,15 @@ func (*mockBroker) GetOptionChain(_ context.Context, _ string, _ string) (*model
 // Ensure compile-time satisfaction of broker.Broker.
 var _ broker.Broker = (*mockBroker)(nil)
 
+// fallbackMock is a connected broker that reports it is running on the degraded
+// (yfinance) fallback source, so it exercises the pool's IBKR switchback path
+// without needing a real *broker.FallbackBroker.
+type fallbackMock struct{ mockBroker }
+
+func (*fallbackMock) UsingFallback() bool { return true }
+
+var _ fallbackReporter = (*fallbackMock)(nil)
+
 // ─── factory helpers ──────────────────────────────────────────────────────────
 
 // alwaysConnectedFactory returns a brokerFactory that creates a new already-
@@ -305,6 +314,58 @@ func TestPoolHealthCheckReconnectsDropped(t *testing.T) {
 	// mock1 was the replacement broker — it must have been connected.
 	if atomic.LoadInt32(&mock1.connectCalls) == 0 {
 		t.Error("mock1.connectCalls == 0: health check did not trigger reconnect via factory")
+	}
+}
+
+// TestPoolSwitchbackBackoff verifies that when a slot is stuck on the yfinance
+// fallback (IBKR unreachable), the health checker does NOT re-attempt the IBKR
+// switchback on every cycle — it backs off exponentially. This prevents the
+// reconnect storm that hammers TWS's 32-connection limit and repeatedly drives
+// the racy ibapi connect/teardown path (see #171).
+func TestPoolSwitchbackBackoff(t *testing.T) {
+	var created int32
+	// Factory always returns a broker that reports it's on the degraded fallback,
+	// so every switchback attempt "fails" to reach IBKR and stays on fallback.
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		atomic.AddInt32(&created, 1)
+		return &fallbackMock{mockBroker{connected: true}}, nil
+	}
+
+	now := time.Unix(1_700_000_000, 0)
+	pool := newBrokerPool(1, factory)
+	pool.now = func() time.Time { return now }
+	defer pool.close()
+
+	// Warm up: acquire creates broker #1 (on fallback), release back to pool.
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	base := atomic.LoadInt32(&created) // factory calls so far (lazy init)
+
+	// First health cycle: nextRetry is unset → switchback attempt fires once,
+	// then sets a backoff window of backoffFor(1) from now.
+	pool.checkIdleConnections()
+	if got := atomic.LoadInt32(&created) - base; got != 1 {
+		t.Fatalf("first health cycle: switchback attempts = %d, want 1", got)
+	}
+
+	// Within the backoff window: no further attempts, no matter how many health
+	// cycles run (this is the storm that #171 must prevent).
+	now = now.Add(backoffFor(1) - time.Second)
+	for i := 0; i < 3; i++ {
+		pool.checkIdleConnections()
+	}
+	if got := atomic.LoadInt32(&created) - base; got != 1 {
+		t.Fatalf("during backoff window: switchback attempts = %d, want 1 (no storm)", got)
+	}
+
+	// Once the backoff window elapses, exactly one more attempt is allowed.
+	now = now.Add(2 * time.Second) // now past nextRetry
+	pool.checkIdleConnections()
+	if got := atomic.LoadInt32(&created) - base; got != 2 {
+		t.Fatalf("after backoff elapsed: switchback attempts = %d, want 2", got)
 	}
 }
 

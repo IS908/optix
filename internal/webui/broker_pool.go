@@ -27,7 +27,19 @@ const (
 
 	// healthCheckInterval is how often the background goroutine probes idle slots.
 	healthCheckInterval = 30 * time.Second
+
+	// maxReconnectBackoff caps the exponential backoff applied to a slot that
+	// repeatedly fails to reach IBKR (and lands on the yfinance fallback). It
+	// bounds how rarely the switchback probe runs while IBKR stays unreachable.
+	maxReconnectBackoff = 15 * time.Minute
 )
+
+// fallbackReporter is implemented by brokers that can report whether they are
+// currently serving the degraded (yfinance) fallback source. *broker.FallbackBroker
+// satisfies it; the pool uses it to decide when to attempt an IBKR switchback.
+type fallbackReporter interface {
+	UsingFallback() bool
+}
 
 // brokerFactory creates an already-connected broker for the given clientID.
 // The production implementation dials IBKR (with yfinance fallback); tests
@@ -35,11 +47,19 @@ const (
 type brokerFactory func(ctx context.Context, clientID int64) (broker.Broker, error)
 
 // pooledConn is a single managed connection slot inside brokerPool.
+//
+// failCount/nextRetry implement per-slot reconnect backoff. They are only
+// mutated while the slot is exclusively owned (drained out of the avail
+// channel), so they need no extra locking — same ownership discipline as
+// lastUsed.
 type pooledConn struct {
-	id       int64        // IBKR ClientID (fixed for the lifetime of the slot)
-	mu       sync.Mutex   // guards b; only held during reconnect
+	id       int64      // IBKR ClientID (fixed for the lifetime of the slot)
+	mu       sync.Mutex // guards b; only held during reconnect
 	b        broker.Broker
 	lastUsed time.Time
+
+	failCount int       // consecutive IBKR-reconnect failures (slot stuck on fallback)
+	nextRetry time.Time // earliest time the health checker may re-probe IBKR
 }
 
 // sourceName returns a display-friendly data-source label.
@@ -77,6 +97,7 @@ type brokerPool struct {
 	avail   chan *pooledConn // buffered channel acting as both semaphore and queue
 	ctx     context.Context
 	cancel  context.CancelFunc
+	now     func() time.Time // injectable clock (tests); defaults to time.Now
 }
 
 // newBrokerPool initialises a pool of size slots.
@@ -100,9 +121,48 @@ func newBrokerPool(size int, factory brokerFactory) *brokerPool {
 		avail:   avail,
 		ctx:     ctx,
 		cancel:  cancel,
+		now:     time.Now,
 	}
 	go p.healthChecker()
 	return p
+}
+
+// backoffFor returns the reconnect backoff for a slot with failCount consecutive
+// IBKR-reconnect failures: 2×healthCheckInterval, doubling each further failure,
+// capped at maxReconnectBackoff. The first failure already throttles past the
+// normal 30s health cycle (so a stuck slot skips cycles rather than retrying
+// every one). failCount ≤ 0 yields 0 (no backoff).
+func backoffFor(failCount int) time.Duration {
+	if failCount <= 0 {
+		return 0
+	}
+	d := healthCheckInterval
+	for i := 0; i < failCount; i++ {
+		d *= 2
+		if d >= maxReconnectBackoff {
+			return maxReconnectBackoff
+		}
+	}
+	return d
+}
+
+// trackReconnectOutcome updates a slot's backoff state after a (re)connect
+// attempt. A slot that came back live on IBKR (not on the fallback) clears its
+// backoff; a slot still stuck on the yfinance fallback grows it exponentially so
+// the health checker stops re-probing IBKR every cycle. The slot must be
+// exclusively owned (drained from avail) when this is called.
+func (p *brokerPool) trackReconnectOutcome(conn *pooledConn) {
+	onFallback := false
+	if fr, ok := conn.b.(fallbackReporter); ok {
+		onFallback = fr.UsingFallback()
+	}
+	if conn.b != nil && conn.isConnected() && !onFallback {
+		conn.failCount = 0
+		conn.nextRetry = time.Time{}
+		return
+	}
+	conn.failCount++
+	conn.nextRetry = p.now().Add(backoffFor(conn.failCount))
 }
 
 // defaultBrokerFactory returns the production brokerFactory that dials IBKR
@@ -253,9 +313,14 @@ func (p *brokerPool) checkIdleConnections() {
 	for _, conn := range checked {
 		needsReconnect := p.isUnhealthy(conn)
 		if !needsReconnect {
-			// Fix 3: if the slot is using yfinance fallback, try to switch back
-			// to IBKR (the factory will use IBKR if it's now reachable).
-			if fb, ok := conn.b.(*broker.FallbackBroker); ok && fb.UsingFallback() {
+			// If the slot is using yfinance fallback, try to switch back to IBKR
+			// (the factory will use IBKR if it's now reachable) — but only after
+			// the per-slot backoff has elapsed. Without this gate, an unreachable
+			// IBKR makes every idle fallback slot reconnect on every 30s cycle,
+			// hammering TWS's 32-connection limit and repeatedly driving the racy
+			// ibapi connect/teardown path (#171).
+			if fr, ok := conn.b.(fallbackReporter); ok && fr.UsingFallback() &&
+				!p.now().Before(conn.nextRetry) {
 				needsReconnect = true
 				log.Printf("broker pool: clientID %d on yfinance — attempting IBKR switchback", conn.id)
 			}
@@ -266,6 +331,7 @@ func (p *brokerPool) checkIdleConnections() {
 				log.Printf("broker pool: health check reconnect clientID %d: %v", conn.id, err)
 			}
 			rCancel()
+			p.trackReconnectOutcome(conn)
 		}
 		select {
 		case p.avail <- conn:

@@ -13,6 +13,8 @@ import (
 	"github.com/IS908/optix/pkg/model"
 )
 
+var _ MarketSource = (*fakeShockSource)(nil)
+
 func TestServiceBundleKeepsNonNilSlices(t *testing.T) {
 	svc := NewService(&fakeShockSource{})
 	svc.Now = fixedShockNow

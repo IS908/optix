@@ -46,3 +46,13 @@ func TestCuratedSetNonEmpty(t *testing.T) {
 		t.Error("curated set should have a handful of liquid names")
 	}
 }
+
+func TestMoverUniverseNormalizesInteriorWhitespace(t *testing.T) {
+	symbols, inWL := moverUniverse([]string{" brk b ", "BRK\tB"})
+	if len(symbols) == 0 || symbols[0] != "BRKB" {
+		t.Fatalf("symbols = %#v, want BRKB first", symbols)
+	}
+	if !inWL["BRKB"] {
+		t.Fatalf("watchlist map = %#v, want BRKB marked", inWL)
+	}
+}

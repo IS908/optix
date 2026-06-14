@@ -4,18 +4,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/pkg/model"
 )
 
-// nyLoc：America/New_York（premarket 包私有 —— 不 import internal/intel，否则与
-// intel/handlers.go(import premarket) 形成循环依赖）。
-var nyLoc = func() *time.Location {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		return time.FixedZone("EST", -5*3600)
-	}
-	return loc
-}()
+// nyLoc：America/New_York（经 leaf package 共享，避免 import internal/intel 形成循环）。
+var nyLoc = intelshared.NY()
 
 // curatedMovers：内置精选集（流动性好的盘前活跃名单，代码默认不上配置）。
 var curatedMovers = []string{"AAPL", "NVDA", "MSFT", "AMZN", "META", "GOOGL", "TSLA", "SPY", "QQQ"}
@@ -67,7 +61,7 @@ func moverUniverse(watchlist []string) (symbols []string, inWL map[string]bool) 
 	inWL = map[string]bool{}
 	seen := map[string]bool{}
 	add := func(s string, wl bool) {
-		s = normSym(s)
+		s = intelshared.NormalizeSymbol(s)
 		if s == "" || seen[s] {
 			if wl {
 				inWL[s] = true
@@ -87,21 +81,6 @@ func moverUniverse(watchlist []string) (symbols []string, inWL map[string]bool) 
 		add(s, false)
 	}
 	return symbols, inWL
-}
-
-func normSym(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == ' ' || c == '\t' {
-			continue
-		}
-		if c >= 'a' && c <= 'z' {
-			c -= 32
-		}
-		out = append(out, c)
-	}
-	return string(out)
 }
 
 // computeVolRatio：今日盘前窗量 / 近 N 日盘前窗均量（按交易日分组）。

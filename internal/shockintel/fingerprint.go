@@ -11,7 +11,7 @@ func BuildShockFingerprint(quotes map[string]ShockQuote, liquidity LiquidityDTO,
 	}
 	for i := range rows {
 		rows[i].Score = clamp(rows[i].Score, 0, 100)
-		rows[i].Confidence = rows[i].Score / 100
+		rows[i].NormalizedScore = rows[i].Score / 100
 		rows[i].Active = rows[i].Score >= 50
 		if rows[i].Evidence == nil {
 			rows[i].Evidence = []string{}

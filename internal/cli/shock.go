@@ -61,7 +61,7 @@ func renderShock(b shockintel.BundleDTO) {
 		if row.Active {
 			active = "*"
 		}
-		fmt.Printf("  %s %-10s score %.0f confidence %.0f%%\n", active, row.Kind, row.Score, row.Confidence*100)
+		fmt.Printf("  %s %-10s score %.0f normalized %.0f%%\n", active, row.Kind, row.Score, row.NormalizedScore*100)
 	}
 
 	fmt.Println("\n历史类比:")

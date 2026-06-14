@@ -69,13 +69,13 @@ type RegimeDTO struct {
 }
 
 type FingerprintRow struct {
-	Kind       string   `json:"kind"`
-	Label      string   `json:"label"`
-	Score      float64  `json:"score"`
-	Confidence float64  `json:"confidence"`
-	Active     bool     `json:"active"`
-	Evidence   []string `json:"evidence"`
-	Missing    []string `json:"missing"`
+	Kind            string   `json:"kind"`
+	Label           string   `json:"label"`
+	Score           float64  `json:"score"`
+	NormalizedScore float64  `json:"normalized_score"`
+	Active          bool     `json:"active"`
+	Evidence        []string `json:"evidence"`
+	Missing         []string `json:"missing"`
 }
 
 type FingerprintDTO struct {

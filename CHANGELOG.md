@@ -30,6 +30,9 @@ Patch release for Market Intel correctness, degraded-data contracts, and docs.
 - Route the agent skill wrapper's Market Intel commands explicitly: `shock`
   probes IBKR and warns on degraded fallback; broker-free Intel commands do not
   require IBKR or Python gRPC.
+- Rename mislabeled Market Intel metrics so the Shock regime VIX proxy is
+  exposed as `vix_change_ratio`, option stress uses `iv_skew`, and postclose
+  read-across exposes `signal_strength` instead of implied hit-rate confidence.
 - Sync README Market Intel commands/routes and release-install version guidance,
   and refresh stale CHANGELOG compare links.
 

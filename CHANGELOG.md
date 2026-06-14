@@ -12,6 +12,11 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.18] - 2026-06-14
+
+Patch release hardening the IBKR→Yahoo fallback against a process-crashing
+reconnect storm.
+
 ### Fixed
 
 - Broker pool now applies per-slot exponential backoff (2×health-interval up to
@@ -1450,7 +1455,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.17...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.18...HEAD
+[0.14.18]: https://github.com/IS908/optix/compare/v0.14.17...v0.14.18
 [0.14.17]: https://github.com/IS908/optix/compare/v0.14.16...v0.14.17
 [0.14.16]: https://github.com/IS908/optix/compare/v0.14.15...v0.14.16
 [0.14.15]: https://github.com/IS908/optix/compare/v0.14.14...v0.14.15

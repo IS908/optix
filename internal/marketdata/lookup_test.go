@@ -13,6 +13,21 @@ func TestLookupAssetRef(t *testing.T) {
 	if !ok || ref.ID != "SPX" || ref.Class != ClassIndex {
 		t.Errorf("SPX → %+v ok=%v", ref, ok)
 	}
+	for _, tc := range []struct {
+		id    string
+		class AssetClass
+	}{
+		{id: "SPY", class: ClassStock},
+		{id: "QQQ", class: ClassStock},
+		{id: "VIXY", class: ClassStock},
+		{id: "GOLD", class: ClassFuture},
+		{id: "US10Y", class: ClassYield},
+	} {
+		ref, ok := LookupAssetRef(tc.id)
+		if !ok || ref.ID != tc.id || ref.Class != tc.class {
+			t.Errorf("%s → %+v ok=%v, want class %s", tc.id, ref, ok, tc.class)
+		}
+	}
 	if _, ok := LookupAssetRef("NOPE"); ok {
 		t.Error("unknown id must be ok=false")
 	}

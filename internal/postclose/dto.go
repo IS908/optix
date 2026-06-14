@@ -4,6 +4,8 @@ import "time"
 
 type EarningsReport struct {
 	Symbol         string    `json:"symbol"`
+	Source         string    `json:"source"`
+	Basis          string    `json:"basis"`
 	EventTime      time.Time `json:"event_time"`
 	Timing         string    `json:"timing"`
 	EPSEstimate    *float64  `json:"eps_estimate,omitempty"`
@@ -57,6 +59,8 @@ type ReadAcrossDTO struct {
 
 type Mover struct {
 	Symbol        string  `json:"symbol"`
+	Source        string  `json:"source"`
+	Basis         string  `json:"basis"`
 	RegularPct    float64 `json:"regular_pct"`
 	AfterHoursPct float64 `json:"after_hours_pct"`
 	CombinedPct   float64 `json:"combined_pct"`

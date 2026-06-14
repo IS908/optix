@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/broker/yfinance"
+	"github.com/IS908/optix/pkg/model"
 )
 
 // PCRatio 是单标的最近到期期权链的 Put/Call 聚合（情绪卡用）。
@@ -43,6 +44,13 @@ func PutCallRatio(ctx context.Context, pythonBin, underlying string) (PCRatio, e
 		return PCRatio{}, fmt.Errorf("option_chain %s: %w", underlying, err)
 	}
 	return parsePutCallRatio(raw)
+}
+
+// OptionChainWithOI returns the raw yfinance option chain through the marketdata
+// layer so Market Intel views do not import broker/yfinance directly.
+func OptionChainWithOI(ctx context.Context, pythonBin, underlying, expiry string) (*model.OptionChain, error) {
+	b := yfinance.New(yfinance.Config{PythonBin: pythonBin})
+	return b.GetOptionChainWithOI(ctx, underlying, expiry)
 }
 
 func parsePutCallRatio(raw []byte) (PCRatio, error) {

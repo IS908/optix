@@ -8,15 +8,19 @@ function pct(v: number) {
 }
 
 function MoverRow({ mover, direction }: { mover: PostcloseMover; direction: '↑' | '↓' }) {
+  const sourceLabel = [mover.source, mover.basis].filter(Boolean).join(' · ')
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="grid grid-cols-[1rem_minmax(3.5rem,1fr)_4.75rem_minmax(5.75rem,auto)] items-center gap-2 text-xs">
       <span className="w-4">{direction}</span>
-      <span className="w-16 text-zinc-300">
+      <span className="min-w-0 text-zinc-300">
         {mover.symbol}
         {mover.watchlist && <span className="text-amber-400"> ★</span>}
       </span>
-      <span className={`w-18 tabular-nums ${mover.combined_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{pct(mover.combined_pct)}</span>
-      <span className="text-zinc-500">盘后 {pct(mover.after_hours_pct)}</span>
+      <span className={`tabular-nums ${mover.combined_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{pct(mover.combined_pct)}</span>
+      <span className="min-w-0 text-right text-zinc-500">
+        <span>盘后 {pct(mover.after_hours_pct)}</span>
+        {sourceLabel && <span className="block truncate text-[10px] text-zinc-600">{sourceLabel}</span>}
+      </span>
     </div>
   )
 }

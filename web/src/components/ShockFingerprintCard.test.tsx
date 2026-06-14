@@ -55,7 +55,7 @@ describe('ShockFingerprintCard', () => {
             {
               underlying: 'SPY',
               source: 'ibkr',
-              basis: 'realtime_or_delayed',
+              basis: 'delayed',
               as_of: '2026-06-13T15:30:00Z',
               iv_skew: 0.08,
               volume: 2500,

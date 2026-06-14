@@ -16,8 +16,8 @@ describe('PostcloseMoversCard', () => {
         json: async () => ({
           as_of: '',
           universe_note: '自选股 + 内置精选集',
-          gainers: [{ symbol: 'AAPL', regular_pct: 5, after_hours_pct: 4.76, combined_pct: 10, volume: 2500, watchlist: true }],
-          losers: [{ symbol: 'NVDA', regular_pct: -2, after_hours_pct: -3, combined_pct: -4.94, volume: 1800, watchlist: false }],
+          gainers: [{ symbol: 'AAPL', regular_pct: 5, after_hours_pct: 4.76, combined_pct: 10, volume: 2500, watchlist: true, source: 'yfinance', basis: 'delayed' }],
+          losers: [{ symbol: 'NVDA', regular_pct: -2, after_hours_pct: -3, combined_pct: -4.94, volume: 1800, watchlist: false, source: 'yfinance', basis: 'delayed' }],
         }),
       }),
     )
@@ -28,6 +28,7 @@ describe('PostcloseMoversCard', () => {
     expect(screen.getByText('+10.00%')).toBeInTheDocument()
     expect(screen.getByText('-4.94%')).toBeInTheDocument()
     expect(screen.getByText(/盘后 \+4.76%/)).toBeInTheDocument()
+    expect(screen.getAllByText('yfinance · delayed')).toHaveLength(2)
   })
 
   it('treats null mover lists as empty degraded data', async () => {

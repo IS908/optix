@@ -5,10 +5,43 @@ import (
 	"fmt"
 )
 
-// assetClassByID 从 viewCompositions 派生 业务ID→AssetClass（class 的权威来源是组合表里的
-// AssetRef）。判断只能针对在某视图组合中出现过的资产（即 class 已知的那批）。
+// sourceAssetClassByID records source-known sensors that are not always shown
+// in the top-level pulse compositions but are consumed by deeper intel cards.
+var sourceAssetClassByID = map[string]AssetClass{
+	"SPY":  ClassStock,
+	"QQQ":  ClassStock,
+	"IWM":  ClassStock,
+	"TLT":  ClassStock,
+	"HYG":  ClassStock,
+	"LQD":  ClassStock,
+	"GLD":  ClassStock,
+	"USO":  ClassStock,
+	"UUP":  ClassStock,
+	"VIXY": ClassStock,
+
+	"BRENT":  ClassFuture,
+	"US5Y":   ClassYield,
+	"US13W":  ClassYield,
+	"VIX9D":  ClassVol,
+	"VIX3M":  ClassVol,
+	"OVX":    ClassVol,
+	"USDJPY": ClassFX,
+	"USDCNH": ClassFX,
+
+	"N225":      ClassIndex,
+	"SX5E":      ClassIndex,
+	"TSMC_TW":   ClassStock,
+	"TSM":       ClassStock,
+	"SOX_PROXY": ClassStock,
+}
+
+// assetClassByID 从 viewCompositions 和 sourceAssetClassByID 派生业务 ID→AssetClass。
+// 视图组合定义 UI surface，sourceAssetClassByID 补足深层卡片直接消费的传感器资产。
 var assetClassByID = func() map[string]AssetClass {
 	m := map[string]AssetClass{}
+	for id, class := range sourceAssetClassByID {
+		m[id] = class
+	}
 	for _, refs := range viewCompositions {
 		for _, r := range refs {
 			m[r.ID] = r.Class

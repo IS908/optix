@@ -47,7 +47,10 @@ export function PostcloseEarningsCard() {
                 <span className={`ml-2 ${labelClass(report.surprise_label)}`}>{report.surprise_label}</span>
                 <div className="truncate text-zinc-500">{epsLine(report)}</div>
               </div>
-              <span className="shrink-0 text-[10px] text-zinc-600">{report.timing || 'unknown'}</span>
+              <span className="shrink-0 text-right text-[10px] text-zinc-600">
+                <span className="block">{report.timing || 'unknown'}</span>
+                <span className="block">{[report.source, report.basis].filter(Boolean).join(' · ')}</span>
+              </span>
             </div>
           ))}
         </div>

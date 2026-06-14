@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/IS908/optix/internal/eventintel"
@@ -29,6 +30,9 @@ type Handlers struct {
 	Shock     *shockintel.Service // nil → /api/intel/shock/* 回 503
 	Watchlist func(ctx context.Context) ([]string, error)
 	Now       func() time.Time
+
+	shockOverrideMu    sync.Mutex
+	shockOverrideCache *shockOverrideCacheEntry
 }
 
 func (h *Handlers) now() time.Time {

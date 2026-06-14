@@ -1,6 +1,7 @@
 package postclose
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -46,6 +47,13 @@ func TestExtractPostcloseMovesComputesRegularAfterAndCombined(t *testing.T) {
 	if math.Abs(move.CombinedPct-10.0) > 0.001 {
 		t.Fatalf("combined pct = %.4f", move.CombinedPct)
 	}
+	var row map[string]any
+	if err := json.Unmarshal(mustJSON(t, move), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row["source"] != "yfinance" || row["basis"] != "delayed" {
+		t.Fatalf("source/basis = %v/%v, want yfinance/delayed; row=%+v", row["source"], row["basis"], row)
+	}
 }
 
 func TestRankPostcloseMoversSplitsGainersAndLosers(t *testing.T) {
@@ -71,4 +79,13 @@ func TestUniverseNormalizesInteriorWhitespace(t *testing.T) {
 	if !inWL["BRKB"] {
 		t.Fatalf("watchlist map = %#v, want BRKB marked", inWL)
 	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

@@ -20,6 +20,8 @@ describe('PostcloseEarningsCard', () => {
           reports: [
             {
               symbol: 'AAPL',
+              source: 'yfinance',
+              basis: 'delayed',
               event_time: '2026-06-12T20:00:00Z',
               timing: 'postmarket',
               eps_estimate: 1.0,
@@ -38,6 +40,7 @@ describe('PostcloseEarningsCard', () => {
     await waitFor(() => expect(screen.getByText(/AAPL/)).toBeInTheDocument())
     expect(screen.getByText(/beat/)).toBeInTheDocument()
     expect(screen.getByText(/EPS 1.10 vs 1.00/)).toBeInTheDocument()
+    expect(screen.getByText('yfinance · delayed')).toBeInTheDocument()
   })
 
   it('renders warnings and treats null reports as empty degraded data', async () => {

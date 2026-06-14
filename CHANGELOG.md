@@ -12,6 +12,18 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-06-14
+
+Patch release for Market Intel Intraday placeholder cleanup.
+
+### Fixed
+
+- Remove unsupported Intraday placeholder cards for `盘中异动` and `板块热力`
+  from the WebUI until real data-backed cards are implemented.
+- Keep postclose movers stable when the source returns no ranked movers by
+  serializing empty mover lists as arrays and treating null lists as empty in
+  the WebUI.
+
 ## [0.14.4] - 2026-06-14
 
 Patch release for Market Intel view override UX.

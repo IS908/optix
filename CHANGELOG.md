@@ -12,6 +12,19 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.11] - 2026-06-14
+
+Patch release for Market Intel shared helper correctness.
+
+### Fixed
+
+- Share Market Intel symbol normalization across premarket and postclose mover
+  universes so watchlist symbols with interior whitespace, such as `BRK B`,
+  cannot silently land in different view memberships.
+- Share the America/New_York market-clock location through a leaf helper
+  package and align the M7 Shock source interface name with the other Intel
+  packages' `MarketSource` convention.
+
 ## [0.14.10] - 2026-06-14
 
 Patch release for Market Intel correctness, degraded-data contracts, and docs.
@@ -1349,7 +1362,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.10...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.11...HEAD
+[0.14.11]: https://github.com/IS908/optix/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/IS908/optix/compare/v0.14.9...v0.14.10
 [0.14.9]: https://github.com/IS908/optix/compare/v0.14.8...v0.14.9
 [0.14.8]: https://github.com/IS908/optix/compare/v0.14.7...v0.14.8

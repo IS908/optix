@@ -29,4 +29,23 @@ describe('PostcloseMoversCard', () => {
     expect(screen.getByText('-4.94%')).toBeInTheDocument()
     expect(screen.getByText(/盘后 \+4.76%/)).toBeInTheDocument()
   })
+
+  it('treats null mover lists as empty degraded data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          as_of: '',
+          universe_note: '自选股 + 内置精选集',
+          gainers: null,
+          losers: null,
+        }),
+      }),
+    )
+
+    render(<PostcloseMoversCard />)
+
+    await waitFor(() => expect(screen.getByText('收盘后 bar 不足')).toBeInTheDocument())
+  })
 })

@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.7] - 2026-06-14
+
+Patch release for Market Intel M1 Pulse source transparency.
+
 ### Added
 
 - Add per-asset `source` and `basis_note` fields to Market Intel M1 Pulse

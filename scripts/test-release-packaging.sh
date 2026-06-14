@@ -264,10 +264,55 @@ NC
     grep -qx -- "$runtime" "$cwdfile" || fail "skill wrapper did not run optix from runtime cwd"
 }
 
+test_skill_wrapper_routes_market_intel_ibkr_probe() {
+    local runtime="$TMPDIR/runtime-market-intel"
+    local fakebin="$TMPDIR/fake-market-intel-bin"
+    local argsfile="$TMPDIR/market-intel-args.txt"
+    local ncfile="$TMPDIR/market-intel-nc.txt"
+
+    mkdir -p "$runtime/bin" "$runtime/python/.venv/bin" "$runtime/skills/commands/optix" "$runtime/data" "$fakebin"
+    cp "$ROOT/skills/commands/optix/optix.sh" "$runtime/skills/commands/optix/optix.sh"
+    chmod +x "$runtime/skills/commands/optix/optix.sh"
+
+    cat >"$runtime/bin/optix" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >"$argsfile"
+EOF
+    chmod +x "$runtime/bin/optix"
+
+    cat >"$runtime/python/.venv/bin/python" <<'PY'
+#!/usr/bin/env bash
+echo "unexpected python server start" >&2
+exit 99
+PY
+    chmod +x "$runtime/python/.venv/bin/python"
+
+    cat >"$fakebin/nc" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$ncfile"
+exit 1
+EOF
+    chmod +x "$fakebin/nc"
+
+    PATH="$fakebin:$PATH" OPTIX_IB_PORT=4001 \
+        "$runtime/skills/commands/optix/optix.sh" shock --format json >/dev/null 2>"$TMPDIR/shock-stderr.txt"
+    grep -qx -- "-z 127.0.0.1 4001" "$ncfile" || fail "shock should probe IBKR availability"
+    grep -q -- "shock will use yfinance/degraded fallback" "$TMPDIR/shock-stderr.txt" ||
+        fail "shock missing degraded fallback warning"
+    grep -qx -- "shock" "$argsfile" || fail "shock command was not forwarded"
+
+    : >"$ncfile"
+    PATH="$fakebin:$PATH" OPTIX_IB_PORT=4001 \
+        "$runtime/skills/commands/optix/optix.sh" premarket --format json >/dev/null 2>"$TMPDIR/premarket-stderr.txt"
+    test ! -s "$ncfile" || fail "premarket should not probe IBKR"
+    grep -qx -- "premarket" "$argsfile" || fail "premarket command was not forwarded"
+}
+
 test_build_release_includes_configs
 test_release_installer_copies_configs
 test_release_installer_fails_when_optix_engine_install_fails
 test_release_installer_accepts_host_python_when_engine_imports
 test_skill_wrapper_adds_analysis_addr_for_python_commands
+test_skill_wrapper_routes_market_intel_ibkr_probe
 
 echo "release packaging smoke tests passed"

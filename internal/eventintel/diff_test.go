@@ -65,3 +65,28 @@ func TestBuildStatementDiffKeepsFedAbbreviationsInsideSentences(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildStatementDiffInvertsRemovedSentenceSignal(t *testing.T) {
+	now := time.Date(2026, 6, 13, 18, 0, 0, 0, time.UTC)
+	prior := StatementFixture{
+		Title:       "FOMC prior",
+		Source:      "fixture",
+		PublishedAt: now.AddDate(0, -1, 0),
+		Text:        "Inflation remains elevated.",
+	}
+	current := StatementFixture{
+		Title:       "FOMC current",
+		Source:      "fixture",
+		PublishedAt: now,
+		Text:        "Economic activity has expanded at a solid pace.",
+	}
+
+	dto := BuildStatementDiff(prior, current, now)
+
+	if dto.HawkishHits != 0 || dto.DovishHits != 1 {
+		t.Fatalf("removed hawkish sentence should count as dovish, got hawkish=%d dovish=%d", dto.HawkishHits, dto.DovishHits)
+	}
+	if dto.Verdict != "dovish" {
+		t.Fatalf("verdict = %q, want dovish", dto.Verdict)
+	}
+}

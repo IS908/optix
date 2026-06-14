@@ -20,7 +20,7 @@ func BuildSensitivityMatrix(windows map[string][]EventWindowReturn, asOf time.Ti
 		Source: "computed from event-window daily returns",
 		Rows:   []SensitivityRow{},
 	}
-	risk := averageSeries(seriesFor(windows["SPX"]), seriesFor(windows["NDX"]))
+	risk := averageEventSeries(seriesFor(windows["SPX"]), seriesFor(windows["NDX"]))
 	rates := seriesFor(windows["US10Y"])
 	dollar := seriesFor(windows["DXY"])
 	for _, asset := range sensitivityAssets {
@@ -42,56 +42,45 @@ func BuildSensitivityMatrix(windows map[string][]EventWindowReturn, asOf time.Ti
 	return out
 }
 
-func seriesFor(windows []EventWindowReturn) []float64 {
-	out := make([]float64, 0, len(windows))
+func seriesFor(windows []EventWindowReturn) map[string]float64 {
+	out := make(map[string]float64, len(windows))
 	for _, window := range windows {
-		out = append(out, window.EventMovePct)
+		out[dayKey(window.EventDate)] = window.EventMovePct
 	}
 	return out
 }
 
-func averageSeries(series ...[]float64) []float64 {
-	n := 0
+func averageEventSeries(series ...map[string]float64) map[string]float64 {
+	sums := map[string]float64{}
+	counts := map[string]int{}
 	for _, s := range series {
-		if len(s) == 0 {
-			continue
-		}
-		if n == 0 || len(s) < n {
-			n = len(s)
+		for date, value := range s {
+			sums[date] += value
+			counts[date]++
 		}
 	}
-	if n == 0 {
+	if len(sums) == 0 {
 		return nil
 	}
-	out := make([]float64, n)
-	for i := 0; i < n; i++ {
-		var sum float64
-		var count int
-		for _, s := range series {
-			if len(s) > i {
-				sum += s[i]
-				count++
-			}
-		}
-		if count > 0 {
-			out[i] = sum / float64(count)
-		}
+	out := make(map[string]float64, len(sums))
+	for date, sum := range sums {
+		out[date] = sum / float64(counts[date])
 	}
 	return out
 }
 
-func signedAlignment(asset, driver []float64) float64 {
-	n := minInt(len(asset), len(driver))
-	if n == 0 {
+func signedAlignment(asset, driver map[string]float64) float64 {
+	if len(asset) == 0 || len(driver) == 0 {
 		return 0
 	}
 	var sum float64
 	var used int
-	for i := 0; i < n; i++ {
-		if asset[i] == 0 || driver[i] == 0 {
+	for date, assetMove := range asset {
+		driverMove, ok := driver[date]
+		if !ok || assetMove == 0 || driverMove == 0 {
 			continue
 		}
-		sum += sign(asset[i]) * sign(driver[i])
+		sum += sign(assetMove) * sign(driverMove)
 		used++
 	}
 	if used == 0 {
@@ -112,11 +101,4 @@ func sign(v float64) float64 {
 
 func clamp(v, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, v))
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

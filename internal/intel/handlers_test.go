@@ -116,6 +116,21 @@ func TestStateEventOverride(t *testing.T) {
 	}
 }
 
+func TestStateEventOverrideDoesNotTriggerOnPreviousNewYorkEvening(t *testing.T) {
+	eventSvc := eventintel.NewService(staticEventSource{})
+	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC) // 2026-06-09 21:00 ET.
+	eventSvc.Now = func() time.Time { return now }
+	mux := newTestMuxWithHandlers(&Handlers{Event: eventSvc, Now: func() time.Time { return now }})
+
+	rec, body := get(t, mux, "/api/intel/state")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if body["view"] == "event" || body["view_override"] != nil {
+		t.Fatalf("event override should use New-York calendar day, got body=%v", body)
+	}
+}
+
 func TestStateShockOverrideTakesPriorityOverEvent(t *testing.T) {
 	now := time.Date(2026, 6, 10, 15, 0, 0, 0, time.UTC)
 	eventSvc := eventintel.NewService(staticEventSource{})

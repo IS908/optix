@@ -81,19 +81,25 @@ func (s *Service) Overnight(ctx context.Context) (OvernightDTO, error) {
 }
 
 func (s *Service) Gaps(ctx context.Context) (GapsDTO, error) {
-	if s.store == nil {
-		return GapsDTO{}, fmt.Errorf("premarket gap store unavailable")
-	}
-	rows, asOf, err := s.store.GetGapStats(ctx, headlineSymbol)
-	if err != nil {
-		return GapsDTO{}, err
-	}
+	rows := []model.PremarketGapStat{}
+	var asOf time.Time
 	out := GapsDTO{
 		Symbol: headlineSymbol, ByBand: rows, LookbackDays: gapLookbackDays, AsOf: s.now().UTC(),
 	}
-	if out.ByBand == nil {
-		out.ByBand = []model.PremarketGapStat{}
+	if s.store == nil {
+		out.Warnings = append(out.Warnings, "gaps: premarket gap store unavailable")
+		return s.decorateImpliedGap(ctx, out, rows), nil
 	}
+	cachedRows, cachedAsOf, err := s.store.GetGapStats(ctx, headlineSymbol)
+	if err != nil {
+		out.Warnings = append(out.Warnings, "gaps: "+err.Error())
+		return s.decorateImpliedGap(ctx, out, rows), nil
+	}
+	rows, asOf = cachedRows, cachedAsOf
+	if rows == nil {
+		rows = []model.PremarketGapStat{}
+	}
+	out.ByBand = rows
 	stale := len(rows) == 0 || s.now().Sub(asOf) > gapTTL
 	if stale {
 		v, _, _ := s.sf.Do("gaps:"+headlineSymbol, func() (any, error) {
@@ -123,15 +129,22 @@ func (s *Service) Gaps(ctx context.Context) (GapsDTO, error) {
 	if len(rows) == 0 {
 		out.Warnings = append(out.Warnings, "gaps: 历史统计不可用")
 	}
+	return s.decorateImpliedGap(ctx, out, rows), nil
+}
+
+func (s *Service) decorateImpliedGap(ctx context.Context, out GapsDTO, rows []model.PremarketGapStat) GapsDTO {
+	if out.ByBand == nil {
+		out.ByBand = []model.PremarketGapStat{}
+	}
 	quotes, qerr := s.src.Quotes(ctx, []string{"ES"})
 	if qerr != nil {
 		out.Warnings = append(out.Warnings, "gaps: ES 隐含开盘不可用")
-		return out, nil
+		return out
 	}
 	es, ok := quotes["ES"]
 	if !ok {
 		out.Warnings = append(out.Warnings, "gaps: ES 取数缺席")
-		return out, nil
+		return out
 	}
 	dir, band, gap := ImpliedGap(es.ChangePct)
 	out.ImpliedGapPct, out.Direction, out.Band = gap, dir, band
@@ -141,7 +154,7 @@ func (s *Service) Gaps(ctx context.Context) (GapsDTO, error) {
 			break
 		}
 	}
-	return out, nil
+	return out
 }
 
 func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, error) {
@@ -237,10 +250,7 @@ func (s *Service) Sentiment(ctx context.Context) (SentimentDTO, error) {
 
 func (s *Service) Bundle(ctx context.Context, watchlist []string) (BundleDTO, error) {
 	ov, _ := s.Overnight(ctx)
-	gp, err := s.Gaps(ctx)
-	if err != nil {
-		return BundleDTO{}, fmt.Errorf("gaps: %w", err)
-	}
+	gp, _ := s.Gaps(ctx)
 	mv, _ := s.Movers(ctx, watchlist)
 	st, _ := s.Sentiment(ctx)
 	return BundleDTO{Overnight: ov, Gaps: gp, Movers: mv, Sentiment: st}, nil

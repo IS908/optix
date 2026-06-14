@@ -61,8 +61,8 @@ func BuildStatementDiff(prior, current StatementFixture, asOf time.Time) Stateme
 			continue
 		}
 		row := statementSentence(sentence, "removed")
-		out.HawkishHits += hasHit(row.Hits, "hawkish")
-		out.DovishHits += hasHit(row.Hits, "dovish")
+		out.HawkishHits += hasHit(row.Hits, "dovish")
+		out.DovishHits += hasHit(row.Hits, "hawkish")
 		out.Removed = append(out.Removed, row)
 	}
 	out.Verdict = diffVerdict(out.HawkishHits, out.DovishHits)

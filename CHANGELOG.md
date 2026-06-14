@@ -12,6 +12,27 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.10] - 2026-06-14
+
+Patch release for Market Intel correctness, degraded-data contracts, and docs.
+
+### Fixed
+
+- Fix postclose EPS surprise labels when both reported and estimated EPS are
+  negative by using absolute estimate as the percentage denominator.
+- Treat removed hawkish/dovish FOMC statement sentences as the opposite policy
+  signal in Event Diff scoring.
+- Align Event Sensitivity drivers by event date instead of slice position so
+  missing windows cannot cross-wire assets and macro drivers.
+- Keep the premarket gaps card/API on the 200 + warnings contract when the gap
+  stats store or refresh path is unavailable, while preserving empty arrays for
+  `by_band`.
+- Route the agent skill wrapper's Market Intel commands explicitly: `shock`
+  probes IBKR and warns on degraded fallback; broker-free Intel commands do not
+  require IBKR or Python gRPC.
+- Sync README Market Intel commands/routes and release-install version guidance,
+  and refresh stale CHANGELOG compare links.
+
 ## [0.14.9] - 2026-06-14
 
 Patch release for Market Intel roadmap documentation sync.
@@ -1325,7 +1346,18 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.10...HEAD
+[0.14.10]: https://github.com/IS908/optix/compare/v0.14.9...v0.14.10
+[0.14.9]: https://github.com/IS908/optix/compare/v0.14.8...v0.14.9
+[0.14.8]: https://github.com/IS908/optix/compare/v0.14.7...v0.14.8
+[0.14.7]: https://github.com/IS908/optix/compare/v0.14.6...v0.14.7
+[0.14.6]: https://github.com/IS908/optix/compare/v0.14.5...v0.14.6
+[0.14.5]: https://github.com/IS908/optix/compare/v0.14.4...v0.14.5
+[0.14.4]: https://github.com/IS908/optix/compare/v0.14.3...v0.14.4
+[0.14.3]: https://github.com/IS908/optix/compare/v0.14.2...v0.14.3
+[0.14.2]: https://github.com/IS908/optix/compare/v0.14.1...v0.14.2
+[0.14.1]: https://github.com/IS908/optix/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/IS908/optix/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/IS908/optix/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/IS908/optix/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/IS908/optix/compare/v0.11.0...v0.12.0

@@ -39,6 +39,30 @@ func TestBuildSensitivityMatrixScoresSignedDriverAlignment(t *testing.T) {
 	}
 }
 
+func TestBuildSensitivityMatrixAlignsDriversByEventDate(t *testing.T) {
+	now := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	windows := map[string][]EventWindowReturn{
+		"SPX": {
+			{EventDate: d1, EventMovePct: 1},
+			{EventDate: d3, EventMovePct: 1},
+		},
+		"US10Y": {
+			{EventDate: d2, EventMovePct: 1},
+			{EventDate: d3, EventMovePct: -1},
+		},
+	}
+
+	dto := BuildSensitivityMatrix(windows, now)
+
+	spx := findSensitivityRow(t, dto.Rows, "SPX")
+	if spx.RatesUp > -0.99 {
+		t.Fatalf("SPX rates-up = %.2f, want date-aligned -1", spx.RatesUp)
+	}
+}
+
 func findSensitivityRow(t *testing.T, rows []SensitivityRow, id string) SensitivityRow {
 	t.Helper()
 	for _, row := range rows {

@@ -16,7 +16,7 @@ func TestBuildShockFingerprintClassifiesLiquidityAndPolicyStress(t *testing.T) {
 		"UUP":   {ID: "UUP", ChangePct: 1.1, Source: "ibkr", Basis: "realtime", AsOf: now},
 		"USO":   {ID: "USO", ChangePct: 0.6, Source: "ibkr", Basis: "realtime", AsOf: now},
 	}
-	liquidity := LiquidityDTO{Rows: []LiquidityRow{{ID: "HYG", SpreadZ: 3.8, State: "stressed"}}}
+	liquidity := LiquidityDTO{Rows: []LiquidityRow{{ID: "HYG", SpreadRatio: 4.8, State: "stressed"}}}
 
 	dto := BuildShockFingerprint(quotes, liquidity, nil, now)
 

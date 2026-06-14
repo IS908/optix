@@ -18,8 +18,8 @@ func TestBuildRegimeTriggerCriticalOnVIXAndCrossAssetStress(t *testing.T) {
 	}
 	liquidity := LiquidityDTO{
 		Rows: []LiquidityRow{
-			{ID: "SPY", SpreadBps: 8.5, SpreadZ: 3.2, State: "stressed", DepthAvailable: true},
-			{ID: "HYG", SpreadBps: 22, SpreadZ: 4.1, State: "stressed", DepthAvailable: true},
+			{ID: "SPY", SpreadBps: 8.5, SpreadRatio: 4.2, State: "stressed", DepthAvailable: true},
+			{ID: "HYG", SpreadBps: 22, SpreadRatio: 5.1, State: "stressed", DepthAvailable: true},
 		},
 	}
 

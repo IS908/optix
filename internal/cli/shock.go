@@ -75,7 +75,7 @@ func renderShock(b shockintel.BundleDTO) {
 			fmt.Printf("  %-5s missing · %s\n", row.ID, row.Note)
 			continue
 		}
-		fmt.Printf("  %-5s %-8s spread %.1fbp z %.1f depth:%t\n", row.ID, row.State, row.SpreadBps, row.SpreadZ, row.DepthAvailable)
+		fmt.Printf("  %-5s %-8s spread %.1fbp %.1fx normal depth:%t\n", row.ID, row.State, row.SpreadBps, row.SpreadRatio, row.DepthAvailable)
 	}
 }
 

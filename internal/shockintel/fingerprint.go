@@ -46,7 +46,7 @@ func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO, options []O
 	addIf(&row, q, "VIX", 10, true, 30, "VIX up")
 	addIf(&row, q, "HYG", -0.75, false, 25, "credit ETF weak")
 	for _, liq := range liquidity.Rows {
-		if liq.State == "stressed" || liq.State == "severe" || liq.SpreadZ >= 2.5 {
+		if liq.State == "stressed" || liq.State == "severe" || liq.SpreadRatio >= 3.5 {
 			row.Score += 35
 			row.Evidence = append(row.Evidence, liq.ID+" spread/depth stressed")
 			break

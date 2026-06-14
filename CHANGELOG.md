@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.8] - 2026-06-14
+
+Patch release for Market Intel NYSE calendar freshness.
+
 ### Fixed
 
 - Extend the built-in NYSE trading calendar through 2028 so Market Intel state

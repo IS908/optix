@@ -130,7 +130,7 @@ def fetch_bars(symbol: str, timeframe: str, days: int) -> list:
             "high": round(float(row["High"]), 4),
             "low": round(float(row["Low"]), 4),
             "close": round(float(row["Close"]), 4),
-            "volume": int(row["Volume"]),
+            "volume": _safe_int(row["Volume"]),
         })
     return bars
 

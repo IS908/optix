@@ -104,6 +104,14 @@ type brokerPool struct {
 // size ≤ 0 falls back to defaultPoolSize.
 // The pool's background health-checker runs until close() is called.
 func newBrokerPool(size int, factory brokerFactory) *brokerPool {
+	return newBrokerPoolWithClock(size, factory, time.Now)
+}
+
+// newBrokerPoolWithClock is newBrokerPool with an injectable clock. The clock is
+// set before the health-checker goroutine starts (so p.now is written exactly
+// once, never concurrently with a read). Tests use this to drive backoff timing
+// deterministically.
+func newBrokerPoolWithClock(size int, factory brokerFactory, now func() time.Time) *brokerPool {
 	if size <= 0 {
 		size = defaultPoolSize
 	}
@@ -121,7 +129,7 @@ func newBrokerPool(size int, factory brokerFactory) *brokerPool {
 		avail:   avail,
 		ctx:     ctx,
 		cancel:  cancel,
-		now:     time.Now,
+		now:     now,
 	}
 	go p.healthChecker()
 	return p

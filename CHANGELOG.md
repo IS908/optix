@@ -21,7 +21,9 @@ above it.
   attempts could exhaust TWS's 32-connection limit and repeatedly drive a racy
   connect/teardown path in the `scmhub/ibapi` reader (`panic: sync: negative
   WaitGroup counter`), crashing the whole process instead of degrading to
-  delayed data. ([#171](https://github.com/IS908/optix/issues/171))
+  delayed data. The backoff throttles the steady-state unreachable-IBKR storm
+  (the reported case); the underlying WaitGroup race is an upstream `ibapi`
+  defect, so a rapidly flapping gateway can still reach it. ([#171](https://github.com/IS908/optix/issues/171))
 
 ## [0.14.17] - 2026-06-14
 

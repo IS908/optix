@@ -125,9 +125,7 @@ func (s *Store) ListExecutions(ctx context.Context, f JournalFilter) ([]model.Ex
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		e.Currency = model.NormalizeCurrency(e.Currency)
-		if t, err := time.Parse(time.RFC3339, ts); err == nil {
-			e.Time = t
-		}
+		e.Time = parseTimeOrLog(ts, "trade_journal.time")
 		out = append(out, e)
 	}
 	return out, rows.Err()
@@ -152,11 +150,7 @@ func (s *Store) GetSyncState(ctx context.Context) (SyncState, error) {
 	if err != nil {
 		return st, fmt.Errorf("get sync state: %w", err)
 	}
-	if ts != "" {
-		if t, perr := time.Parse(time.RFC3339, ts); perr == nil {
-			st.LastSyncAt = t
-		}
-	}
+	st.LastSyncAt = parseTimeOrLog(ts, "trade_journal_sync_state.last_sync_at")
 	return st, nil
 }
 

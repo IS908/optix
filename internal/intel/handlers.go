@@ -106,6 +106,13 @@ func (h *Handlers) handlePulse(w http.ResponseWriter, r *http.Request) {
 	view := marketdata.View(r.URL.Query().Get("view"))
 	inferred := false
 	if view == "" {
+		// HTTP auto-view: phase clock PLUS override promotion to event/shock via
+		// resolveAutoView (FOMC/CPI day → event, live shock regime → shock).
+		// Deliberately ASYMMETRIC with the CLI `optix pulse` auto-view, which
+		// returns only phase views (premarket/intraday/postclose). Same schema,
+		// different inference — a snapshot's `view` field is not portable across
+		// the two surfaces when view_inferred=true. See cli/pulse.go and the
+		// CLAUDE.md `handlers.go` description. (#163)
 		now := h.now()
 		view = h.resolveAutoView(r.Context(), now, PhaseAt(now)).View
 		inferred = true

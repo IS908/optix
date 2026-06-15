@@ -219,6 +219,40 @@ func TestHitRateExcludesSupersededJudgments(t *testing.T) {
 	}
 }
 
+// TestHitRateExcludesSupersededChain pins the chain case for #174.3:
+// A superseded by B superseded by C → only C contributes to the hit-rate.
+// Without this test a future "optimize the supersedes set" change that only
+// excludes immediate predecessors would silently re-introduce the bug for any
+// 3+ link chain.
+func TestHitRateExcludesSupersededChain(t *testing.T) {
+	regTime := dET(2026, 6, 12, 10, 30)
+	j, store := newJournal(t, fakePrice{price: 100, basis: "realtime"}, regTime)
+	ctx := context.Background()
+
+	a, _ := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "down",
+		ThresholdPct: 0.5, Confidence: 50, ExpiryCheckpoint: "reconcile"})
+	b, _ := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "flat",
+		ThresholdPct: 0.5, Confidence: 60, ExpiryCheckpoint: "reconcile", Supersedes: a.JudgmentID})
+	_, _ = j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "up",
+		ThresholdPct: 0.5, Confidence: 80, ExpiryCheckpoint: "reconcile", Supersedes: b.JudgmentID})
+
+	expAt, _ := CheckpointTime(TradingDate(regTime), "reconcile")
+	_ = store.UpsertPulseBars(ctx, "SPX", []model.OHLCV{
+		{Timestamp: expAt.Add(-5 * time.Minute).UTC(), Close: 101},
+	})
+	j.Now = func() time.Time { return dET(2026, 6, 12, 16, 35) }
+	if _, err := j.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, _ := j.ReadJournal(ctx, TradingDate(regTime))
+	// Only C should score (a single hit). A and B (both superseded somewhere in
+	// the chain) must be excluded from the denominator.
+	if snap.HitRate.Hit != 1 || snap.HitRate.Miss != 0 || snap.HitRate.Rate != 1.0 {
+		t.Errorf("hit_rate = %+v, want 1/0/1.0 (chain-superseded A,B must not score)", snap.HitRate)
+	}
+}
+
 func TestReconcileVoidOnMissingPrice(t *testing.T) {
 	regTime := dET(2026, 6, 12, 10, 30)
 	j, _ := newJournal(t, fakePrice{price: 100, basis: "delayed"}, regTime)

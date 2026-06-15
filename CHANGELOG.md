@@ -12,6 +12,23 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.23] - 2026-06-16
+
+Patch release closing two small trade-journal / webui contract slips (#162).
+
+### Fixed
+
+- `internal/datastore/sqlite/journal.go` `ListExecutions` and `GetSyncState`
+  now route their `time.Parse` through the package's `parseTimeOrLog` helper,
+  matching every other read site (the uniformity #44 was filed to enforce).
+  Future stored-format drift logs a warning rather than silently producing
+  a zero time.
+- `internal/webui/server.go` `writeErrorPage` now sets `Content-Type:
+  text/html; charset=utf-8` BEFORE `WriteHeader`, mirroring the sibling
+  `writeErrorJSON`. Previously the header mutation in `renderPage` ran after
+  the status was already committed, so HTML error pages shipped without an
+  explicit content type. New regression tests cover both helpers.
+
 ## [0.14.22] - 2026-06-16
 
 Patch release for GapFillCard arrow/color consistency.
@@ -1525,7 +1542,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.22...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.23...HEAD
+[0.14.23]: https://github.com/IS908/optix/compare/v0.14.22...v0.14.23
 [0.14.22]: https://github.com/IS908/optix/compare/v0.14.21...v0.14.22
 [0.14.21]: https://github.com/IS908/optix/compare/v0.14.20...v0.14.21
 [0.14.20]: https://github.com/IS908/optix/compare/v0.14.19...v0.14.20

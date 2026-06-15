@@ -163,8 +163,8 @@ optix/
 | `./bin/optix journal list [--symbol] [--since] [--until]` | List persisted executions (auto-syncs; `--no-sync` to skip) |
 | `./bin/optix journal trips [--status open\|closed\|expired]` | FIFO-matched round trips with realized P&L |
 | `./bin/optix journal review [--since] [--until]` | Retrospective summary: win rate, total P&L, by-symbol breakdown |
-| `./bin/optix intel state` | Market Intel clock state and resolved view |
-| `./bin/optix intel narrative\|judge\|reconcile\|journal` | Judgment journal workflow for intraday hypotheses and reconciliation |
+| `./bin/optix intel status` | Market Intel clock state and resolved view |
+| `./bin/optix intel read\|narrative\|judge\|reconcile` | Judgment journal workflow for intraday hypotheses and reconciliation |
 | `./bin/optix premarket [--format json]` | M4 premarket bundle: overnight chain, gap-fill stats, movers, sentiment |
 | `./bin/optix postclose [--format json]` | M5 postclose bundle: earnings, timeline, read-across, after-hours movers |
 | `./bin/optix event [--format json]` | M6 event-day bundle: rates path, FOMC diff, event patterns, sensitivity |

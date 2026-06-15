@@ -218,6 +218,12 @@ func writeErrorJSON(w http.ResponseWriter, msg string, code int) {
 }
 
 func writeErrorPage(w http.ResponseWriter, msg string, code int) {
+	// Set Content-Type BEFORE WriteHeader: header mutations after the status is
+	// written are no-ops in net/http (#162.2). renderPage redundantly sets it
+	// again on its own call path, but for callers that hit writeErrorPage
+	// directly we must commit the type alongside the status. Mirrors the
+	// ordering in writeErrorJSON above.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
 	renderPage(w, "error.html", map[string]any{"Error": msg, "Code": code})
 }

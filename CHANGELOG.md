@@ -12,6 +12,18 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.21] - 2026-06-15
+
+Patch release for README / SKILL.md command-name correctness.
+
+### Fixed
+
+- README command table and `skills/commands/optix/SKILL.md` no longer reference
+  the non-existent `optix intel state` and `optix intel journal` subcommands.
+  Replace with the actually-registered `intel status` and
+  `intel read|narrative|judge|reconcile`. Both old names produced unhelpful
+  parent-help output instead of the documented behavior. ([#161](https://github.com/IS908/optix/issues/161))
+
 ## [0.14.20] - 2026-06-15
 
 Patch release fixing three Market Intel logic bugs (#174).
@@ -1498,7 +1510,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.20...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.21...HEAD
+[0.14.21]: https://github.com/IS908/optix/compare/v0.14.20...v0.14.21
 [0.14.20]: https://github.com/IS908/optix/compare/v0.14.19...v0.14.20
 [0.14.19]: https://github.com/IS908/optix/compare/v0.14.18...v0.14.19
 [0.14.18]: https://github.com/IS908/optix/compare/v0.14.17...v0.14.18

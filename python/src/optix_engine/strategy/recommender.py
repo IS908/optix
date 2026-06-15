@@ -167,7 +167,12 @@ def _generate_candidates(ctx: AnalysisContext, direction: str) -> list[StrategyR
             candidates.append(_build_iron_condor(
                 ctx, put_strike, put_strike - width, call_strike, call_strike + width, T
             ))
-        # Short Strangle (higher risk)
+        # Short Strangle (higher risk) — only for moderate/aggressive.
+        # Note: this gate uses strict equality (not the moderate-default mapping
+        # used in _STRIKE_DISTANCE_BY_RISK), so a typo like "Conservative" falls
+        # through to "non-conservative" and is allowed. The short-strangle
+        # suppression for unknown values is intentionally lenient — strike
+        # selection is the load-bearing risk control.
         if ctx.risk_tolerance != "conservative" and put_strike and call_strike:
             candidates.append(_build_short_strangle(ctx, put_strike, call_strike, T))
 

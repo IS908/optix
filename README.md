@@ -194,7 +194,7 @@ Start with `./bin/optix-server` (default: `http://127.0.0.1:8080`).
 | `/api/journal/review` | JSON: aggregate stats |
 | `POST /api/journal/sync` | Trigger sync from IBKR (502 + `ibkr_ok:false` on broker failure) |
 | `/api/intel/state` | JSON: Market Intel phase, resolved view, and override reason |
-| `/api/intel/pulse` | JSON: multi-asset pulse DTO shared with `optix pulse --format json` |
+| `/api/intel/pulse` | JSON: multi-asset pulse — same DTO schema as `optix pulse --format json`; auto-inferred view differs (HTTP auto-promotes to event/shock on FOMC/CPI days and shock regimes, the CLI does not) |
 | `/api/intel/premarket/{overnight,gaps,movers,sentiment}` | JSON: M4 premarket cards |
 | `/api/intel/postclose/{earnings,timeline,read-across,movers}` | JSON: M5 postclose cards |
 | `/api/intel/event/{rates,diff,patterns,sensitivity}` | JSON: M6 event-day cards |

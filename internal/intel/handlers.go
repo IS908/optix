@@ -380,7 +380,7 @@ func writeError(w http.ResponseWriter, msg string, code int) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// ─── Pulse DTO（从 cli/pulse.go 提升；CLI 与 HTTP 共用，契约编译期钉死）──────
+// ─── Pulse DTO（从 cli/pulse.go 提升；schema 共用、契约编译期钉死；auto-inferred view 不共用，详见 handlePulse / cli/pulse.go #163）──────
 
 // AssetDTO 是 pulse JSON 契约的资产条目。Price 用指针：pct-only 代理输出 null。
 type AssetDTO struct {

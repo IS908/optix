@@ -186,11 +186,12 @@ def _select_put_strike(ctx: AnalysisContext) -> float | None:
     if ctx.oi_put_walls:
         candidates.append(ctx.oi_put_walls[0][0])
 
-    # Delta-based: ~20-30 delta (OTM)
-    # Approximate using IV: strike ≈ price * (1 - delta_target * IV * sqrt(T))
+    # σ-distance heuristic for an OTM short put: larger multiplier → further OTM
+    # (lower assignment probability). Conservative wants safest → largest distance;
+    # aggressive wants closer-to-spot → smallest distance. #173.
     T = ctx.forecast_days / 365.0
-    delta_target = 0.25 if ctx.risk_tolerance == "moderate" else (0.15 if ctx.risk_tolerance == "conservative" else 0.30)
-    iv_based = ctx.current_price * (1 - delta_target * ctx.iv_current * np.sqrt(T) * 2)
+    distance = 0.25 if ctx.risk_tolerance == "moderate" else (0.30 if ctx.risk_tolerance == "conservative" else 0.15)
+    iv_based = ctx.current_price * (1 - distance * ctx.iv_current * np.sqrt(T) * 2)
     candidates.append(round(iv_based))
 
     if not candidates:
@@ -213,9 +214,11 @@ def _select_call_strike(ctx: AnalysisContext) -> float | None:
     if ctx.oi_call_walls:
         candidates.append(ctx.oi_call_walls[0][0])
 
+    # Mirror of _select_put_strike: σ-distance heuristic for an OTM short call.
+    # Conservative → furthest above spot; aggressive → closest. #173.
     T = ctx.forecast_days / 365.0
-    delta_target = 0.25 if ctx.risk_tolerance == "moderate" else (0.15 if ctx.risk_tolerance == "conservative" else 0.30)
-    iv_based = ctx.current_price * (1 + delta_target * ctx.iv_current * np.sqrt(T) * 2)
+    distance = 0.25 if ctx.risk_tolerance == "moderate" else (0.30 if ctx.risk_tolerance == "conservative" else 0.15)
+    iv_based = ctx.current_price * (1 + distance * ctx.iv_current * np.sqrt(T) * 2)
     candidates.append(round(iv_based))
 
     if not candidates:

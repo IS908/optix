@@ -12,6 +12,17 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Sell-side strike selection no longer inverts risk tolerance. Previously the
+  `delta_target` multiplier was `conservative=0.15 / moderate=0.25 /
+  aggressive=0.30`, but the formula uses it as a σ-distance multiplier, so a
+  larger value pushes the strike *further* OTM. Conservative sellers were
+  therefore handed the strike closest to spot (highest assignment probability)
+  while aggressive sellers got the safest one. Conservative now uses 0.30 and
+  aggressive 0.15, so the recommended put/call strikes track risk tolerance in
+  the expected direction. ([#173](https://github.com/IS908/optix/issues/173))
+
 ## [0.14.18] - 2026-06-14
 
 Patch release hardening the IBKR→Yahoo fallback against a process-crashing

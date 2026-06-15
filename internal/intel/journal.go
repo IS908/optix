@@ -209,11 +209,23 @@ func (j *IntelJournal) ReadJournal(ctx context.Context, tradingDate string) (Jou
 		return JournalSnapshot{}, err
 	}
 	// 内联结算 + 命中率
+	// supersededIDs 收集所有被更晚判断显式 Supersedes 的 ID；命中率分母剔除它们
+	//（agent 已撤回的判断不应纳入 falsifiable 评分）。个别判断的 Reconciliation
+	// 仍保留，便于事后取证。#174.3
+	supersededIDs := map[string]bool{}
+	for _, jd := range judgments {
+		if jd.Supersedes != "" {
+			supersededIDs[jd.Supersedes] = true
+		}
+	}
 	hr := HitRate{Window: tradingDate}
 	for i := range judgments {
 		if r, ok := recs[judgments[i].JudgmentID]; ok {
 			rc := r
 			judgments[i].Reconciliation = &rc
+			if supersededIDs[judgments[i].JudgmentID] {
+				continue
+			}
 			switch r.Outcome {
 			case "hit":
 				hr.Hit++

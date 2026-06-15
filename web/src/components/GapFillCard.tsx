@@ -10,8 +10,20 @@ export function GapFillCard() {
     return <LoadingCard title="隐含开盘 + 跳空回补" testId="gaps-loading" />
   }
 
-  const direction = data.direction === 'down' ? '↓' : '↑'
-  const directionClass = data.implied_gap_pct >= 0 ? 'text-emerald-400' : 'text-red-400'
+  // Drive glyph AND color from the same source: the backend's `direction` field
+  // ('up' / 'down' / '' for sub-threshold). Picking the arrow from one source
+  // and the color from `implied_gap_pct`'s sign produced "↑ in red" for
+  // sub-threshold negative gaps (#175); empty `direction` is now rendered as
+  // a neutral "→" in zinc — a distinct "no clear gap" state.
+  let direction = '→'
+  let directionClass = 'text-zinc-400'
+  if (data.direction === 'up') {
+    direction = '↑'
+    directionClass = 'text-emerald-400'
+  } else if (data.direction === 'down') {
+    direction = '↓'
+    directionClass = 'text-red-400'
+  }
   const byBand = data.by_band ?? []
 
   return (

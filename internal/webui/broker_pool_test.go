@@ -542,25 +542,31 @@ func TestPoolFlappingDoesNotClearBackoff(t *testing.T) {
 func TestPoolUnhealthyReconnectGatedByBackoff(t *testing.T) {
 	var created int32
 	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	// Factory always succeeds with a live mock; the test forces the slot into
+	// an unhealthy backoff state directly via field manipulation (avoiding the
+	// release-async race a disconnected-from-factory setup would introduce).
 	pool := newBrokerPoolWithClock(1, func(_ context.Context, _ int64) (broker.Broker, error) {
 		atomic.AddInt32(&created, 1)
-		// Return a disconnected mock so the slot stays unhealthy.
-		return &mockBroker{connected: false}, nil
+		return &liveMock{mockBroker{connected: true}}, nil
 	}, clock.now)
 	defer pool.close()
 
+	// Acquire + release cleanly to lazy-init the slot (1 factory call).
 	conn, err := pool.acquire(context.Background())
-	// acquire-time reconnect returns the disconnected mock; acquire's own
-	// reconnect path is ungated and constructs broker #1 here.
-	if err == nil {
-		pool.release(conn, true)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
 	}
+	pool.release(conn, true)
 	base := atomic.LoadInt32(&created)
 
-	// Force the slot into a backoff window: failCount=2 → nextRetry well in the future.
-	if conn != nil {
-		conn.failCount = 2
-		conn.nextRetry = clock.now().Add(time.Hour)
+	// Force the slot into a backoff window AND make it unhealthy by clearing
+	// the broker's connected state directly. The slot owns its fields here
+	// (it was just released back to avail; nothing else touches it because the
+	// background ticker doesn't fire during this test).
+	conn.failCount = 2
+	conn.nextRetry = clock.now().Add(time.Hour)
+	if mb, ok := conn.b.(*liveMock); ok {
+		mb.drop()
 	}
 
 	// Run several health-checker cycles within the backoff window.

@@ -286,6 +286,13 @@ func (p *brokerPool) release(conn *pooledConn, healthy bool) {
 // reconnect disconnects any existing broker and creates a new one via factory.
 // It is safe to call concurrently with acquire/release because the slot is
 // never in the avail channel while reconnect runs.
+//
+// Resets connectedSince — any prior dwell timer was bound to the broker we just
+// disconnected. The next observation by the background health checker
+// (clearBackoffIfStable) restarts the dwell from that point. Without this,
+// acquire-time and release-async reconnects (which don't go through
+// trackReconnectOutcome) would carry a stale dwell timer across broker
+// replacements, prematurely satisfying the dwell window. #176
 func (p *brokerPool) reconnect(ctx context.Context, conn *pooledConn) error {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -293,6 +300,7 @@ func (p *brokerPool) reconnect(ctx context.Context, conn *pooledConn) error {
 		_ = conn.b.Disconnect()
 		conn.b = nil
 	}
+	conn.connectedSince = time.Time{}
 	b, err := p.factory(ctx, conn.id)
 	if err != nil {
 		return fmt.Errorf("reconnect clientID %d: %w", conn.id, err)

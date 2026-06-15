@@ -56,7 +56,10 @@ func (s *Service) Earnings(ctx context.Context, watchlist []string) (EarningsDTO
 		out.Warnings = append(out.Warnings, "earnings: "+err.Error())
 		return out, nil
 	}
-	out.Reports = BuildEarningsReports(raw, s.now().UTC(), 14*24*time.Hour, 30*24*time.Hour)
+	// 30d past window keeps rows older than the 14d staleAfter threshold so the
+	// Stale flag is reachable (#174.2); 30d future window catches scheduled
+	// upcoming earnings for the same Postclose view.
+	out.Reports = BuildEarningsReports(raw, s.now().UTC(), 30*24*time.Hour, 30*24*time.Hour, 14*24*time.Hour)
 	if len(out.Reports) == 0 {
 		out.Warnings = append(out.Warnings, "earnings: 当前 universe 内无近期财报行")
 	}

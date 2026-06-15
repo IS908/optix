@@ -41,7 +41,11 @@ func BuildTimeline(asOf time.Time, reports []EarningsReport, movers []Mover, edg
 			Severity: "info",
 		})
 	}
-	sort.SliceStable(events, func(i, j int) bool { return events[i].TS.Before(events[j].TS) })
+	// Newest-first: postclose is a "what just happened" view, and the cap below
+	// trims the tail (oldest), so today's mover/read-across rows (TS=asOf) always
+	// survive while the OLDEST earnings rows are dropped. #174.1 — the SPA
+	// renders events.slice(0, 8), so this order also drives what users see first.
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS.After(events[j].TS) })
 	if len(events) > 16 {
 		return events[:16]
 	}

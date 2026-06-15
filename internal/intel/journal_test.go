@@ -169,6 +169,90 @@ func TestReconcileSettlesAndHitRate(t *testing.T) {
 	}
 }
 
+// TestHitRateExcludesSupersededJudgments pins #174.3: a judgment that a later
+// judgment explicitly retracted (Supersedes=<id>) must not be counted in the
+// hit/miss denominator. Without the fix, the superseded judgment's outcome
+// silently skews the falsifiable hit-rate — the core metric the journal exists
+// to produce.
+func TestHitRateExcludesSupersededJudgments(t *testing.T) {
+	regTime := dET(2026, 6, 12, 10, 30)
+	j, store := newJournal(t, fakePrice{price: 100, basis: "realtime"}, regTime)
+	ctx := context.Background()
+	// A first call (wrong direction — will end up as a miss when settled).
+	a, err := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "down",
+		ThresholdPct: 0.5, Confidence: 70, ExpiryCheckpoint: "reconcile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Agent retracts A and replaces it with B (correct direction → hit).
+	b, err := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "up",
+		ThresholdPct: 0.5, Confidence: 80, ExpiryCheckpoint: "reconcile",
+		Supersedes: a.JudgmentID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed price (+1% at reconcile) and run reconcile.
+	expAt, _ := CheckpointTime(TradingDate(regTime), "reconcile")
+	_ = store.UpsertPulseBars(ctx, "SPX", []model.OHLCV{
+		{Timestamp: expAt.Add(-5 * time.Minute).UTC(), Close: 101},
+	})
+	j.Now = func() time.Time { return dET(2026, 6, 12, 16, 35) }
+	if _, err := j.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, _ := j.ReadJournal(ctx, TradingDate(regTime))
+	// Both judgments are still reconciled and visible — A as miss, B as hit.
+	byID := map[string]*model.IntelReconciliation{}
+	for i := range snap.Judgments {
+		byID[snap.Judgments[i].JudgmentID] = snap.Judgments[i].Reconciliation
+	}
+	if r := byID[a.JudgmentID]; r == nil || r.Outcome != "miss" {
+		t.Fatalf("A's individual reconciliation must still settle (preserved for forensics): %+v", r)
+	}
+	if r := byID[b.JudgmentID]; r == nil || r.Outcome != "hit" {
+		t.Fatalf("B's reconciliation must be hit: %+v", r)
+	}
+	// HitRate must exclude A: 1 hit (B), 0 misses, rate 1.0.
+	if snap.HitRate.Hit != 1 || snap.HitRate.Miss != 0 || snap.HitRate.Rate != 1.0 {
+		t.Errorf("hit_rate = %+v, want 1/0/1.0 (superseded judgment must not score)", snap.HitRate)
+	}
+}
+
+// TestHitRateExcludesSupersededChain pins the chain case for #174.3:
+// A superseded by B superseded by C → only C contributes to the hit-rate.
+// Without this test a future "optimize the supersedes set" change that only
+// excludes immediate predecessors would silently re-introduce the bug for any
+// 3+ link chain.
+func TestHitRateExcludesSupersededChain(t *testing.T) {
+	regTime := dET(2026, 6, 12, 10, 30)
+	j, store := newJournal(t, fakePrice{price: 100, basis: "realtime"}, regTime)
+	ctx := context.Background()
+
+	a, _ := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "down",
+		ThresholdPct: 0.5, Confidence: 50, ExpiryCheckpoint: "reconcile"})
+	b, _ := j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "flat",
+		ThresholdPct: 0.5, Confidence: 60, ExpiryCheckpoint: "reconcile", Supersedes: a.JudgmentID})
+	_, _ = j.RegisterJudgment(ctx, JudgmentInput{AssetID: "SPX", Direction: "up",
+		ThresholdPct: 0.5, Confidence: 80, ExpiryCheckpoint: "reconcile", Supersedes: b.JudgmentID})
+
+	expAt, _ := CheckpointTime(TradingDate(regTime), "reconcile")
+	_ = store.UpsertPulseBars(ctx, "SPX", []model.OHLCV{
+		{Timestamp: expAt.Add(-5 * time.Minute).UTC(), Close: 101},
+	})
+	j.Now = func() time.Time { return dET(2026, 6, 12, 16, 35) }
+	if _, err := j.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, _ := j.ReadJournal(ctx, TradingDate(regTime))
+	// Only C should score (a single hit). A and B (both superseded somewhere in
+	// the chain) must be excluded from the denominator.
+	if snap.HitRate.Hit != 1 || snap.HitRate.Miss != 0 || snap.HitRate.Rate != 1.0 {
+		t.Errorf("hit_rate = %+v, want 1/0/1.0 (chain-superseded A,B must not score)", snap.HitRate)
+	}
+}
+
 func TestReconcileVoidOnMissingPrice(t *testing.T) {
 	regTime := dET(2026, 6, 12, 10, 30)
 	j, _ := newJournal(t, fakePrice{price: 100, basis: "delayed"}, regTime)

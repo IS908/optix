@@ -29,7 +29,7 @@ func TestBuildEarningsReportsFiltersWindowAndClassifies(t *testing.T) {
 		},
 	}
 
-	got := BuildEarningsReports(raw, now, 14*24*time.Hour, 30*24*time.Hour)
+	got := BuildEarningsReports(raw, now, 30*24*time.Hour, 30*24*time.Hour, 14*24*time.Hour)
 	if len(got) != 2 {
 		t.Fatalf("reports = %d, want 2: %+v", len(got), got)
 	}
@@ -45,6 +45,33 @@ func TestBuildEarningsReportsFiltersWindowAndClassifies(t *testing.T) {
 	}
 	if row["source"] != "yfinance" || row["basis"] != "delayed" {
 		t.Fatalf("source/basis = %v/%v, want yfinance/delayed; row=%+v", row["source"], row["basis"], row)
+	}
+}
+
+// TestBuildEarningsReportsMarksOldEventsStale pins #174.2: previously the
+// inclusion window's lower bound (now-14d) equalled the Stale threshold (also
+// now-14d), so the Stale flag was structurally unreachable. With a 30d
+// inclusion window and a 14d stale threshold, events between -30d and -14d
+// must appear in the output with Stale=true.
+func TestBuildEarningsReportsMarksOldEventsStale(t *testing.T) {
+	now := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
+	raw := map[string][]marketdata.EarningsEvent{
+		"FRESH": {{Symbol: "FRESH", EventTime: now.Add(-3 * 24 * time.Hour)}},
+		"STALE": {{Symbol: "STALE", EventTime: now.Add(-20 * 24 * time.Hour)}},
+	}
+	got := BuildEarningsReports(raw, now, 30*24*time.Hour, 30*24*time.Hour, 14*24*time.Hour)
+	if len(got) != 2 {
+		t.Fatalf("reports = %d, want 2: %+v", len(got), got)
+	}
+	bySym := map[string]EarningsReport{}
+	for _, r := range got {
+		bySym[r.Symbol] = r
+	}
+	if r := bySym["FRESH"]; r.Stale {
+		t.Errorf("FRESH report (-3d) should not be stale, got %+v", r)
+	}
+	if r, ok := bySym["STALE"]; !ok || !r.Stale {
+		t.Errorf("STALE report (-20d) must appear and be marked stale, got ok=%v report=%+v", ok, r)
 	}
 }
 

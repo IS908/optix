@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.20] - 2026-06-15
+
+Patch release fixing three Market Intel logic bugs (#174).
+
 ### Fixed
 
 - Postclose timeline now keeps the newest 16 events instead of the oldest 16
@@ -1494,7 +1498,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.19...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.20...HEAD
+[0.14.20]: https://github.com/IS908/optix/compare/v0.14.19...v0.14.20
 [0.14.19]: https://github.com/IS908/optix/compare/v0.14.18...v0.14.19
 [0.14.18]: https://github.com/IS908/optix/compare/v0.14.17...v0.14.18
 [0.14.17]: https://github.com/IS908/optix/compare/v0.14.16...v0.14.17

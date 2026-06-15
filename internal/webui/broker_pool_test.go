@@ -412,12 +412,14 @@ func TestBackoffFor(t *testing.T) {
 	}
 }
 
-// TestPoolSwitchbackRecoveryClearsBackoff verifies the recovery half of
+// TestPoolSwitchbackRecoveryStampsConnectedSince verifies the recovery half of
 // trackReconnectOutcome: once a slot reconnects live on IBKR (not on the
-// fallback), its backoff is cleared so normal health probing resumes.
-func TestPoolSwitchbackRecoveryClearsBackoff(t *testing.T) {
-	// First reconnect lands on fallback (grows backoff); the second comes back
-	// live on IBKR (should clear it).
+// fallback), its dwell timer starts so a subsequent stable health cycle can
+// clear the backoff (#176). Note that backoff is NOT cleared on the immediate
+// success; it requires dwellWindow of stable connection — see
+// TestPoolBackoffClearsAfterDwell.
+func TestPoolSwitchbackRecoveryStampsConnectedSince(t *testing.T) {
+	// First reconnect lands on fallback; the second comes back live on IBKR.
 	var calls int32
 	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
 		n := atomic.AddInt32(&calls, 1)
@@ -437,12 +439,143 @@ func TestPoolSwitchbackRecoveryClearsBackoff(t *testing.T) {
 	}
 	pool.release(conn, true)
 
-	// Cycle 1: slot on fallback → switchback fires, lands on fallback again is
-	// not the case here (factory call #2 returns liveMock), so backoff clears.
+	pool.checkIdleConnections()
+	// Switchback fired and produced a live mock. failCount was never grown (no
+	// failure occurred), so it stays 0. connectedSince must now be stamped so
+	// the dwell timer can run on subsequent cycles.
+	if conn.connectedSince.IsZero() {
+		t.Errorf("connectedSince not stamped after live-IBKR reconnect")
+	}
+}
+
+// TestPoolBackoffClearsAfterDwell verifies that a slot's backoff state clears
+// only after it has held a live IBKR connection for ≥ dwellWindow. A single
+// brief success must NOT clear the backoff — that was the flapping-IBKR bug
+// the dwell-time fix addresses (#176).
+func TestPoolBackoffClearsAfterDwell(t *testing.T) {
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	// Factory always returns a live IBKR mock; the test seeds backoff state
+	// directly to skip the failure setup and focus on the dwell semantics.
+	pool := newBrokerPoolWithClock(1, func(_ context.Context, _ int64) (broker.Broker, error) {
+		return &liveMock{mockBroker{connected: true}}, nil
+	}, clock.now)
+	defer pool.close()
+
+	// Warm up: acquire creates the broker.
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	// Seed elevated backoff state — as if a prior failure storm had grown it.
+	conn.failCount = 3
+	conn.nextRetry = clock.now().Add(time.Minute)
+	conn.connectedSince = time.Time{} // not yet observed live
+
+	// First healthy cycle: stamps connectedSince. Backoff NOT yet cleared.
+	pool.checkIdleConnections()
+	if conn.connectedSince.IsZero() {
+		t.Fatalf("first healthy cycle: connectedSince not stamped")
+	}
+	if conn.failCount != 3 || conn.nextRetry.IsZero() {
+		t.Errorf("first cycle (no dwell yet): failCount=%d nextRetry=%v, want 3/non-zero",
+			conn.failCount, conn.nextRetry)
+	}
+
+	// Advance by less than dwellWindow → no clear yet.
+	clock.advance(dwellWindow - time.Second)
+	pool.checkIdleConnections()
+	if conn.failCount != 3 {
+		t.Errorf("within dwell window: failCount=%d, want 3 (not cleared yet)", conn.failCount)
+	}
+
+	// Advance past dwellWindow → backoff clears.
+	clock.advance(2 * time.Second)
 	pool.checkIdleConnections()
 	if conn.failCount != 0 || !conn.nextRetry.IsZero() {
-		t.Fatalf("after recovery to IBKR: failCount=%d nextRetry=%v, want 0/zero",
+		t.Errorf("after dwell elapsed: failCount=%d nextRetry=%v, want 0/zero",
 			conn.failCount, conn.nextRetry)
+	}
+}
+
+// TestPoolFlappingDoesNotClearBackoff verifies the load-bearing claim of #176:
+// a flapping IBKR (handshake-then-drop) cannot use a single brief success to
+// reset the backoff growth. The slot must stay stable for ≥ dwellWindow before
+// the backoff relaxes.
+func TestPoolFlappingDoesNotClearBackoff(t *testing.T) {
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	pool := newBrokerPoolWithClock(1, func(_ context.Context, _ int64) (broker.Broker, error) {
+		return &liveMock{mockBroker{connected: true}}, nil
+	}, clock.now)
+	defer pool.close()
+
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	// Seed elevated backoff state.
+	conn.failCount = 3
+	conn.nextRetry = clock.now().Add(time.Minute)
+
+	// Healthy cycle: stamps connectedSince (no clear yet — dwell not elapsed).
+	pool.checkIdleConnections()
+
+	// Simulate flap — the connection drops before dwell elapses. We mimic this
+	// by zeroing connectedSince (what trackReconnectOutcome does after a failed
+	// reconnect) without advancing the clock past dwellWindow.
+	conn.connectedSince = time.Time{}
+
+	// Subsequent healthy cycle (still within what would have been the dwell):
+	// connectedSince is re-stamped fresh — the dwell timer restarts. Backoff
+	// must NOT have cleared.
+	clock.advance(dwellWindow / 2)
+	pool.checkIdleConnections()
+	if conn.failCount != 3 {
+		t.Errorf("after flap reset: failCount=%d, want 3 (not cleared by brief success)", conn.failCount)
+	}
+}
+
+// TestPoolUnhealthyReconnectGatedByBackoff verifies the second half of #176:
+// the genuine-unhealthy reconnect path now respects the backoff schedule, so a
+// repeatedly-failing ping doesn't drive a reconnect every 30s cycle.
+func TestPoolUnhealthyReconnectGatedByBackoff(t *testing.T) {
+	var created int32
+	clock := newTestClock(time.Unix(1_700_000_000, 0))
+	// Factory always succeeds with a live mock; the test forces the slot into
+	// an unhealthy backoff state directly via field manipulation (avoiding the
+	// release-async race a disconnected-from-factory setup would introduce).
+	pool := newBrokerPoolWithClock(1, func(_ context.Context, _ int64) (broker.Broker, error) {
+		atomic.AddInt32(&created, 1)
+		return &liveMock{mockBroker{connected: true}}, nil
+	}, clock.now)
+	defer pool.close()
+
+	// Acquire + release cleanly to lazy-init the slot (1 factory call).
+	conn, err := pool.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	pool.release(conn, true)
+	base := atomic.LoadInt32(&created)
+
+	// Force the slot into a backoff window AND make it unhealthy by clearing
+	// the broker's connected state directly. The slot owns its fields here
+	// (it was just released back to avail; nothing else touches it because the
+	// background ticker doesn't fire during this test).
+	conn.failCount = 2
+	conn.nextRetry = clock.now().Add(time.Hour)
+	if mb, ok := conn.b.(*liveMock); ok {
+		mb.drop()
+	}
+
+	// Run several health-checker cycles within the backoff window.
+	for i := 0; i < 5; i++ {
+		pool.checkIdleConnections()
+		clock.advance(healthCheckInterval)
+	}
+	if got := atomic.LoadInt32(&created) - base; got != 0 {
+		t.Errorf("within backoff window: %d unhealthy reconnects, want 0 (gate must block them)", got)
 	}
 }
 

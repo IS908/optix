@@ -12,6 +12,11 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.19] - 2026-06-15
+
+Patch release fixing an inverted risk-tolerance dial in sell-side strike
+selection.
+
 ### Fixed
 
 - Sell-side strike selection no longer inverts risk tolerance. Previously the
@@ -21,7 +26,9 @@ above it.
   therefore handed the strike closest to spot (highest assignment probability)
   while aggressive sellers got the safest one. Conservative now uses 0.30 and
   aggressive 0.15, so the recommended put/call strikes track risk tolerance in
-  the expected direction. ([#173](https://github.com/IS908/optix/issues/173))
+  the expected direction. Unknown risk-tolerance strings now default to
+  `moderate` (matching the convention in `_passes_filters`). Updates the user
+  manual and three stale docstrings. ([#173](https://github.com/IS908/optix/issues/173))
 
 ## [0.14.18] - 2026-06-14
 
@@ -1466,7 +1473,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.18...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.19...HEAD
+[0.14.19]: https://github.com/IS908/optix/compare/v0.14.18...v0.14.19
 [0.14.18]: https://github.com/IS908/optix/compare/v0.14.17...v0.14.18
 [0.14.17]: https://github.com/IS908/optix/compare/v0.14.16...v0.14.17
 [0.14.16]: https://github.com/IS908/optix/compare/v0.14.15...v0.14.16

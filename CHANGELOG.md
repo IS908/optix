@@ -12,6 +12,29 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.25] - 2026-06-16
+
+Patch release hardening the IBKR reconnect logic against a flapping gateway
+(#176, follow-up to v0.14.18).
+
+### Fixed
+
+- Broker pool now uses a per-slot dwell timer (`connectedSince`) and a
+  `dwellWindow = 2 × healthCheckInterval` before clearing reconnect backoff.
+  A single brief success no longer resets the failure-count growth that
+  v0.14.18 introduced — the slot must hold a live IBKR connection for the
+  dwell window before backoff relaxes. Without this, a flapping gateway
+  (handshake-then-drop) could perpetually reset the backoff and drive
+  reconnects every 30s through the racy `scmhub/ibapi` connect/teardown
+  path.
+- The genuine-unhealthy reconnect path in the background health checker is
+  now also gated by `nextRetry` (the same gate the v0.14.18 switchback path
+  already had). `acquire`'s on-demand reconnect remains ungated so
+  user-facing requests still get a connection immediately. `p.reconnect`
+  itself zeroes `connectedSince` whenever it replaces a broker, so acquire
+  and release-async paths can't carry a stale dwell timer across broker
+  replacements.
+
 ## [0.14.24] - 2026-06-16
 
 Patch release narrowing the CLI vs HTTP `pulse` parity claim (#163).
@@ -1557,7 +1580,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.24...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.25...HEAD
+[0.14.25]: https://github.com/IS908/optix/compare/v0.14.24...v0.14.25
 [0.14.24]: https://github.com/IS908/optix/compare/v0.14.23...v0.14.24
 [0.14.23]: https://github.com/IS908/optix/compare/v0.14.22...v0.14.23
 [0.14.22]: https://github.com/IS908/optix/compare/v0.14.21...v0.14.22

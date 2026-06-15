@@ -12,6 +12,21 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.22] - 2026-06-16
+
+Patch release for GapFillCard arrow/color consistency.
+
+### Fixed
+
+- GapFillCard headline glyph and color are now driven from the same source
+  (`data.direction`). Previously the glyph came from the direction string
+  (`'down'` → ↓, anything else → ↑) and the color from the sign of
+  `implied_gap_pct`, so a sub-threshold negative gap (backend sets
+  `direction=''` when `|gapPct| < 0.25%`) rendered as ↑ in red — glyph and
+  color visibly contradicted. Empty direction now renders as a neutral
+  → in zinc, matching the "flat" convention from `IntelJournalPanel`.
+  ([#175](https://github.com/IS908/optix/issues/175))
+
 ## [0.14.21] - 2026-06-15
 
 Patch release for README / SKILL.md command-name correctness.
@@ -1510,7 +1525,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.21...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.22...HEAD
+[0.14.22]: https://github.com/IS908/optix/compare/v0.14.21...v0.14.22
 [0.14.21]: https://github.com/IS908/optix/compare/v0.14.20...v0.14.21
 [0.14.20]: https://github.com/IS908/optix/compare/v0.14.19...v0.14.20
 [0.14.19]: https://github.com/IS908/optix/compare/v0.14.18...v0.14.19

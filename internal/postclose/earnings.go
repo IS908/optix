@@ -9,9 +9,15 @@ import (
 	"github.com/IS908/optix/internal/marketdata"
 )
 
-func BuildEarningsReports(raw map[string][]marketdata.EarningsEvent, now time.Time, past, future time.Duration) []EarningsReport {
+// BuildEarningsReports filters raw earnings events into the [now-past, now+future]
+// window and flags rows older than staleAfter (relative to now) as Stale. past
+// must be > staleAfter for the Stale flag to be reachable; the legacy
+// past == staleAfter == 14d made Stale structurally unreachable (every row that
+// survived the filter was newer than the threshold). #174.2
+func BuildEarningsReports(raw map[string][]marketdata.EarningsEvent, now time.Time, past, future, staleAfter time.Duration) []EarningsReport {
 	start := now.Add(-past)
 	end := now.Add(future)
+	staleBefore := now.Add(-staleAfter)
 	out := []EarningsReport{}
 	for sym, rows := range raw {
 		for _, r := range rows {
@@ -32,7 +38,7 @@ func BuildEarningsReports(raw map[string][]marketdata.EarningsEvent, now time.Ti
 				EPSReported:    r.EPSReported,
 				EPSSurprisePct: r.EPSSurprisePct,
 				SurpriseLabel:  surpriseLabel(r.EPSReported, r.EPSEstimate, r.EPSSurprisePct),
-				Stale:          r.EventTime.Before(now.Add(-14 * 24 * time.Hour)),
+				Stale:          r.EventTime.Before(staleBefore),
 			})
 		}
 	}

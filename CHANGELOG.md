@@ -12,6 +12,27 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Postclose timeline now keeps the newest 16 events instead of the oldest 16
+  (sort descending before truncating), so today's after-hours movers and
+  read-across edges — the whole point of a "what just happened" view — always
+  survive when older earnings rows push total events past the cap. The SPA
+  card also leads with today's events as a side-effect, since it renders
+  `events.slice(0, 8)`. ([#174.1](https://github.com/IS908/optix/issues/174))
+- Postclose earnings `Stale` flag is now reachable. The inclusion window's
+  lower bound (`now-past`, with `past=14d`) previously equalled the hardcoded
+  Stale threshold (`now-14d`), so every row that survived the filter was
+  newer than the threshold and the flag always serialized `false`. Add a
+  `staleAfter` parameter to `BuildEarningsReports`, widen the production
+  window to 30 days, and keep the 14-day Stale threshold. Rows between -30d
+  and -14d now appear with `Stale=true`. ([#174.2](https://github.com/IS908/optix/issues/174))
+- Judgment-journal hit-rate no longer scores judgments the agent explicitly
+  retracted. When a later judgment carries `Supersedes=<earlier_id>`, the
+  earlier judgment is now excluded from the hit/miss denominator (its
+  individual `Reconciliation` row is still attached for forensics — only the
+  aggregate metric changes). ([#174.3](https://github.com/IS908/optix/issues/174))
+
 ## [0.14.19] - 2026-06-15
 
 Patch release fixing an inverted risk-tolerance dial in sell-side strike

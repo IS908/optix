@@ -89,3 +89,22 @@ def test_conservative_call_is_furthest_otm() -> None:
     assert cons > aggr, (
         f"conservative call ({cons}) must be strictly above aggressive ({aggr})"
     )
+
+
+@pytest.mark.parametrize("unknown_risk", ["", "balanced", "extreme"])
+def test_unknown_risk_tolerance_falls_back_to_moderate(unknown_risk: str) -> None:
+    """An unrecognised risk_tolerance must degrade to moderate, matching the
+    `_passes_filters` convention. Previously the ternary defaulted to aggressive
+    (closest-to-spot, riskiest strike), which a typo silently inherits."""
+    unknown_put = _select_put_strike(_bare_ctx(unknown_risk))
+    moderate_put = _select_put_strike(_bare_ctx("moderate"))
+    assert unknown_put == moderate_put, (
+        f"unknown risk_tolerance {unknown_risk!r} put strike {unknown_put} "
+        f"should match moderate's {moderate_put}"
+    )
+    unknown_call = _select_call_strike(_bare_ctx(unknown_risk))
+    moderate_call = _select_call_strike(_bare_ctx("moderate"))
+    assert unknown_call == moderate_call, (
+        f"unknown risk_tolerance {unknown_risk!r} call strike {unknown_call} "
+        f"should match moderate's {moderate_call}"
+    )

@@ -924,14 +924,14 @@ candidates.append(support_levels[0]["price"])
 if oi_put_walls:
     candidates.append(oi_put_walls[0][0])
 
-# 来源3：基于 Delta 目标估算
-delta_target = {
-    "conservative": 0.15,
+# 来源3：σ-距离倍数（distance 越大 → 越远 OTM → 分配概率越低）
+distance = {
+    "conservative": 0.30,   # 离现价最远，最安全
     "moderate":     0.25,
-    "aggressive":   0.30,
+    "aggressive":   0.15,   # 离现价最近，分配概率最高
 }[risk_tolerance]
 
-iv_based = current_price × (1 - delta_target × IV × √T × 2)
+iv_based = current_price × (1 - distance × IV × √T × 2)
 candidates.append(iv_based)
 
 # 取中位数，然后四舍五入到最近行权价步长
@@ -948,8 +948,8 @@ candidates.append(resistance_levels[0]["price"])
 if oi_call_walls:
     candidates.append(oi_call_walls[0][0])
 
-# 来源3：基于 Delta 目标估算
-iv_based = current_price × (1 + delta_target × IV × √T × 2)
+# 来源3：σ-距离倍数（同看跌侧的 distance，符号取 +）
+iv_based = current_price × (1 + distance × IV × √T × 2)
 candidates.append(iv_based)
 
 call_strike = round(median(candidates) / step) × step

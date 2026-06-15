@@ -3,7 +3,7 @@
 Decision flow:
 1. IV environment assessment → is selling premium worthwhile?
 2. Direction judgment → which strategy type?
-3. Strike selection → based on support/resistance + OI walls + delta targets
+3. Strike selection → based on support/resistance + OI walls + σ-distance heuristic
 4. Filtering + scoring → rank candidates
 5. Output top 3
 """
@@ -174,8 +174,18 @@ def _generate_candidates(ctx: AnalysisContext, direction: str) -> list[StrategyR
     return [c for c in candidates if c is not None]
 
 
+# σ-distance multiplier per risk tolerance for the short-strike IV heuristic.
+# Larger → further OTM → lower assignment probability. Unknown values default to
+# "moderate" to match the convention in _passes_filters. #173.
+_STRIKE_DISTANCE_BY_RISK = {
+    "conservative": 0.30,
+    "moderate":     0.25,
+    "aggressive":   0.15,
+}
+
+
 def _select_put_strike(ctx: AnalysisContext) -> float | None:
-    """Select optimal put strike: support level + OI wall + delta target."""
+    """Select optimal put strike: support level + OI wall + σ-distance heuristic."""
     candidates = []
 
     # Nearest strong support
@@ -190,7 +200,7 @@ def _select_put_strike(ctx: AnalysisContext) -> float | None:
     # (lower assignment probability). Conservative wants safest → largest distance;
     # aggressive wants closer-to-spot → smallest distance. #173.
     T = ctx.forecast_days / 365.0
-    distance = 0.25 if ctx.risk_tolerance == "moderate" else (0.30 if ctx.risk_tolerance == "conservative" else 0.15)
+    distance = _STRIKE_DISTANCE_BY_RISK.get(ctx.risk_tolerance, _STRIKE_DISTANCE_BY_RISK["moderate"])
     iv_based = ctx.current_price * (1 - distance * ctx.iv_current * np.sqrt(T) * 2)
     candidates.append(round(iv_based))
 
@@ -205,7 +215,7 @@ def _select_put_strike(ctx: AnalysisContext) -> float | None:
 
 
 def _select_call_strike(ctx: AnalysisContext) -> float | None:
-    """Select optimal call strike: resistance level + OI wall + delta target."""
+    """Select optimal call strike: resistance level + OI wall + σ-distance heuristic."""
     candidates = []
 
     if ctx.resistance_levels:
@@ -217,7 +227,7 @@ def _select_call_strike(ctx: AnalysisContext) -> float | None:
     # Mirror of _select_put_strike: σ-distance heuristic for an OTM short call.
     # Conservative → furthest above spot; aggressive → closest. #173.
     T = ctx.forecast_days / 365.0
-    distance = 0.25 if ctx.risk_tolerance == "moderate" else (0.30 if ctx.risk_tolerance == "conservative" else 0.15)
+    distance = _STRIKE_DISTANCE_BY_RISK.get(ctx.risk_tolerance, _STRIKE_DISTANCE_BY_RISK["moderate"])
     iv_based = ctx.current_price * (1 + distance * ctx.iv_current * np.sqrt(T) * 2)
     candidates.append(round(iv_based))
 

@@ -30,7 +30,10 @@ proxies, FX, yields and vol family via free delayed sources (yfinance).
 The view defaults to the shared market phase clock (America/New_York):
 premarket / intraday / postclose. Outside trading hours (overnight /
 weekends / NYSE holidays) the view maps to postclose — the last session's
-frozen snapshot. event/shock views are reachable only via --view. Data
+frozen snapshot. event/shock views are reachable only via --view (this
+CLI's auto-view is intentionally narrower than the HTTP /api/intel/pulse
+endpoint, which also auto-promotes to event/shock on FOMC/CPI days and
+shock regimes). Data
 basis (delayed / approx / frozen), source and basis_note are labeled per
 asset. M1 intentionally keeps FRED/CBOE official historical feeds out of the
 30s Pulse loop; yield and proxy rows say when they are yfinance approximations.
@@ -48,6 +51,13 @@ snapshot.`,
 			view := marketdata.View(viewFlag)
 			inferred := false
 			if viewFlag == "" {
+				// CLI auto-view: phase clock only — premarket / intraday / postclose.
+				// Deliberately ASYMMETRIC with HTTP handlePulse, which also auto-promotes
+				// to event/shock via resolveAutoView. Reaching event/shock from the CLI
+				// requires --view explicitly; same schema, different inference. The Long
+				// help above states this, and CLAUDE.md `handlers.go` description spells
+				// out the divergence so JSON consumers don't expect a portable `view`
+				// field across the two surfaces when view_inferred=true. (#163)
 				view = intel.ViewFor(intel.PhaseAt(time.Now()))
 				inferred = true
 			} else if !intel.ValidView(view) {

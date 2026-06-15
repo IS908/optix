@@ -12,6 +12,21 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.24] - 2026-06-16
+
+Patch release narrowing the CLI vs HTTP `pulse` parity claim (#163).
+
+### Fixed
+
+- CLAUDE.md, README, and `optix pulse --help` no longer imply CLI and HTTP
+  `/api/intel/pulse` share auto-view inference. They share the schema, but
+  HTTP auto-promotes to `event` on FOMC/CPI days and `shock` on live shock
+  regimes via `resolveAutoView`, while the CLI returns only phase views
+  (`premarket | intraday | postclose`) from `view_inferred=true`. So a
+  snapshot's `view` field is not portable across the two surfaces. Code
+  comments at the two auto-view branches cross-reference each other so the
+  divergence is discoverable from either side. No behavior change.
+
 ## [0.14.23] - 2026-06-16
 
 Patch release closing two small trade-journal / webui contract slips (#162).
@@ -1542,7 +1557,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.23...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.24...HEAD
+[0.14.24]: https://github.com/IS908/optix/compare/v0.14.23...v0.14.24
 [0.14.23]: https://github.com/IS908/optix/compare/v0.14.22...v0.14.23
 [0.14.22]: https://github.com/IS908/optix/compare/v0.14.21...v0.14.22
 [0.14.21]: https://github.com/IS908/optix/compare/v0.14.20...v0.14.21

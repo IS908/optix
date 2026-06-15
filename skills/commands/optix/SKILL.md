@@ -235,9 +235,10 @@ bash bin/optix.sh postclose --format json
 ```
 
 Agents should read `postclose --format json` at the 16:30 对账 / 收盘后
-checkpoint. It complements `intel journal` reconciliation: `postclose` supplies
-structured market facts; the agent writes narrative and judgments through
-`optix intel`.
+checkpoint. It complements `intel reconcile`: `postclose` supplies structured
+market facts; the agent writes narrative and judgments through `optix intel`
+(`narrative` / `judge`), reads them with `intel read`, and settles them with
+`intel reconcile`.
 
 ### Event View (事件日四卡 / M6)
 

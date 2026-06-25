@@ -4,6 +4,8 @@ import { OvernightChainCard } from '../components/OvernightChainCard'
 import { GapFillCard } from '../components/GapFillCard'
 import { PremarketMoversCard } from '../components/PremarketMoversCard'
 import { SentimentCard } from '../components/SentimentCard'
+import { IntradayMoversCard } from '../components/IntradayMoversCard'
+import { IntradaySectorHeatmapCard } from '../components/IntradaySectorHeatmapCard'
 import { PostcloseEarningsCard } from '../components/PostcloseEarningsCard'
 import { PostcloseTimelineCard } from '../components/PostcloseTimelineCard'
 import { ReadAcrossCard } from '../components/ReadAcrossCard'
@@ -31,6 +33,10 @@ function liveComponent(live: SlotDef['live']) {
       return <PremarketMoversCard />
     case 'sentiment':
       return <SentimentCard />
+    case 'intraday-movers':
+      return <IntradayMoversCard />
+    case 'intraday-sector-heatmap':
+      return <IntradaySectorHeatmapCard />
     case 'postclose-earnings':
       return <PostcloseEarningsCard />
     case 'postclose-timeline':

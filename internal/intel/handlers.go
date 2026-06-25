@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/eventintel"
+	"github.com/IS908/optix/internal/intraday"
 	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
@@ -24,6 +25,7 @@ type PulseProvider interface {
 type Handlers struct {
 	Pulse     PulseProvider
 	Journal   *IntelJournal       // nil → /api/intel/journal 回 503
+	Intraday  *intraday.Service   // nil → /api/intel/intraday/* 回 503
 	Premarket *premarket.Service  // nil → /api/intel/premarket/* 回 503
 	Postclose *postclose.Service  // nil → /api/intel/postclose/* 回 503
 	Event     *eventintel.Service // nil → /api/intel/event/* 回 503
@@ -47,6 +49,8 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/intel/state", h.handleState)
 	mux.HandleFunc("GET /api/intel/pulse", h.handlePulse)
 	mux.HandleFunc("GET /api/intel/journal", h.handleJournal)
+	mux.HandleFunc("GET /api/intel/intraday/movers", h.handleIntradayMovers)
+	mux.HandleFunc("GET /api/intel/intraday/sector-heatmap", h.handleIntradaySectorHeatmap)
 	mux.HandleFunc("GET /api/intel/premarket/overnight", h.handlePMOvernight)
 	mux.HandleFunc("GET /api/intel/premarket/gaps", h.handlePMGaps)
 	mux.HandleFunc("GET /api/intel/premarket/movers", h.handlePMMovers)
@@ -196,6 +200,32 @@ func (h *Handlers) handlePMSentiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dto, err := h.Premarket.Sentiment(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleIntradayMovers(w http.ResponseWriter, r *http.Request) {
+	if h.Intraday == nil {
+		writeError(w, "intraday service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Intraday.Movers(r.Context(), h.watchlist(r.Context()))
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, dto)
+}
+
+func (h *Handlers) handleIntradaySectorHeatmap(w http.ResponseWriter, r *http.Request) {
+	if h.Intraday == nil {
+		writeError(w, "intraday service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	dto, err := h.Intraday.SectorHeatmap(r.Context(), h.watchlist(r.Context()))
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

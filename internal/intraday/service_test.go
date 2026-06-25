@@ -116,6 +116,22 @@ func TestMoversDegradesWithWarningsAndNonNilSlices(t *testing.T) {
 	}
 }
 
+func TestMoversWarnsWhenSourceReturnsNoQuotesOrBars(t *testing.T) {
+	svc := NewService(fakeSource{quotes: map[string]Quote{}, bars: map[string][]model.OHLCV{}}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Gainers == nil || dto.Losers == nil {
+		t.Fatalf("movers arrays must be non-nil: %+v", dto)
+	}
+	if len(dto.Warnings) < 2 {
+		t.Fatalf("warnings = %#v, want empty quote/bar warnings", dto.Warnings)
+	}
+}
+
 func TestSectorHeatmapAggregatesMoverRows(t *testing.T) {
 	svc := NewService(fakeSource{
 		quotes: map[string]Quote{

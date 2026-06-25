@@ -144,7 +144,7 @@ func (s *Service) loadMarketData(ctx context.Context, symbols []string) (map[str
 		if err != nil {
 			return nil, nil, []string{fmt.Sprintf("intraday source unavailable: %v", err)}
 		}
-		return quotes, bars, nil
+		return quotes, bars, emptyDataWarnings(sourceName(s.src), quotes, bars)
 	}
 	quotes, err := s.src.Quotes(loadCtx, symbols)
 	if err != nil {
@@ -154,7 +154,18 @@ func (s *Service) loadMarketData(ctx context.Context, symbols []string) (map[str
 	if err != nil {
 		return nil, nil, []string{fmt.Sprintf("bar source unavailable: %v", err)}
 	}
-	return quotes, bars, nil
+	return quotes, bars, emptyDataWarnings(sourceName(s.src), quotes, bars)
+}
+
+func emptyDataWarnings(source string, quotes map[string]Quote, bars map[string][]model.OHLCV) []string {
+	var warnings []string
+	if len(quotes) == 0 {
+		warnings = append(warnings, fmt.Sprintf("intraday quotes empty from %s", source))
+	}
+	if len(bars) == 0 {
+		warnings = append(warnings, fmt.Sprintf("intraday bars empty from %s", source))
+	}
+	return warnings
 }
 
 func sessionOpenAndVolume(bars []model.OHLCV, asOf time.Time) (float64, int64, bool) {

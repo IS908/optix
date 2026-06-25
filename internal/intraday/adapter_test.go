@@ -55,6 +55,13 @@ func TestBrokerSourceAnnotatesActualQuoteSource(t *testing.T) {
 	}
 }
 
+func TestBrokerSourceKeepsPreferredSourceLabel(t *testing.T) {
+	src := NewBrokerSourceWithConnector(nil, "ibkr-preferred", "realtime")
+	if src.SourceName() != "ibkr-preferred" {
+		t.Fatalf("source = %s, want ibkr-preferred", src.SourceName())
+	}
+}
+
 func TestBrokerSourceBarsDelegateToBroker(t *testing.T) {
 	want := []model.OHLCV{{Timestamp: time.Date(2026, 6, 25, 13, 30, 0, 0, time.UTC), Open: 100}}
 	src := NewBrokerSource(&fakeBroker{source: "IBKR", bars: want}, "", "")

@@ -140,6 +140,8 @@ func barsFromBroker(ctx context.Context, b broker.Broker, symbols []string, time
 func normalizeSourceName(value string) string {
 	low := strings.ToLower(strings.TrimSpace(value))
 	switch {
+	case low == "ibkr-preferred":
+		return "ibkr-preferred"
 	case strings.Contains(low, "ibkr") || strings.Contains(low, "interactive brokers"):
 		return "ibkr"
 	case strings.Contains(low, "yahoo") || strings.Contains(low, "yfinance"):

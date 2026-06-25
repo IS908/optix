@@ -12,6 +12,20 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.26] - 2026-06-26
+
+Patch release adding real Market Intel intraday cards for #145.
+
+### Added
+
+- Add IBKR-first `/api/intel/intraday/movers` and
+  `/api/intel/intraday/sector-heatmap` endpoints with explicit source/basis
+  metadata, warning-aware degraded states, and watchlist plus curated liquid
+  symbol coverage.
+- Add Market Intel WebUI intraday movers and sector heatmap cards so the
+  intraday view now renders real data surfaces instead of leaving those
+  capabilities absent.
+
 ## [0.14.25] - 2026-06-16
 
 Patch release hardening the IBKR reconnect logic against a flapping gateway
@@ -1580,7 +1594,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.25...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.26...HEAD
+[0.14.26]: https://github.com/IS908/optix/compare/v0.14.25...v0.14.26
 [0.14.25]: https://github.com/IS908/optix/compare/v0.14.24...v0.14.25
 [0.14.24]: https://github.com/IS908/optix/compare/v0.14.23...v0.14.24
 [0.14.23]: https://github.com/IS908/optix/compare/v0.14.22...v0.14.23

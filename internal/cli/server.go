@@ -13,7 +13,9 @@ import (
 	"github.com/IS908/optix/internal/datastore/sqlite"
 	"github.com/IS908/optix/internal/eventintel"
 	"github.com/IS908/optix/internal/intel"
+	"github.com/IS908/optix/internal/intraday"
 	"github.com/IS908/optix/internal/marketdata"
+	"github.com/IS908/optix/internal/portfolio"
 	"github.com/IS908/optix/internal/postclose"
 	"github.com/IS908/optix/internal/premarket"
 	"github.com/IS908/optix/internal/scheduler"
@@ -138,9 +140,19 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("postclose service: %w", err)
 			}
+			intradaySectors, intradaySectorSource, err := portfolio.ResolveSectorMap("")
+			if err != nil {
+				return fmt.Errorf("intraday sector map: %w", err)
+			}
+			intradaySvc := intraday.NewService(
+				intraday.NewIBKRPreferredSource(ibHost, ibPort, pythonBin),
+				intradaySectors,
+				intradaySectorSource,
+			)
 			srv.AttachIntel(&intel.Handlers{
 				Pulse:     intelPulse,
 				Journal:   intel.NewIntelJournal(store, intelPulse),
+				Intraday:  intradaySvc,
 				Premarket: premarket.NewService(premarket.NewMarketAdapter(pythonBin), store),
 				Postclose: postcloseSvc,
 				Event:     eventintel.NewDefaultService(pythonBin),

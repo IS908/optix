@@ -16,6 +16,7 @@ const (
 	moverLimit      = 8
 	barInterval     = "5 mins"
 	barLookback     = 8 * time.Hour
+	defaultLoadTTL  = 8 * time.Second
 	sessionOpenHour = 9
 	sessionOpenMin  = 30
 )
@@ -35,6 +36,7 @@ type Service struct {
 	src          MarketSource
 	sectors      *portfolio.SectorMap
 	sectorSource string
+	LoadTimeout  time.Duration
 	Now          func() time.Time
 }
 
@@ -46,6 +48,7 @@ func NewService(src MarketSource, sectors *portfolio.SectorMap, sectorSource str
 		src:          src,
 		sectors:      sectors,
 		sectorSource: sectorSource,
+		LoadTimeout:  defaultLoadTTL,
 		Now:          time.Now,
 	}
 }
@@ -130,18 +133,24 @@ func (s *Service) computeMovers(ctx context.Context, watchlist []string, asOf ti
 }
 
 func (s *Service) loadMarketData(ctx context.Context, symbols []string) (map[string]Quote, map[string][]model.OHLCV, []string) {
+	loadCtx := ctx
+	var cancel context.CancelFunc
+	if s.LoadTimeout > 0 {
+		loadCtx, cancel = context.WithTimeout(ctx, s.LoadTimeout)
+		defer cancel()
+	}
 	if snap, ok := s.src.(snapshotSource); ok {
-		quotes, bars, err := snap.Snapshot(ctx, symbols, barInterval, barLookback)
+		quotes, bars, err := snap.Snapshot(loadCtx, symbols, barInterval, barLookback)
 		if err != nil {
 			return nil, nil, []string{fmt.Sprintf("intraday source unavailable: %v", err)}
 		}
 		return quotes, bars, nil
 	}
-	quotes, err := s.src.Quotes(ctx, symbols)
+	quotes, err := s.src.Quotes(loadCtx, symbols)
 	if err != nil {
 		return nil, nil, []string{fmt.Sprintf("quote source unavailable: %v", err)}
 	}
-	bars, err := s.src.Bars(ctx, symbols, barInterval, barLookback)
+	bars, err := s.src.Bars(loadCtx, symbols, barInterval, barLookback)
 	if err != nil {
 		return nil, nil, []string{fmt.Sprintf("bar source unavailable: %v", err)}
 	}

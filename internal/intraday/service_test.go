@@ -218,6 +218,46 @@ func TestMoversUsesSnapshotSourceWhenAvailable(t *testing.T) {
 	}
 }
 
+type blockingSnapshotSource struct{}
+
+func (blockingSnapshotSource) SourceName() string { return "ibkr-preferred" }
+
+func (blockingSnapshotSource) Basis() string { return "realtime" }
+
+func (blockingSnapshotSource) Quotes(context.Context, []string) (map[string]Quote, error) {
+	return nil, errors.New("unexpected direct quote call")
+}
+
+func (blockingSnapshotSource) Bars(context.Context, []string, string, time.Duration) (map[string][]model.OHLCV, error) {
+	return nil, errors.New("unexpected direct bar call")
+}
+
+func (blockingSnapshotSource) Snapshot(ctx context.Context, _ []string, _ string, _ time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
+	<-ctx.Done()
+	return nil, nil, ctx.Err()
+}
+
+func TestMoversTimesOutBlockedSourcesWithWarnings(t *testing.T) {
+	svc := NewService(blockingSnapshotSource{}, testSectors(), "<test>")
+	svc.Now = fixedNow
+	svc.LoadTimeout = 10 * time.Millisecond
+
+	start := time.Now()
+	dto, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("blocked source took too long")
+	}
+	if dto.Gainers == nil || dto.Losers == nil {
+		t.Fatalf("movers arrays must be non-nil: %+v", dto)
+	}
+	if len(dto.Warnings) == 0 {
+		t.Fatalf("warnings empty, want timeout warning")
+	}
+}
+
 func findSector(t *testing.T, rows []SectorHeatmapRow, id string) SectorHeatmapRow {
 	t.Helper()
 	for _, row := range rows {

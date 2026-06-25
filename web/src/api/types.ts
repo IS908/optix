@@ -160,6 +160,47 @@ export interface MoversDTO {
   warnings?: string[]
 }
 
+export interface IntradayMover {
+  symbol: string
+  source: string
+  basis: string
+  as_of: string
+  last: number
+  open: number
+  pct: number
+  volume: number
+  watchlist: boolean
+}
+
+export interface IntradayMoversDTO {
+  as_of: string
+  source: string
+  basis: string
+  universe_note: string
+  gainers: IntradayMover[] | null
+  losers: IntradayMover[] | null
+  warnings?: string[]
+}
+
+export interface IntradaySectorHeatmapRow {
+  sector_id: string
+  sector_label: string
+  avg_pct: number
+  sample_n: number
+  gainers: number
+  losers: number
+  top_symbol: string
+}
+
+export interface IntradaySectorHeatmapDTO {
+  as_of: string
+  source: string
+  basis: string
+  sector_source: string
+  rows: IntradaySectorHeatmapRow[] | null
+  warnings?: string[]
+}
+
 export interface SentimentDTO {
   as_of: string
   pc_oi: number

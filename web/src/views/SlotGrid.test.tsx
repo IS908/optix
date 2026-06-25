@@ -20,6 +20,31 @@ function journalResponse() {
 
 function fixtureResponse(url: string) {
   if (url.startsWith('/api/intel/journal')) return journalResponse()
+  if (url.endsWith('/api/intel/intraday/movers')) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        as_of: '',
+        source: 'ibkr',
+        basis: 'realtime',
+        universe_note: 'test',
+        gainers: [],
+        losers: [],
+      }),
+    } as Response)
+  }
+  if (url.endsWith('/api/intel/intraday/sector-heatmap')) {
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        as_of: '',
+        source: 'ibkr',
+        basis: 'realtime',
+        sector_source: 'test',
+        rows: [],
+      }),
+    } as Response)
+  }
   if (url.endsWith('/api/intel/event/rates')) return Promise.resolve({ ok: true, json: async () => ({ as_of: '', source: 'test', universe_note: '', rows: [] }) } as Response)
   if (url.endsWith('/api/intel/event/diff')) {
     return Promise.resolve({
@@ -65,12 +90,12 @@ describe('SlotGrid', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not render unsupported intraday placeholder cards', async () => {
+  it('renders intraday intel cards with the narrative workflow', async () => {
     render(<SlotGrid view="intraday" />)
 
     await waitFor(() => expect(screen.getByText('叙事流')).toBeInTheDocument())
-    expect(screen.queryByText('盘中异动')).toBeNull()
-    expect(screen.queryByText('板块热力')).toBeNull()
+    expect(screen.getByText('盘中异动')).toBeInTheDocument()
+    expect(screen.getByText('板块热力')).toBeInTheDocument()
   })
 
   it.each(['postclose', 'event', 'shock'])('renders the judgment workflow on %s view', async (view) => {

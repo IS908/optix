@@ -9,6 +9,8 @@ export interface SlotDef {
     | 'gaps'
     | 'movers'
     | 'sentiment'
+    | 'intraday-movers'
+    | 'intraday-sector-heatmap'
     | 'postclose-earnings'
     | 'postclose-timeline'
     | 'postclose-read-across'
@@ -32,6 +34,8 @@ export const viewSlots: Record<string, SlotDef[]> = {
   ],
   intraday: [
     { title: '叙事流', desc: '检查点叙事与判断登记（agent 填槽）', milestone: 'M3', live: 'narrative' },
+    { title: '盘中异动', desc: '实时涨跌异动与自选股标记', milestone: 'M7', live: 'intraday-movers' },
+    { title: '板块热力', desc: '盘中样本按板块聚合的方向与强度', milestone: 'M7', live: 'intraday-sector-heatmap' },
   ],
   postclose: [
     { title: '财报速递', desc: '盘后财报 vs 共识速览', milestone: 'M5', span: 2, live: 'postclose-earnings' },

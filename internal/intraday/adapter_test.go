@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -64,5 +65,32 @@ func TestBrokerSourceBarsDelegateToBroker(t *testing.T) {
 	}
 	if len(bars["AAPL"]) != 1 || bars["AAPL"][0].Open != 100 {
 		t.Fatalf("bars = %+v, want delegated broker bars", bars)
+	}
+}
+
+func TestBrokerSourceSnapshotUsesOneBrokerConnectionForQuotesAndBars(t *testing.T) {
+	connects := 0
+	now := time.Date(2026, 6, 25, 15, 0, 0, 0, time.UTC)
+	src := NewBrokerSourceWithConnector(func(context.Context) (broker.Broker, string, error) {
+		connects++
+		return &fakeBroker{
+			source: "Yahoo Finance",
+			quote:  &model.StockQuote{Symbol: "AAPL", Last: 110, Timestamp: now},
+			bars:   []model.OHLCV{{Timestamp: now, Open: 100}},
+		}, "Yahoo Finance", nil
+	}, "", "")
+
+	quotes, bars, err := src.Snapshot(context.Background(), []string{"AAPL"}, "5 mins", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connects != 1 {
+		t.Fatalf("connects = %d, want 1", connects)
+	}
+	if quotes["AAPL"].Source != "yfinance" || quotes["AAPL"].Basis != "delayed" {
+		t.Fatalf("quote source/basis = %s/%s, want yfinance/delayed", quotes["AAPL"].Source, quotes["AAPL"].Basis)
+	}
+	if len(bars["AAPL"]) != 1 {
+		t.Fatalf("bars = %+v, want one delegated bar", bars)
 	}
 }

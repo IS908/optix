@@ -76,6 +76,29 @@ func (s *BrokerSource) Quotes(ctx context.Context, symbols []string) (map[string
 	}
 	defer func() { _ = b.Disconnect() }()
 	source = normalizeSourceName(source)
+	return quotesFromBroker(ctx, b, source, symbols), nil
+}
+
+func (s *BrokerSource) Bars(ctx context.Context, symbols []string, timeframe string, _ time.Duration) (map[string][]model.OHLCV, error) {
+	b, _, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = b.Disconnect() }()
+	return barsFromBroker(ctx, b, symbols, timeframe), nil
+}
+
+func (s *BrokerSource) Snapshot(ctx context.Context, symbols []string, timeframe string, _ time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
+	b, source, err := s.connect(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = b.Disconnect() }()
+	source = normalizeSourceName(source)
+	return quotesFromBroker(ctx, b, source, symbols), barsFromBroker(ctx, b, symbols, timeframe), nil
+}
+
+func quotesFromBroker(ctx context.Context, b broker.Broker, source string, symbols []string) map[string]Quote {
 	basis := basisForSource(source)
 	out := map[string]Quote{}
 	for _, symbol := range symbols {
@@ -99,15 +122,10 @@ func (s *BrokerSource) Quotes(ctx context.Context, symbols []string) (map[string
 			AsOf:   q.Timestamp,
 		}
 	}
-	return out, nil
+	return out
 }
 
-func (s *BrokerSource) Bars(ctx context.Context, symbols []string, timeframe string, _ time.Duration) (map[string][]model.OHLCV, error) {
-	b, _, err := s.connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = b.Disconnect() }()
+func barsFromBroker(ctx context.Context, b broker.Broker, symbols []string, timeframe string) map[string][]model.OHLCV {
 	out := map[string][]model.OHLCV{}
 	for _, symbol := range symbols {
 		bars, err := b.GetHistoricalBars(ctx, symbol, timeframe, "", "")
@@ -116,7 +134,7 @@ func (s *BrokerSource) Bars(ctx context.Context, symbols []string, timeframe str
 		}
 		out[symbol] = bars
 	}
-	return out, nil
+	return out
 }
 
 func normalizeSourceName(value string) string {

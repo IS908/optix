@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	moverLimit      = 5
+	moverLimit      = 8
 	barInterval     = "5 mins"
 	barLookback     = 8 * time.Hour
 	sessionOpenHour = 9
@@ -25,6 +25,10 @@ type MarketSource interface {
 	Basis() string
 	Quotes(ctx context.Context, symbols []string) (map[string]Quote, error)
 	Bars(ctx context.Context, symbols []string, interval string, lookback time.Duration) (map[string][]model.OHLCV, error)
+}
+
+type snapshotSource interface {
+	Snapshot(ctx context.Context, symbols []string, interval string, lookback time.Duration) (map[string]Quote, map[string][]model.OHLCV, error)
 }
 
 type Service struct {
@@ -87,14 +91,9 @@ func (s *Service) computeMovers(ctx context.Context, watchlist []string, asOf ti
 	}
 	symbols, inWatchlist := moverUniverse(watchlist)
 	warnings := []string{}
-	quotes, err := s.src.Quotes(ctx, symbols)
-	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("quote source unavailable: %v", err))
-		return []Mover{}, warnings
-	}
-	bars, err := s.src.Bars(ctx, symbols, barInterval, barLookback)
-	if err != nil {
-		warnings = append(warnings, fmt.Sprintf("bar source unavailable: %v", err))
+	quotes, bars, loadWarnings := s.loadMarketData(ctx, symbols)
+	warnings = append(warnings, loadWarnings...)
+	if len(loadWarnings) > 0 && (len(quotes) == 0 || len(bars) == 0) {
 		return []Mover{}, warnings
 	}
 
@@ -128,6 +127,25 @@ func (s *Service) computeMovers(ctx context.Context, watchlist []string, asOf ti
 		warnings = append(warnings, "no intraday movers available for the current universe")
 	}
 	return movers, warnings
+}
+
+func (s *Service) loadMarketData(ctx context.Context, symbols []string) (map[string]Quote, map[string][]model.OHLCV, []string) {
+	if snap, ok := s.src.(snapshotSource); ok {
+		quotes, bars, err := snap.Snapshot(ctx, symbols, barInterval, barLookback)
+		if err != nil {
+			return nil, nil, []string{fmt.Sprintf("intraday source unavailable: %v", err)}
+		}
+		return quotes, bars, nil
+	}
+	quotes, err := s.src.Quotes(ctx, symbols)
+	if err != nil {
+		return nil, nil, []string{fmt.Sprintf("quote source unavailable: %v", err)}
+	}
+	bars, err := s.src.Bars(ctx, symbols, barInterval, barLookback)
+	if err != nil {
+		return nil, nil, []string{fmt.Sprintf("bar source unavailable: %v", err)}
+	}
+	return quotes, bars, nil
 }
 
 func sessionOpenAndVolume(bars []model.OHLCV, asOf time.Time) (float64, int64, bool) {

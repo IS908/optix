@@ -147,6 +147,77 @@ func TestSectorHeatmapAggregatesMoverRows(t *testing.T) {
 	}
 }
 
+func TestMoversCapsGainersAndLosersAtEightRows(t *testing.T) {
+	quotes := map[string]Quote{}
+	bars := map[string][]model.OHLCV{}
+	watchlist := []string{}
+	for i := 0; i < 18; i++ {
+		symbol := string(rune('A'+i)) + "CAP"
+		watchlist = append(watchlist, symbol)
+		last := 90.0 + float64(i)
+		if i >= 9 {
+			last = 101.0 + float64(i)
+		}
+		quotes[symbol] = Quote{Symbol: symbol, Last: last, AsOf: fixedNow()}
+		bars[symbol] = []model.OHLCV{bar("2026-06-25T13:30:00Z", 100, 100, 1000)}
+	}
+	svc := NewService(fakeSource{quotes: quotes, bars: bars}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.Movers(context.Background(), watchlist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dto.Gainers) != 8 || len(dto.Losers) != 8 {
+		t.Fatalf("gainers/losers lengths = %d/%d, want 8/8", len(dto.Gainers), len(dto.Losers))
+	}
+}
+
+type fakeSnapshotSource struct {
+	fakeSource
+	snapshots  int
+	quoteCalls int
+	barCalls   int
+}
+
+func (f *fakeSnapshotSource) Snapshot(ctx context.Context, symbols []string, interval string, lookback time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
+	f.snapshots++
+	quotes, err := f.fakeSource.Quotes(ctx, symbols)
+	if err != nil {
+		return nil, nil, err
+	}
+	bars, err := f.fakeSource.Bars(ctx, symbols, interval, lookback)
+	return quotes, bars, err
+}
+
+func (f *fakeSnapshotSource) Quotes(ctx context.Context, symbols []string) (map[string]Quote, error) {
+	f.quoteCalls++
+	return f.fakeSource.Quotes(ctx, symbols)
+}
+
+func (f *fakeSnapshotSource) Bars(ctx context.Context, symbols []string, interval string, lookback time.Duration) (map[string][]model.OHLCV, error) {
+	f.barCalls++
+	return f.fakeSource.Bars(ctx, symbols, interval, lookback)
+}
+
+func TestMoversUsesSnapshotSourceWhenAvailable(t *testing.T) {
+	src := &fakeSnapshotSource{fakeSource: fakeSource{
+		quotes: map[string]Quote{"AAPL": {Symbol: "AAPL", Last: 110, AsOf: fixedNow()}},
+		bars: map[string][]model.OHLCV{
+			"AAPL": {bar("2026-06-25T13:30:00Z", 100, 101, 1000)},
+		},
+	}}
+	svc := NewService(src, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	if _, err := svc.Movers(context.Background(), []string{"AAPL"}); err != nil {
+		t.Fatal(err)
+	}
+	if src.snapshots != 1 || src.quoteCalls != 0 || src.barCalls != 0 {
+		t.Fatalf("snapshots/quoteCalls/barCalls = %d/%d/%d, want 1/0/0", src.snapshots, src.quoteCalls, src.barCalls)
+	}
+}
+
 func findSector(t *testing.T, rows []SectorHeatmapRow, id string) SectorHeatmapRow {
 	t.Helper()
 	for _, row := range rows {

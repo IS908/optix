@@ -12,6 +12,22 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.27] - 2026-07-09
+
+Patch release adding IBKR single-option quote validation for #186.
+
+### Added
+
+- Add `optix option-quote SYMBOL --expiry YYYY-MM-DD --right C|P --strike N
+  --format json` as an IBKR-only single-contract validation command. The JSON
+  payload includes bid, ask, mid, mark, last, volume, open interest, implied
+  volatility, Greeks when IBKR supplies them, timestamp, source, market data
+  type, and structured warnings for unavailable fields.
+- Add a detailed `broker.DetailedOptionQuoter` path and IBKR tick aggregation
+  for option volume, open interest, IV/Greeks, mark price, and live/delayed
+  market data type, while keeping the existing mark-only `OptionQuoter`
+  contract for account position marking.
+
 ## [0.14.26] - 2026-06-26
 
 Patch release adding real Market Intel intraday cards for #145.
@@ -1594,7 +1610,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.26...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.27...HEAD
+[0.14.27]: https://github.com/IS908/optix/compare/v0.14.26...v0.14.27
 [0.14.26]: https://github.com/IS908/optix/compare/v0.14.25...v0.14.26
 [0.14.25]: https://github.com/IS908/optix/compare/v0.14.24...v0.14.25
 [0.14.24]: https://github.com/IS908/optix/compare/v0.14.23...v0.14.24

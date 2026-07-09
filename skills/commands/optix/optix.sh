@@ -57,9 +57,9 @@ case "${1:-}" in
             echo "⚠️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — shock will use yfinance/degraded fallback where available." >&2
         fi
         ;;
-    positions|trades)
+    option-quote|positions|trades)
         if ! nc -z "$IB_HOST" "$IB_PORT_NUM" 2>/dev/null; then
-            echo "⚠️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — account data requires IBKR (Yahoo Finance has no account API). The command will error out." >&2
+            echo "⚠️  IBKR TWS/Gateway not detected at ${IB_HOST}:${IB_PORT_NUM} — this command requires IBKR and will error out." >&2
         fi
         ;;
 esac

@@ -93,17 +93,22 @@ type optionChainExpiryOutput struct {
 type optionQuoteOutput struct {
 	Underlying        string       `json:"underlying"`
 	Expiration        string       `json:"expiration"`
+	Right             string       `json:"right"`
 	Strike            float64      `json:"strike"`
 	OptionType        string       `json:"option_type"`
 	Last              float64      `json:"last"`
 	Bid               float64      `json:"bid"`
 	Ask               float64      `json:"ask"`
 	Mid               float64      `json:"mid"`
+	Mark              float64      `json:"mark"`
 	Volume            int64        `json:"volume"`
 	OpenInterest      int32        `json:"open_interest"`
 	ImpliedVolatility float64      `json:"implied_volatility"`
 	Greeks            greeksOutput `json:"greeks"`
 	Timestamp         time.Time    `json:"timestamp"`
+	Source            string       `json:"source,omitempty"`
+	MarketDataType    string       `json:"market_data_type"`
+	Warnings          []string     `json:"warnings"`
 }
 
 type greeksOutput struct {
@@ -137,23 +142,97 @@ func renderOptionChainJSON(w io.Writer, chain *model.OptionChain, source string)
 func optionQuotesOutput(quotes []model.OptionQuote) []optionQuoteOutput {
 	out := make([]optionQuoteOutput, 0, len(quotes))
 	for _, q := range quotes {
-		out = append(out, optionQuoteOutput{
-			Underlying:        q.Underlying,
-			Expiration:        q.Expiration,
-			Strike:            q.Strike,
-			OptionType:        q.OptionType.String(),
-			Last:              q.Last,
-			Bid:               q.Bid,
-			Ask:               q.Ask,
-			Mid:               q.Mid,
-			Volume:            q.Volume,
-			OpenInterest:      q.OpenInterest,
-			ImpliedVolatility: q.ImpliedVolatility,
-			Greeks:            greeksOutputFrom(q.Greeks),
-			Timestamp:         q.Timestamp,
-		})
+		out = append(out, optionQuoteOutputFrom(q, ""))
 	}
 	return out
+}
+
+func renderOptionQuoteJSON(w io.Writer, quote *model.OptionQuote, source string) error {
+	return writeJSON(w, optionQuoteOutputFrom(*quote, source))
+}
+
+func optionQuoteOutputFrom(q model.OptionQuote, source string) optionQuoteOutput {
+	return optionQuoteOutput{
+		Underlying:        q.Underlying,
+		Expiration:        q.Expiration,
+		Right:             optionRight(q.OptionType),
+		Strike:            q.Strike,
+		OptionType:        q.OptionType.String(),
+		Last:              q.Last,
+		Bid:               q.Bid,
+		Ask:               q.Ask,
+		Mid:               q.Mid,
+		Mark:              q.Mark,
+		Volume:            q.Volume,
+		OpenInterest:      q.OpenInterest,
+		ImpliedVolatility: q.ImpliedVolatility,
+		Greeks:            greeksOutputFrom(q.Greeks),
+		Timestamp:         q.Timestamp,
+		Source:            source,
+		MarketDataType:    optionMarketDataType(q.MarketDataType),
+		Warnings:          optionQuoteValidationWarnings(&q),
+	}
+}
+
+func optionRight(t model.OptionType) string {
+	switch t {
+	case model.OptionTypeCall:
+		return "C"
+	case model.OptionTypePut:
+		return "P"
+	default:
+		return ""
+	}
+}
+
+func optionMarketDataType(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
+func optionQuoteValidationWarnings(q *model.OptionQuote) []string {
+	if q == nil {
+		return []string{"quote_unavailable"}
+	}
+	warnings := make([]string, 0, len(q.Warnings)+8)
+	seen := make(map[string]bool, len(q.Warnings)+8)
+	add := func(w string) {
+		if w == "" || seen[w] {
+			return
+		}
+		seen[w] = true
+		warnings = append(warnings, w)
+	}
+	for _, w := range q.Warnings {
+		add(w)
+	}
+	if q.Bid <= 0 {
+		add("bid_unavailable")
+	}
+	if q.Ask <= 0 {
+		add("ask_unavailable")
+	}
+	if q.Last <= 0 {
+		add("last_unavailable")
+	}
+	if q.Mark <= 0 && q.Mid <= 0 && q.Last <= 0 && (q.Bid <= 0 || q.Ask <= 0) {
+		add("no_price_data")
+	}
+	if q.OpenInterest <= 0 {
+		add("open_interest_unavailable")
+	}
+	if q.ImpliedVolatility <= 0 {
+		add("implied_volatility_unavailable")
+	}
+	if q.Greeks.Delta == 0 && q.Greeks.Gamma == 0 && q.Greeks.Theta == 0 && q.Greeks.Vega == 0 && q.Greeks.Rho == 0 {
+		add("greeks_unavailable")
+	}
+	if q.MarketDataType == "" {
+		add("market_data_type_unknown")
+	}
+	return warnings
 }
 
 func greeksOutputFrom(g model.Greeks) greeksOutput {

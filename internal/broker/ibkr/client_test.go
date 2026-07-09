@@ -146,6 +146,36 @@ func TestQuoteMarkRequiresTwoSidedMidpoint(t *testing.T) {
 	}
 }
 
+func TestOptionQuoteFromSnapshotBuildsValidationQuote(t *testing.T) {
+	q := optionQuoteFromSnapshot("AAPL", "20260717", "P", 290, quoteSnapshot{
+		bid:               1.20,
+		ask:               1.25,
+		mark:              1.23,
+		last:              1.22,
+		volume:            1234,
+		openInterest:      5678,
+		impliedVolatility: 0.31,
+		greeks:            model.Greeks{Delta: -0.24, Gamma: 0.01, Theta: -0.04, Vega: 0.12},
+		marketDataType:    "real_time",
+	}, []string{"ibkr_error: partial data"})
+
+	if q.Underlying != "AAPL" || q.Expiration != "20260717" || q.OptionType != model.OptionTypePut || q.Strike != 290 {
+		t.Fatalf("identity mismatch: %+v", q)
+	}
+	if q.Mid != 1.225 || q.Mark != 1.23 || q.Last != 1.22 {
+		t.Fatalf("price fields mismatch: %+v", q)
+	}
+	if q.Volume != 1234 || q.OpenInterest != 5678 || q.ImpliedVolatility != 0.31 {
+		t.Fatalf("availability fields mismatch: %+v", q)
+	}
+	if q.Greeks.Delta != -0.24 || q.MarketDataType != "real_time" {
+		t.Fatalf("greeks/market data mismatch: %+v", q)
+	}
+	if len(q.Warnings) != 1 || q.Warnings[0] != "ibkr_error: partial data" {
+		t.Fatalf("warnings = %#v", q.Warnings)
+	}
+}
+
 func TestHistoricalQuoteFromBarsUsesPreviousCloseForChange(t *testing.T) {
 	q, err := historicalQuoteFromBars("AAPL", []model.OHLCV{
 		{Close: 100, Timestamp: time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC)},

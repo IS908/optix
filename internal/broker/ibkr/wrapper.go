@@ -11,24 +11,32 @@ import (
 
 // pendingQuote accumulates tick data for a snapshot market data request.
 type pendingQuote struct {
-	mu     sync.Mutex
-	bid    float64
-	ask    float64
-	mark   float64
-	last   float64
-	close  float64
-	volume float64
-	done   chan struct{}
-	once   sync.Once
+	mu                sync.Mutex
+	bid               float64
+	ask               float64
+	mark              float64
+	last              float64
+	close             float64
+	volume            float64
+	openInterest      int32
+	impliedVolatility float64
+	greeks            model.Greeks
+	marketDataType    string
+	done              chan struct{}
+	once              sync.Once
 }
 
 type quoteSnapshot struct {
-	bid    float64
-	ask    float64
-	mark   float64
-	last   float64
-	close  float64
-	volume float64
+	bid               float64
+	ask               float64
+	mark              float64
+	last              float64
+	close             float64
+	volume            float64
+	openInterest      int32
+	impliedVolatility float64
+	greeks            model.Greeks
+	marketDataType    string
 }
 
 func (pq *pendingQuote) setPrice(tickType ibapi.TickType, price float64) {
@@ -54,9 +62,57 @@ func (pq *pendingQuote) setPrice(tickType ibapi.TickType, price float64) {
 }
 
 func (pq *pendingQuote) setVolume(volume float64) {
+	if volume <= 0 {
+		return
+	}
 	pq.mu.Lock()
 	pq.volume = volume
 	pq.mu.Unlock()
+}
+
+func (pq *pendingQuote) setOpenInterest(openInterest int32) {
+	if openInterest <= 0 {
+		return
+	}
+	pq.mu.Lock()
+	pq.openInterest = openInterest
+	pq.mu.Unlock()
+}
+
+func (pq *pendingQuote) setMarketDataType(marketDataType string) {
+	if marketDataType == "" {
+		return
+	}
+	pq.mu.Lock()
+	pq.marketDataType = marketDataType
+	pq.mu.Unlock()
+}
+
+func (pq *pendingQuote) setOptionComputation(tickType ibapi.TickType, impliedVol, delta, optPrice, gamma, vega, theta float64) {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+
+	if impliedVol > 0 && impliedVol != ibapi.UNSET_FLOAT {
+		pq.impliedVolatility = impliedVol
+	}
+	if optPrice > 0 && optPrice != ibapi.UNSET_FLOAT {
+		pq.greeks.Price = optPrice
+		if tickType == ibapi.MODEL_OPTION || tickType == ibapi.DELAYED_MODEL_OPTION {
+			pq.mark = optPrice
+		}
+	}
+	if delta != ibapi.UNSET_FLOAT {
+		pq.greeks.Delta = delta
+	}
+	if gamma != ibapi.UNSET_FLOAT {
+		pq.greeks.Gamma = gamma
+	}
+	if theta != ibapi.UNSET_FLOAT {
+		pq.greeks.Theta = theta
+	}
+	if vega != ibapi.UNSET_FLOAT {
+		pq.greeks.Vega = vega
+	}
 }
 
 func (pq *pendingQuote) snapshot() quoteSnapshot {
@@ -64,12 +120,16 @@ func (pq *pendingQuote) snapshot() quoteSnapshot {
 	defer pq.mu.Unlock()
 
 	return quoteSnapshot{
-		bid:    pq.bid,
-		ask:    pq.ask,
-		mark:   pq.mark,
-		last:   pq.last,
-		close:  pq.close,
-		volume: pq.volume,
+		bid:               pq.bid,
+		ask:               pq.ask,
+		mark:              pq.mark,
+		last:              pq.last,
+		close:             pq.close,
+		volume:            pq.volume,
+		openInterest:      pq.openInterest,
+		impliedVolatility: pq.impliedVolatility,
+		greeks:            pq.greeks,
+		marketDataType:    pq.marketDataType,
 	}
 }
 
@@ -206,6 +266,21 @@ func depthSide(side int64) string {
 		return "bid"
 	default:
 		return ""
+	}
+}
+
+func marketDataTypeName(marketDataType int64) string {
+	switch ibapi.MarketDataType(marketDataType) {
+	case ibapi.REALTIME:
+		return "real_time"
+	case ibapi.FROZEN:
+		return "frozen"
+	case ibapi.DELAYED:
+		return "delayed"
+	case ibapi.DELAYED_FROZEN:
+		return "delayed_frozen"
+	default:
+		return "unknown"
 	}
 }
 
@@ -461,9 +536,15 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 	po, oiOK := w.oi[reqID]
 	w.mu.Unlock()
 
-	if qOK && (tickType == ibapi.VOLUME || tickType == ibapi.DELAYED_VOLUME) {
-		pq.setVolume(size.Float())
-		return
+	if qOK {
+		switch tickType {
+		case ibapi.VOLUME, ibapi.DELAYED_VOLUME, ibapi.OPTION_CALL_VOLUME, ibapi.OPTION_PUT_VOLUME:
+			pq.setVolume(size.Float())
+			return
+		case ibapi.OPEN_INTEREST, ibapi.OPTION_CALL_OPEN_INTEREST, ibapi.OPTION_PUT_OPEN_INTEREST, 86:
+			pq.setOpenInterest(int32(size.Float()))
+			return
+		}
 	}
 
 	if oiOK {
@@ -478,20 +559,35 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 }
 
 // TickOptionComputation receives implied volatility and Greeks for an option
-// contract (delivered automatically when reqMktData is called on an OPT contract).
-// We capture IV; Greeks are computed in the Python engine via Black-Scholes
-// for consistency, so we ignore them here.
+// contract (delivered automatically when ReqMktData is called on an OPT
+// contract). OI enrichment keeps capturing only IV; single-contract quote
+// validation also captures IBKR's option computation fields.
 func (w *IbWrapper) TickOptionComputation(
 	reqID ibapi.TickerID, tickType ibapi.TickType, _ int64,
-	impliedVol, _ float64, _ float64, _ float64,
-	_ float64, _ float64, _ float64, _ float64,
+	impliedVol, delta float64, optPrice float64, _ float64,
+	gamma float64, vega float64, theta float64, _ float64,
 ) {
 	w.mu.Lock()
 	po, ok := w.oi[reqID]
+	pq, qOK := w.quotes[reqID]
 	w.mu.Unlock()
 	if ok {
 		po.setIV(impliedVol)
 	}
+	if qOK {
+		pq.setOptionComputation(tickType, impliedVol, delta, optPrice, gamma, vega, theta)
+	}
+}
+
+// MarketDataType receives whether the request is live, frozen or delayed.
+func (w *IbWrapper) MarketDataType(reqID int64, marketDataType int64) {
+	w.mu.Lock()
+	pq, ok := w.quotes[reqID]
+	w.mu.Unlock()
+	if !ok {
+		return
+	}
+	pq.setMarketDataType(marketDataTypeName(marketDataType))
 }
 
 // TickSnapshotEnd signals that all snapshot ticks for this request have arrived.

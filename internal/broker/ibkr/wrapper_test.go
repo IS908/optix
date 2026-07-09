@@ -135,6 +135,36 @@ func TestWrapperQuoteAccumulatorCapturesDelayedPrices(t *testing.T) {
 	}
 }
 
+func TestWrapperOptionQuoteAccumulatorCapturesValidationTicks(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(1005)
+	pq := w.registerQuote(reqID)
+	defer w.unregister(reqID)
+
+	w.MarketDataType(reqID, int64(ibapi.REALTIME))
+	w.TickPrice(reqID, ibapi.BID, 1.20, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.ASK, 1.25, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.LAST, 1.23, ibapi.TickAttrib{})
+	w.TickSize(reqID, ibapi.OPTION_PUT_VOLUME, ibapi.StringToDecimal("1234"))
+	w.TickSize(reqID, ibapi.OPTION_PUT_OPEN_INTEREST, ibapi.StringToDecimal("5678"))
+	w.TickOptionComputation(reqID, ibapi.MODEL_OPTION, 0, 0.31, -0.24, 1.23, 0, 0.01, 0.12, -0.04, 290)
+
+	snap := pq.snapshot()
+	if snap.marketDataType != "real_time" {
+		t.Fatalf("marketDataType = %q, want real_time", snap.marketDataType)
+	}
+	if snap.bid != 1.20 || snap.ask != 1.25 || snap.last != 1.23 || snap.mark != 1.23 {
+		t.Fatalf("price snapshot mismatch: %+v", snap)
+	}
+	if snap.volume != 1234 || snap.openInterest != 5678 {
+		t.Fatalf("size snapshot mismatch: %+v", snap)
+	}
+	if snap.impliedVolatility != 0.31 || snap.greeks.Delta != -0.24 || snap.greeks.Gamma != 0.01 ||
+		snap.greeks.Vega != 0.12 || snap.greeks.Theta != -0.04 {
+		t.Fatalf("option computation mismatch: %+v", snap)
+	}
+}
+
 func TestWrapperMarketDepthAccumulatorCapturesBidAskLevels(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1004)

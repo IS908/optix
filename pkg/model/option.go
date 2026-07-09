@@ -41,11 +41,14 @@ type OptionQuote struct {
 	Bid               float64
 	Ask               float64
 	Mid               float64
+	Mark              float64
 	Volume            int64
 	OpenInterest      int32
 	ImpliedVolatility float64
 	Greeks            Greeks
 	Timestamp         time.Time
+	MarketDataType    string
+	Warnings          []string
 }
 
 // OptionChainExpiry holds all options for a single expiration date.

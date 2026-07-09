@@ -69,6 +69,17 @@ bash bin/optix.sh chain <SYMBOL> --expiry 2026-05-22
 bash bin/optix.sh chain <SYMBOL> --expiry 2026-05-22 --format json
 ```
 
+### Validate one option contract quote with IBKR
+```bash
+bash bin/optix.sh option-quote AAPL --expiry 2026-07-17 --right P --strike 290 --format json
+```
+
+This is IBKR-only and intended for final candidate validation after free-source
+option-chain screening. JSON includes bid, ask, mid, mark, last, volume,
+open_interest, implied_volatility, Greeks when IBKR supplies them, source,
+timestamp, market_data_type, and warnings. If IBKR returns no usable option
+price data, the command still emits structured JSON warnings and exits non-zero.
+
 ### Show dashboard (all watchlist stocks with analysis)
 ```bash
 bash bin/optix.sh dashboard

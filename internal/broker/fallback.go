@@ -192,3 +192,16 @@ func (fb *FallbackBroker) GetOptionQuote(ctx context.Context, underlying, expira
 	}
 	return 0, ErrAccountNotSupported
 }
+
+// GetOptionQuoteDetails delegates to the active broker if it implements
+// DetailedOptionQuoter. Returns ErrAccountNotSupported when running on the
+// yfinance fallback.
+func (fb *FallbackBroker) GetOptionQuoteDetails(ctx context.Context, underlying, expiration, right string, strike float64) (*model.OptionQuote, error) {
+	if fb.active == nil {
+		return nil, fmt.Errorf("broker: not connected")
+	}
+	if oq, ok := fb.active.(DetailedOptionQuoter); ok {
+		return oq.GetOptionQuoteDetails(ctx, underlying, expiration, right, strike)
+	}
+	return nil, ErrAccountNotSupported
+}

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,10 @@ func TestAgentJSONFormatFlags(t *testing.T) {
 	tests := map[string]func() string{
 		"quote": func() string {
 			v, _ := newQuoteCmd().Flags().GetString("format")
+			return v
+		},
+		"option-quote": func() string {
+			v, _ := newOptionQuoteCmd().Flags().GetString("format")
 			return v
 		},
 		"chain": func() string {
@@ -132,6 +137,92 @@ func TestAgentJSONRenderOptionChainUsesStringOptionTypes(t *testing.T) {
 	}
 	if got.Expirations[0].Puts[0].OptionType != "PUT" {
 		t.Fatalf("put option_type = %q, want PUT", got.Expirations[0].Puts[0].OptionType)
+	}
+}
+
+func TestAgentJSONRenderSingleOptionQuoteIncludesValidationFields(t *testing.T) {
+	q := &model.OptionQuote{
+		Underlying:        "AAPL",
+		Expiration:        "20260717",
+		Strike:            290,
+		OptionType:        model.OptionTypePut,
+		Last:              1.23,
+		Bid:               1.20,
+		Ask:               1.25,
+		Mid:               1.225,
+		Mark:              1.23,
+		Volume:            1234,
+		OpenInterest:      0,
+		ImpliedVolatility: 0,
+		Greeks:            model.Greeks{Delta: -0.24, Gamma: 0.01, Theta: -0.04, Vega: 0.12, Rho: -0.02},
+		Timestamp:         time.Date(2026, 7, 9, 14, 58, 0, 0, time.UTC),
+		MarketDataType:    "real_time",
+		Warnings:          []string{"open_interest_unavailable", "implied_volatility_unavailable"},
+	}
+
+	var buf bytes.Buffer
+	if err := renderOptionQuoteJSON(&buf, q, "IBKR"); err != nil {
+		t.Fatalf("renderOptionQuoteJSON: %v", err)
+	}
+
+	var got struct {
+		Underlying        string   `json:"underlying"`
+		Expiration        string   `json:"expiration"`
+		Right             string   `json:"right"`
+		Strike            float64  `json:"strike"`
+		Source            string   `json:"source"`
+		Last              float64  `json:"last"`
+		Bid               float64  `json:"bid"`
+		Ask               float64  `json:"ask"`
+		Mid               float64  `json:"mid"`
+		Mark              float64  `json:"mark"`
+		Volume            int64    `json:"volume"`
+		OpenInterest      int32    `json:"open_interest"`
+		ImpliedVolatility float64  `json:"implied_volatility"`
+		MarketDataType    string   `json:"market_data_type"`
+		Warnings          []string `json:"warnings"`
+		Greeks            struct {
+			Delta float64 `json:"delta"`
+		} `json:"greeks"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if got.Underlying != "AAPL" || got.Expiration != "20260717" || got.Right != "P" {
+		t.Fatalf("contract identity mismatch: %+v", got)
+	}
+	if got.Source != "IBKR" || got.MarketDataType != "real_time" {
+		t.Fatalf("source/market data type mismatch: %+v", got)
+	}
+	if got.Bid != 1.20 || got.Ask != 1.25 || got.Mid != 1.225 || got.Mark != 1.23 || got.Last != 1.23 {
+		t.Fatalf("price fields mismatch: %+v", got)
+	}
+	if got.Volume != 1234 || got.OpenInterest != 0 || got.ImpliedVolatility != 0 {
+		t.Fatalf("availability fields mismatch: %+v", got)
+	}
+	if len(got.Warnings) != 2 || got.Warnings[0] != "open_interest_unavailable" || got.Warnings[1] != "implied_volatility_unavailable" {
+		t.Fatalf("warnings = %#v, want explicit unavailable-data warnings", got.Warnings)
+	}
+	if got.Greeks.Delta != -0.24 {
+		t.Fatalf("delta = %v, want -0.24", got.Greeks.Delta)
+	}
+}
+
+func TestOptionQuoteValidationWarningsFlagMissingPriceData(t *testing.T) {
+	q := &model.OptionQuote{
+		Underlying: "AAPL",
+		Expiration: "20260717",
+		Strike:     290,
+		OptionType: model.OptionTypePut,
+	}
+
+	warnings := optionQuoteValidationWarnings(q)
+
+	if !slices.Contains(warnings, "no_price_data") {
+		t.Fatalf("warnings = %#v, want no_price_data", warnings)
+	}
+	if !slices.Contains(warnings, "bid_unavailable") || !slices.Contains(warnings, "ask_unavailable") {
+		t.Fatalf("warnings = %#v, want bid/ask unavailable warnings", warnings)
 	}
 }
 

@@ -127,6 +127,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&pythonBin, "python", "python3", "Python interpreter for yfinance fallback")
 
 	root.AddCommand(newQuoteCmd())
+	root.AddCommand(newOptionQuoteCmd())
 	root.AddCommand(newWatchCmd())
 	root.AddCommand(newDashboardCmd())
 	root.AddCommand(newAnalyzeCmd())

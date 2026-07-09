@@ -68,6 +68,13 @@ type OptionQuoter interface {
 	GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error)
 }
 
+// DetailedOptionQuoter is an optional interface for brokers that can return a
+// single option contract's validation quote, including bid/ask/last, IV/Greeks
+// when available, and structured warnings for missing fields.
+type DetailedOptionQuoter interface {
+	GetOptionQuoteDetails(ctx context.Context, underlying, expiration, right string, strike float64) (*model.OptionQuote, error)
+}
+
 // ErrAccountNotSupported is returned by brokers that cannot provide account
 // data (e.g., the yfinance fallback).
 var ErrAccountNotSupported = errors.New("broker does not support account data (requires IBKR)")

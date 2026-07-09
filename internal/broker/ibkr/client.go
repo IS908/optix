@@ -694,6 +694,7 @@ const (
 	oiMaxConcurrent      = 5               // bounded for IB pacing (50 msg/sec limit)
 	oiPerContractTimeout = 5 * time.Second // give up if no OI tick in 5s
 	marketDepthTimeout   = 3 * time.Second // collect initial SMART depth rows
+	optionQuoteTimeout   = 5 * time.Second // collect single-contract option ticks
 )
 
 // isNoSubscriptionErr returns true for IB errors that indicate missing market
@@ -881,13 +882,43 @@ func (c *Client) GetExecutions(ctx context.Context, filter model.ExecutionFilter
 	return execs, nil
 }
 
-// GetOptionQuote returns a single option contract's mark price. It mirrors
-// GetQuote but builds an OPT contract; the mark is LAST, falling back to the
-// bid/ask midpoint, then CLOSE. Returns an error (e.g. IB 10091 — no OPRA
-// subscription) when no price is available.
+// GetOptionQuote returns a single option contract's mark price. It keeps the
+// historical AccountService contract by collapsing the detailed quote into a
+// single mark-like price.
 func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, right string, strike float64) (float64, error) {
+	quote, err := c.GetOptionQuoteDetails(ctx, underlying, expiration, right, strike)
+	if err != nil {
+		return 0, err
+	}
+	if quote == nil || quote.Mark <= 0 {
+		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: no price data", underlying, expiration, right, strike)
+	}
+	return quote.Mark, nil
+}
+
+// GetOptionQuoteDetails returns a single option contract quote from IBKR with
+// enough detail to validate scanner candidates. Missing subscription/data
+// fields are surfaced through Warnings instead of silently treating zeroes as
+// usable values.
+func (c *Client) GetOptionQuoteDetails(ctx context.Context, underlying, expiration, right string, strike float64) (*model.OptionQuote, error) {
 	if !c.IsConnected() {
-		return 0, fmt.Errorf("not connected to IB Gateway/TWS")
+		return nil, fmt.Errorf("not connected to IB Gateway/TWS")
+	}
+
+	underlying = strings.ToUpper(strings.TrimSpace(underlying))
+	expiration = strings.ReplaceAll(strings.TrimSpace(expiration), "-", "")
+	right = normalizeOptionRight(right)
+	if underlying == "" {
+		return nil, fmt.Errorf("underlying is required")
+	}
+	if expiration == "" {
+		return nil, fmt.Errorf("expiration is required")
+	}
+	if right == "" {
+		return nil, fmt.Errorf("right must be C/call or P/put")
+	}
+	if strike <= 0 {
+		return nil, fmt.Errorf("strike must be positive")
 	}
 
 	reqID := c.nextReqID()
@@ -895,29 +926,73 @@ func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, rig
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
-	c.ibClient.ReqMktData(reqID, optionContract(underlying, expiration, right, strike), "", false, false, nil)
+	const genericTicks = "100,101,106,221"
+	c.ibClient.ReqMktData(reqID, optionContract(underlying, expiration, right, strike), genericTicks, false, false, nil)
 	defer c.ibClient.CancelMktData(reqID)
 
-	tickCtx, tickCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer tickCancel()
+	timer := time.NewTimer(optionQuoteTimeout)
+	defer timer.Stop()
 
+	warnings := make([]string, 0, 2)
 	select {
 	case <-pq.done:
-	case <-tickCtx.Done():
+		select {
+		case err := <-errCh:
+			warnings = append(warnings, "ibkr_error: "+err.Error())
+		default:
+		}
+	case <-timer.C:
 	case err := <-errCh:
-		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: %w", underlying, expiration, right, strike, err)
+		warnings = append(warnings, "ibkr_error: "+err.Error())
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	quote := pq.snapshot()
-	mark := quote.last
-	if mark == 0 && quote.bid > 0 && quote.ask > 0 {
-		mark = (quote.bid + quote.ask) / 2
+	return optionQuoteFromSnapshot(underlying, expiration, right, strike, quote, warnings), nil
+}
+
+func normalizeOptionRight(right string) string {
+	switch strings.ToUpper(strings.TrimSpace(right)) {
+	case "C", "CALL":
+		return "C"
+	case "P", "PUT":
+		return "P"
+	default:
+		return ""
 	}
-	if mark == 0 {
-		mark = quote.close
+}
+
+func optionTypeFromRight(right string) model.OptionType {
+	if normalizeOptionRight(right) == "P" {
+		return model.OptionTypePut
 	}
-	if mark == 0 {
-		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: no price data", underlying, expiration, right, strike)
+	return model.OptionTypeCall
+}
+
+func optionQuoteFromSnapshot(underlying, expiration, right string, strike float64, snap quoteSnapshot, warnings []string) *model.OptionQuote {
+	mid := 0.0
+	if snap.bid > 0 && snap.ask > 0 {
+		mid = (snap.bid + snap.ask) / 2
 	}
-	return mark, nil
+	mark := quoteMark(snap.mark, snap.last, snap.bid, snap.ask, snap.close)
+	q := &model.OptionQuote{
+		Underlying:        underlying,
+		Expiration:        expiration,
+		Strike:            strike,
+		OptionType:        optionTypeFromRight(right),
+		Last:              snap.last,
+		Bid:               snap.bid,
+		Ask:               snap.ask,
+		Mid:               mid,
+		Mark:              mark,
+		Volume:            int64(snap.volume),
+		OpenInterest:      snap.openInterest,
+		ImpliedVolatility: snap.impliedVolatility,
+		Greeks:            snap.greeks,
+		Timestamp:         time.Now().UTC(),
+		MarketDataType:    snap.marketDataType,
+		Warnings:          warnings,
+	}
+	return q
 }

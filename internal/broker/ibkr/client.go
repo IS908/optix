@@ -2,9 +2,11 @@ package ibkr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +24,45 @@ type Config struct {
 	Host     string
 	Port     int
 	ClientID int64
+}
+
+const (
+	ibClientIDInUseCode int64 = 326
+
+	ibHandshakeTimeout = 10 * time.Second
+
+	clientIDFallbackBase   int64 = 100000
+	clientIDPIDModulo      int64 = 10000
+	clientIDPrimaryModulo  int64 = 100000
+	clientIDFallbackStride int64 = clientIDPrimaryModulo * 2
+)
+
+var errIBKRHandshakeTimeout = errors.New("timeout waiting for NextValidID (TCP connected but handshake did not complete)")
+
+type ibConnectError struct {
+	clientID  int64
+	retryable bool
+	err       error
+}
+
+type clientIDAttemptHooks struct {
+	reset   func()
+	connect func(context.Context, int64) error
+	wait    func(context.Context, int) error
+}
+
+type clientIDAttemptResult struct {
+	clientID  int64
+	connected bool
+	errors    []error
+}
+
+func (e *ibConnectError) Error() string {
+	return fmt.Sprintf("IB Gateway/TWS handshake failed for clientID %d: %v", e.clientID, e.err)
+}
+
+func (e *ibConnectError) Unwrap() error {
+	return e.err
 }
 
 // Client wraps the IB Gateway/TWS API connection.
@@ -66,27 +107,76 @@ func (c *Client) Connect(ctx context.Context) error {
 		return nil
 	}
 
-	err := c.ibClient.Connect(c.cfg.Host, c.cfg.Port, c.cfg.ClientID)
-	if err != nil {
-		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d: %w", c.cfg.Host, c.cfg.Port, err)
+	if c.watchCancel != nil {
+		c.watchCancel()
+		c.watchCancel = nil
 	}
+
+	primaryClientID := c.cfg.ClientID
+	candidates := clientIDCandidates(primaryClientID, os.Getpid())
+	result, err := runClientIDAttempts(ctx, candidates, clientIDAttemptHooks{
+		reset: c.resetAPIClientLocked,
+		connect: func(ctx context.Context, clientID int64) error {
+			c.cfg.ClientID = clientID
+			return c.connectOnceLocked(ctx, clientID)
+		},
+		wait: waitBeforeConnectRetry,
+	})
+	if err != nil {
+		c.cfg.ClientID = primaryClientID
+		return err
+	}
+	if !result.connected {
+		c.cfg.ClientID = primaryClientID
+		return connectAttemptsError(c.cfg.Host, c.cfg.Port, candidates[:len(result.errors)], result.errors)
+	}
+
+	if result.clientID != primaryClientID {
+		log.Printf("ibkr: connected with fallback clientID %d after primary clientID %d failed", result.clientID, primaryClientID)
+	}
+	c.finishConnectLocked()
+	return nil
+}
+
+func (c *Client) resetAPIClientLocked() {
+	wrapper := newIbWrapper()
+	c.wrapper = wrapper
+	c.ibClient = ibapi.NewEClient(wrapper)
+}
+
+func (c *Client) connectOnceLocked(ctx context.Context, clientID int64) error {
+	err := c.ibClient.Connect(c.cfg.Host, c.cfg.Port, clientID)
+	if err != nil {
+		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d with clientID %d: %w", c.cfg.Host, c.cfg.Port, clientID, err)
+	}
+
+	timer := time.NewTimer(ibHandshakeTimeout)
+	defer timer.Stop()
 
 	// Wait for NextValidID (signals handshake complete) with a timeout.
 	select {
 	case firstID := <-c.wrapper.nextValidID:
 		atomic.StoreInt64(&c.reqIDCounter, firstID)
-	case <-time.After(10 * time.Second):
+		return nil
+	case err := <-c.wrapper.connectErrors:
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
-			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", c.cfg.ClientID, dErr)
+			log.Printf("ibkr: disconnect after handshake error (clientID %d): %v", clientID, dErr)
 		}
-		return fmt.Errorf("timeout waiting for IB Gateway/TWS handshake")
+		return &ibConnectError{clientID: clientID, retryable: isRetryableConnectCause(err), err: err}
+	case <-timer.C:
+		if dErr := c.ibClient.Disconnect(); dErr != nil {
+			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", clientID, dErr)
+		}
+		return &ibConnectError{clientID: clientID, retryable: true, err: errIBKRHandshakeTimeout}
 	case <-ctx.Done():
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
-			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", c.cfg.ClientID, dErr)
+			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", clientID, dErr)
 		}
 		return ctx.Err()
 	}
+}
 
+func (c *Client) finishConnectLocked() {
 	// Use delayed market data (type 3) so the client works without
 	// a real-time API subscription.  Accounts that do have live
 	// subscriptions will still receive live data for those symbols;
@@ -110,8 +200,103 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.watchCancel = watchCancel
 	go c.watchDisconnect(watchCtx)
+}
 
-	return nil
+func clientIDCandidates(primary int64, pid int) []int64 {
+	if primary == 0 {
+		return []int64{0}
+	}
+	pidPart := int64(pid) % clientIDPIDModulo
+	if pidPart < 0 {
+		pidPart = -pidPart
+	}
+	primaryPart := primary % clientIDPrimaryModulo
+	if primaryPart < 0 {
+		primaryPart = -primaryPart
+	}
+	// Pair a process bucket with the full five-digit primary-ID bucket. The
+	// result stays below MaxInt32 while separating the server's 7200/8700
+	// dynamic ranges and adjacent short-lived CLI processes.
+	firstFallback := clientIDFallbackBase + pidPart*clientIDFallbackStride + primaryPart*2
+	candidates := []int64{primary}
+	for fallback := firstFallback; len(candidates) < 3; fallback++ {
+		if fallback != primary {
+			candidates = append(candidates, fallback)
+		}
+	}
+	return candidates
+}
+
+func runClientIDAttempts(ctx context.Context, candidates []int64, hooks clientIDAttemptHooks) (clientIDAttemptResult, error) {
+	result := clientIDAttemptResult{errors: make([]error, 0, len(candidates))}
+	for attempt, clientID := range candidates {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+
+		hooks.reset()
+		err := hooks.connect(ctx, clientID)
+		if err == nil {
+			result.clientID = clientID
+			result.connected = true
+			return result, nil
+		}
+
+		result.errors = append(result.errors, err)
+		if !isRetryableConnectError(err) || attempt == len(candidates)-1 {
+			return result, nil
+		}
+		if err := hooks.wait(ctx, attempt); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+func isRetryableConnectCause(err error) bool {
+	if errors.Is(err, errIBKRHandshakeTimeout) {
+		return true
+	}
+	var ibErr *ibAPIError
+	if errors.As(err, &ibErr) {
+		return ibErr.code == ibClientIDInUseCode
+	}
+	return false
+}
+
+func isRetryableConnectError(err error) bool {
+	var connectErr *ibConnectError
+	return errors.As(err, &connectErr) && connectErr.retryable
+}
+
+func waitBeforeConnectRetry(ctx context.Context, attempt int) error {
+	delay := time.Duration(100+attempt*150) * time.Millisecond
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func connectAttemptsError(host string, port int, candidates []int64, errs []error) error {
+	if len(errs) == 0 {
+		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d failed before attempting client IDs %v", host, port, candidates)
+	}
+	if len(errs) == 1 {
+		if len(candidates) == 1 {
+			return fmt.Errorf("connect to IB Gateway/TWS at %s:%d failed with client ID %d: %w", host, port, candidates[0], errs[0])
+		}
+		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d failed: %w", host, port, errs[0])
+	}
+	parts := make([]string, len(errs))
+	for i, err := range errs {
+		parts[i] = err.Error()
+	}
+	return fmt.Errorf("connect to IB Gateway/TWS at %s:%d failed after client IDs %v: %s", host, port, candidates, strings.Join(parts, "; "))
 }
 
 // Disconnect closes the IB Gateway/TWS connection.

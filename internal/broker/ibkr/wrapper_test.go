@@ -1,6 +1,7 @@
 package ibkr
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -185,6 +186,21 @@ func TestWrapperMarketDepthAccumulatorCapturesBidAskLevels(t *testing.T) {
 	}
 	if levels[2].Side != "ask" || levels[2].Position != 0 || levels[2].Price != 500.10 || levels[2].Size != 900 {
 		t.Fatalf("ask level 0 mismatch: %#v", levels[2])
+	}
+}
+
+func TestWrapperRoutesClientIDInUseErrorToConnectErrors(t *testing.T) {
+	w := newIbWrapper()
+
+	w.Error(-1, 0, 326, "client id already in use", "")
+
+	select {
+	case err := <-w.connectErrors:
+		if !strings.Contains(err.Error(), "326") || !strings.Contains(err.Error(), "client id already in use") {
+			t.Fatalf("connect error = %q, want code and message", err)
+		}
+	default:
+		t.Fatal("expected client-id-in-use error to reach connectErrors")
 	}
 }
 

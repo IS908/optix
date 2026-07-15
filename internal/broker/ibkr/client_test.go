@@ -1,7 +1,9 @@
 package ibkr
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +145,156 @@ func TestQuoteMarkRequiresTwoSidedMidpoint(t *testing.T) {
 	}
 	if got := quoteMark(102, 101, 99, 101, 98); got != 102 {
 		t.Fatalf("quoteMark mark priority = %v, want 102", got)
+	}
+}
+
+func TestClientIDCandidatesUsesProcessScopedFallbacksForNonMaster(t *testing.T) {
+	got := clientIDCandidates(4, 12345)
+	want := []int64{4, 469100008, 469100009}
+	if len(got) != len(want) {
+		t.Fatalf("clientIDCandidates len = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("clientIDCandidates[%d] = %d, want %d; got %#v", i, got[i], want[i], got)
+		}
+	}
+
+	otherProcess := clientIDCandidates(4, 12346)
+	if otherProcess[1] == got[1] {
+		t.Fatalf("fallback client ID should vary by pid: %#v vs %#v", got, otherProcess)
+	}
+}
+
+func TestClientIDCandidatesDoesNotFallbackMasterClientID(t *testing.T) {
+	got := clientIDCandidates(0, 12345)
+	if len(got) != 1 || got[0] != 0 {
+		t.Fatalf("clientIDCandidates(0) = %#v, want [0]", got)
+	}
+}
+
+func TestClientIDCandidatesNeverRepeatsPrimary(t *testing.T) {
+	got := clientIDCandidates(1334504, 12345)
+	want := []int64{1334504, 469169008, 469169009}
+	if len(got) != len(want) {
+		t.Fatalf("clientIDCandidates len = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("clientIDCandidates[%d] = %d, want %d; got %#v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestClientIDCandidatesSeparatePrimaryIDsWithSameSuffix(t *testing.T) {
+	left := clientIDCandidates(7201, 24504)
+	right := clientIDCandidates(8701, 24504)
+
+	for _, leftID := range left[1:] {
+		for _, rightID := range right[1:] {
+			if leftID == rightID {
+				t.Fatalf("fallback collision for primary IDs 7201 and 8701: %#v vs %#v", left, right)
+			}
+		}
+	}
+}
+
+func TestRunClientIDAttemptsResetsAndRetriesClientIDInUse(t *testing.T) {
+	candidates := []int64{4, 101, 102}
+	resetCount := 0
+	waitCount := 0
+	attempted := make([]int64, 0, len(candidates))
+
+	result, err := runClientIDAttempts(context.Background(), candidates, clientIDAttemptHooks{
+		reset: func() { resetCount++ },
+		connect: func(_ context.Context, clientID int64) error {
+			if resetCount != len(attempted)+1 {
+				t.Fatalf("connect client ID %d ran without a fresh reset", clientID)
+			}
+			attempted = append(attempted, clientID)
+			if len(attempted) == 1 {
+				return &ibConnectError{
+					clientID:  clientID,
+					retryable: true,
+					err:       &ibAPIError{code: ibClientIDInUseCode, message: "client id already in use"},
+				}
+			}
+			return nil
+		},
+		wait: func(_ context.Context, attempt int) error {
+			waitCount++
+			if attempt != 0 {
+				t.Fatalf("wait attempt = %d, want 0", attempt)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if !result.connected || result.clientID != 101 {
+		t.Fatalf("result = %+v, want connected client ID 101", result)
+	}
+	if resetCount != 2 || waitCount != 1 {
+		t.Fatalf("resetCount=%d waitCount=%d, want 2 and 1", resetCount, waitCount)
+	}
+	if len(result.errors) != 1 || len(attempted) != 2 || attempted[0] != 4 || attempted[1] != 101 {
+		t.Fatalf("attempted=%v errors=%v", attempted, result.errors)
+	}
+}
+
+func TestRunClientIDAttemptsDoesNotRetryMasterClientID(t *testing.T) {
+	candidates := clientIDCandidates(0, 12345)
+	resetCount := 0
+	waitCount := 0
+	result, err := runClientIDAttempts(context.Background(), candidates, clientIDAttemptHooks{
+		reset: func() { resetCount++ },
+		connect: func(_ context.Context, clientID int64) error {
+			return &ibConnectError{clientID: clientID, retryable: true, err: errIBKRHandshakeTimeout}
+		},
+		wait: func(context.Context, int) error {
+			waitCount++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if result.connected || len(result.errors) != 1 || resetCount != 1 || waitCount != 0 {
+		t.Fatalf("result=%+v resetCount=%d waitCount=%d, want one failed master attempt", result, resetCount, waitCount)
+	}
+}
+
+func TestRunClientIDAttemptsStopsWhenRetryWaitIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	result, err := runClientIDAttempts(ctx, []int64{4, 101}, clientIDAttemptHooks{
+		reset: func() {},
+		connect: func(_ context.Context, clientID int64) error {
+			return &ibConnectError{clientID: clientID, retryable: true, err: errIBKRHandshakeTimeout}
+		},
+		wait: func(ctx context.Context, _ int) error {
+			cancel()
+			return ctx.Err()
+		},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runClientIDAttempts error = %v, want context canceled", err)
+	}
+	if result.connected || len(result.errors) != 1 {
+		t.Fatalf("result = %+v, want one failed attempt before cancellation", result)
+	}
+}
+
+func TestConnectAttemptsErrorIncludesEndpointForSingleAttempt(t *testing.T) {
+	cause := errors.New("handshake failed")
+	err := connectAttemptsError("127.0.0.1", 4001, []int64{4}, []error{cause})
+	if !errors.Is(err, cause) {
+		t.Fatalf("connectAttemptsError should wrap cause: %v", err)
+	}
+	for _, want := range []string{"127.0.0.1:4001", "client ID 4", "handshake failed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("connectAttemptsError = %q, want substring %q", err, want)
+		}
 	}
 }
 

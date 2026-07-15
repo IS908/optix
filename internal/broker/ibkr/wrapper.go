@@ -336,6 +336,15 @@ type pendingExecutions struct {
 	once       sync.Once
 }
 
+type ibAPIError struct {
+	code    int64
+	message string
+}
+
+func (e *ibAPIError) Error() string {
+	return fmt.Sprintf("IB error %d: %s", e.code, e.message)
+}
+
 // IbWrapper implements ibapi.EWrapper and routes callbacks to waiting goroutines
 // via per-request channels.  It embeds ibapi.Wrapper for all unimplemented methods.
 type IbWrapper struct {
@@ -352,6 +361,7 @@ type IbWrapper struct {
 	executions      map[int64]*pendingExecutions
 	errors          map[int64]chan error
 	nextValidID     chan int64
+	connectErrors   chan error
 
 	// disconnectCh is signaled when ibapi detects a TCP connection drop.
 	// Buffered 1 so ConnectionClosed() never blocks.
@@ -373,6 +383,7 @@ func newIbWrapper() *IbWrapper {
 		executions:      make(map[int64]*pendingExecutions),
 		errors:          make(map[int64]chan error),
 		nextValidID:     make(chan int64, 1),
+		connectErrors:   make(chan error, 1),
 		disconnectCh:    make(chan struct{}, 1),
 		pingCh:          make(chan struct{}, 1),
 	}
@@ -749,9 +760,21 @@ func (w *IbWrapper) CurrentTime(_ int64) {
 	}
 }
 
+func (w *IbWrapper) sendConnectError(err error) {
+	select {
+	case w.connectErrors <- err:
+	default:
+	}
+}
+
 // Error routes IB errors to the corresponding pending request's error channel,
 // or logs them as informational messages (errCode < 2000 are often warnings).
 func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errString string, _ string) {
+	ibErr := &ibAPIError{code: errCode, message: errString}
+	if errCode == ibClientIDInUseCode {
+		w.sendConnectError(ibErr)
+		return
+	}
 	// Codes < 2000 are informational (e.g., "Market data farm connection").
 	if errCode < 2000 {
 		return
@@ -766,7 +789,7 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 	w.mu.Unlock()
 	if ok {
 		select {
-		case ch <- fmt.Errorf("IB error %d: %s", errCode, errString):
+		case ch <- ibErr:
 		default:
 		}
 		// Also close the corresponding data channel so callers unblock.

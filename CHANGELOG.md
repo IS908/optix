@@ -12,6 +12,21 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.28] - 2026-07-15
+
+Patch release fixing repeated IBKR CLI handshake failures (#188).
+
+### Fixed
+
+- Detect IBKR client-ID-in-use error 326 during the connection handshake and
+  retry non-master clients with bounded, process-scoped fallback IDs. Each
+  retry receives a fresh wrapper and API client, while Client ID 0 remains a
+  single-attempt master connection so cross-client execution visibility is
+  preserved.
+- Distinguish TCP connection failures from post-connect `NextValidID`
+  handshake timeouts and include the endpoint and attempted Client IDs in
+  terminal errors.
+
 ## [0.14.27] - 2026-07-09
 
 Patch release adding IBKR single-option quote validation for #186.
@@ -1610,7 +1625,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.27...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.28...HEAD
+[0.14.28]: https://github.com/IS908/optix/compare/v0.14.27...v0.14.28
 [0.14.27]: https://github.com/IS908/optix/compare/v0.14.26...v0.14.27
 [0.14.26]: https://github.com/IS908/optix/compare/v0.14.25...v0.14.26
 [0.14.25]: https://github.com/IS908/optix/compare/v0.14.24...v0.14.25

@@ -249,6 +249,15 @@ Override the runtime location with `export OPTIX_HOME=/path/to/optix` (useful wh
 ./skills/commands/optix/install.sh --uninstall --purge          # also remove canonical bundle
 ```
 
+### Scheduled Scans
+
+`scripts/lark_nasdaq100_sell_put_scan.py` — Nasdaq-100 sell-put income scan built as a Lark (飞书) cron entry. yfinance screens the full index (7–24 DTE puts, ~5–18% OTM, OI ≥ 50, bid ≥ 0.20, spread ≤ 35%); the top candidates are then verified one contract at a time through `optix option-quote` (IBKR) and rendered as a dual-source Markdown table on stdout. Designed for **two** Asia/Shanghai cron entries (21:50 and 22:50) — the script self-gates to 09:45–10:10 ET on NYSE trading days, so exactly one entry fires regardless of US DST. Constituents come from the Nasdaq official API with slickcharts and a built-in list as fallbacks; a >20% fetch-failure circuit breaker marks the run invalid rather than reporting a plausible-looking empty result.
+
+```bash
+# Manual run (bypasses the time window; skips IBKR with --no-ibkr)
+python scripts/lark_nasdaq100_sell_put_scan.py --dry-run --ibkr-top 3
+```
+
 ## Development
 
 ### Build

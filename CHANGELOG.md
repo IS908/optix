@@ -16,7 +16,7 @@ above it.
 
 - `scripts/lark_nasdaq100_sell_put_scan.py`: Nasdaq-100 sell-put income scan
   as a Lark (飞书) cron entry. yfinance full-index screen (7–24 DTE puts,
-  ~5–18% OTM, OI/bid/spread filters, σ-scored with a 0.24-delta target),
+  ~5–18% OTM, OI/bid/spread filters, scored against a 0.24-delta target),
   top candidates verified per-contract through `optix option-quote` (IBKR),
   dual-source Markdown table on stdout. Self-gates to 09:45–10:10 ET on NYSE
   trading days so two China-time cron entries (21:50/22:50) cover US DST with

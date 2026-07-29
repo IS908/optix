@@ -703,6 +703,7 @@ def render(result: ScanResult, symbols_count: int) -> str:
     lines.extend([
         "",
         "提示：这只是候选池，不是下单指令；优先复核财报日、真实期权盘口、组合集中度和可接受接货价。",
+        "口径：表内年化/OTM 为 mid 口径；排名打分用 bid 口径（卖方最差成交价），故行序可能与年化列不完全一致，按 bid 实际成交的年化会更低。",
         "IBKR 核实：`option-quote` 是 IBKR-only；没有自动 fallback 到 yfinance。脚本 fallback 逻辑是在 IBKR 失败/无数据时保留 yfinance 初筛值并标注错误样本。",
     ])
     if SYMBOL_WARNING:

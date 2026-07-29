@@ -12,6 +12,23 @@ above it.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/lark_nasdaq100_sell_put_scan.py`: Nasdaq-100 sell-put income scan
+  as a Lark (飞书) cron entry. yfinance full-index screen (7–24 DTE puts,
+  ~5–18% OTM, OI/bid/spread filters, σ-scored with a 0.24-delta target),
+  top candidates verified per-contract through `optix option-quote` (IBKR),
+  dual-source Markdown table on stdout. Self-gates to 09:45–10:10 ET on NYSE
+  trading days so two China-time cron entries (21:50/22:50) cover US DST with
+  exactly one firing. Constituents from the Nasdaq official API →
+  slickcharts → built-in fallback (Wikipedia's article no longer embeds the
+  table); >20% fetch-failure circuit breaker (counting exceptions, not just
+  empty quotes) invalidates the run instead of reporting a plausible empty
+  result. Unknown-delta rows take the maximum score penalty rather than a
+  free pass; ranking uses bid-based (seller-worst-case) premium yield with
+  the annualized term capped so 7-DTE contracts don't structurally dominate.
+  Adds `lxml` as a direct Python dependency.
+
 ## [0.14.28] - 2026-07-15
 
 Patch release fixing repeated IBKR CLI handshake failures (#188).

@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-05
+
+Minor release adding the sell-put scan journal（可证伪扫描复盘闭环）.
+
 ### Added
 
 - 可证伪扫描复盘闭环（scan journal）：migration 008 双追加表
@@ -1684,7 +1688,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.30...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/IS908/optix/compare/v0.14.30...v0.15.0
 [0.14.30]: https://github.com/IS908/optix/compare/v0.14.29...v0.14.30
 [0.14.29]: https://github.com/IS908/optix/compare/v0.14.28...v0.14.29
 [0.14.28]: https://github.com/IS908/optix/compare/v0.14.27...v0.14.28

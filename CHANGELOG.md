@@ -12,6 +12,18 @@ above it.
 
 ## [Unreleased]
 
+### Added
+
+- 可证伪扫描复盘闭环（scan journal）：migration 008 双追加表
+  `scan_candidates`/`scan_reconciliations`；`internal/scanjournal` 包 +
+  `optix scan-journal register|reconcile|stats` 命令族（写路径只走 CLI）。
+  扫描器每日运行时自动入库当日 Top-10、结算所有已到期候选（hit=到期收盘>
+  行权价；realized P&L=开仓 bid−max(0,行权价−到期收盘)；touched=存续期
+  [scan_date,expiry] 闭区间任一日 low<行权价；7 日历日宽限期后 void），
+  结算结果以「复盘」段附在飞书消息里；`stats --by score-band` 按 score
+  三分位输出命中率/平均 P&L/触及率，直接回答「score 高的候选是否真的更
+  安全」。journal 故障一律降级为消息内警示行，不阻断扫描发出。
+
 ## [0.14.30] - 2026-08-05
 
 Patch release stopping IB Gateway zombie sessions from SIGTERM'd optix

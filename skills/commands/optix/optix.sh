@@ -138,7 +138,10 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$PROJECT_ROOT"
-"$PROJECT_ROOT/bin/optix" --db "$PROJECT_ROOT/data/optix.db" --python "$PROJECT_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} &
+# `<&0` 显式继承本脚本的 stdin：非交互 bash 会把后台命令的 stdin 重定向到
+# /dev/null，管道喂入（如 `echo json | optix.sh scan-journal register`）会
+# 静默拿到 EOF —— 显式重定向恢复正常继承。
+"$PROJECT_ROOT/bin/optix" --db "$PROJECT_ROOT/data/optix.db" --python "$PROJECT_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} <&0 &
 OPTIX_PID=$!
 # 转发终止信号给 optix 子进程:否则 bash 死亡后 optix 被孤儿化,
 # IB Gateway 会话无人断开(僵尸 clientID → 下次连接 326)。

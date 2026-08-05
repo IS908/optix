@@ -408,6 +408,15 @@ def run_optix_subprocess(cmd: List[str], timeout: int) -> "subprocess.CompletedP
                 os.killpg(proc.pid, signal.SIGKILL)
             out, err = proc.communicate()
         raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+    except KeyboardInterrupt:
+        # start_new_session 让子进程脱离终端前台进程组,手动 Ctrl-C 不会自动
+        # 送达 —— 这里补上进程组 SIGTERM,防止孤儿 optix 占住 IBKR clientID
+        # (正是本修复要消灭的僵尸来源,不能自己再引入一个)。
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        with contextlib.suppress(Exception):
+            proc.communicate(timeout=5)
+        raise
     return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 

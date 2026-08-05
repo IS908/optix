@@ -227,6 +227,7 @@ func bestEffortSync(ctx context.Context, store *sqlite.Store) error {
 		return err
 	}
 	defer b.Disconnect()
+	RegisterBrokerCleanup(b)
 	market := server.NewMarketDataService(b, store)
 	acct := server.NewAccountService(b, market)
 	svc := server.NewJournalService(acct, store)
@@ -252,6 +253,7 @@ func newJournalSyncCmd() *cobra.Command {
 				return cliExit(err, exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 
 			market := server.NewMarketDataService(b, store)
 			acct := server.NewAccountService(b, market)

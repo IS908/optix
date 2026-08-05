@@ -124,6 +124,7 @@ which is signalled to the reader). True NLV integration lands in v2.1.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			if jsonOut == "-" {
 				fmt.Fprintln(os.Stderr, b.SourceBanner())
 			} else {

@@ -61,6 +61,7 @@ func newOptionQuoteCmd() *cobra.Command {
 				return cliExit(fmt.Errorf("connect to IBKR: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 
 			quoter, ok := any(b).(broker.DetailedOptionQuoter)
 			if !ok {

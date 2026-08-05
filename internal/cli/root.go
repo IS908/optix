@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/IS908/optix/internal/broker"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
@@ -56,6 +58,18 @@ func RegisterCleanup(c io.Closer) {
 	cleanupItems = append(cleanupItems, c)
 }
 
+// closerFunc adapts a cleanup func to io.Closer for RegisterCleanup.
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
+
+// RegisterBrokerCleanup 把 broker 的 Disconnect 挂进信号清理注册表:
+// SIGTERM/SIGINT 走 os.Exit 时 defer 不执行,不注册的话 IB Gateway 侧会话
+// 成为僵尸、占住 clientID,后续连接触发 326 → fallback ID 堆积。
+func RegisterBrokerCleanup(b broker.Broker) {
+	RegisterCleanup(closerFunc(b.Disconnect))
+}
+
 func runCleanup() {
 	cleanupMu.Lock()
 	defer cleanupMu.Unlock()
@@ -70,7 +84,16 @@ func initSignalHandler() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-ch
-		runCleanup()
+		done := make(chan struct{})
+		go func() {
+			runCleanup()
+			close(done)
+		}()
+		// ibapi Disconnect 可能在 gateway 假死时阻塞;5s 看门狗保证进程一定退出。
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
 		os.Exit(signalExitCode(sig))
 	}()
 }

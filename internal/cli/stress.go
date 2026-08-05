@@ -60,6 +60,7 @@ SPY/QQQ/IV shocks to estimate per-scenario P&L.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			if jsonOut == "-" {
 				fmt.Fprintln(os.Stderr, b.SourceBanner())
 			} else {

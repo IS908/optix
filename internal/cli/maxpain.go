@@ -107,6 +107,7 @@ field convenient for agents: (max_pain - spot) / spot × 100.`,
 				return cliExit(err, exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			fmt.Fprintln(os.Stderr, banner)
 
 			// Resolve "auto" to the actual broker that connected so the JSON

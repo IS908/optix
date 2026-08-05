@@ -84,6 +84,7 @@ Examples:
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			fmt.Fprintln(logw, b.SourceBanner())
 
 			svc := server.NewMarketDataService(b, store)

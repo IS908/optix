@@ -12,6 +12,26 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop orphaned IB Gateway sessions / zombie clientIDs from accumulating when
+  an optix CLI process is killed with SIGTERM (agent-harness timeouts, wrapper
+  kills), which previously fed the #189 error-326 fallback-ID retry until
+  Gateway could no longer accept new connections. `internal/cli/root.go` now
+  registers each broker's `Disconnect` with the signal-cleanup registry (via
+  `RegisterBrokerCleanup`, wired at all ~14 IBKR connect sites across
+  `internal/cli/`) so SIGTERM/SIGINT actually disconnect the broker instead of
+  skipping it along with the rest of the deferred cleanup; a 5s watchdog
+  bounds a wedged/gateway-hung `Disconnect` so the process still exits
+  promptly. `skills/commands/optix/optix.sh` now runs the `optix` binary as a
+  tracked background job and forwards TERM/INT to it, instead of letting bash
+  die on the signal and orphan the child mid-connection. The Lark Nasdaq-100
+  scan (`scripts/lark_nasdaq100_sell_put_scan.py`) no longer uses
+  `subprocess.run(timeout=)` (immediate, uncatchable SIGKILL on timeout) to
+  invoke the CLI; a new `run_optix_subprocess` helper sends SIGTERM to the
+  child's process group first, gives it a 5s grace period to disconnect
+  cleanly, and only SIGKILLs if it's still alive after that.
+
 ## [0.14.29] - 2026-07-29
 
 Minor release adding the Lark Nasdaq-100 sell-put income scan cron entry.

@@ -51,6 +51,7 @@ func newChainCmd() *cobra.Command {
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			fmt.Fprintln(os.Stderr, b.SourceBanner())
 
 			chain, err := b.GetOptionChain(ctx, symbol, expiryCompact)

@@ -389,15 +389,20 @@ def optix_script() -> str:
     return str(Path.home() / ".agents" / "skills" / "optix" / "bin" / "optix.sh")
 
 
-def run_optix_subprocess(cmd: List[str], timeout: int) -> "subprocess.CompletedProcess[str]":
+def run_optix_subprocess(
+    cmd: List[str], timeout: int, stdin_text: Optional[str] = None
+) -> "subprocess.CompletedProcess[str]":
     """subprocess.run 的优雅版:超时先 SIGTERM 进程组(给 optix 的信号清理注册表
-    断开 IB Gateway 的机会,防僵尸 clientID),宽限 5s 后再 SIGKILL。"""
+    断开 IB Gateway 的机会,防僵尸 clientID),宽限 5s 后再 SIGKILL。
+    stdin_text 非 None 时通过管道喂给子进程 stdin(scan-journal register 等需要
+    从 stdin 读 JSON 的子命令用);为 None 时保持原行为,不接管 stdin。"""
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE if stdin_text is not None else None,
         start_new_session=True,
     )
     try:
-        out, err = proc.communicate(timeout=timeout)
+        out, err = proc.communicate(input=stdin_text, timeout=timeout)
     except subprocess.TimeoutExpired:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
@@ -664,6 +669,78 @@ def fmt_int_pair(left: Optional[int], right: Optional[int]) -> str:
     return f"{left if left is not None else 'n/a'}/{right if right is not None else 'n/a'}"
 
 
+JOURNAL_REGISTER_TIMEOUT = 10
+JOURNAL_RECONCILE_TIMEOUT = 30
+
+
+def build_journal_payload(result: ScanResult, symbol_source: str) -> dict:
+    """Top-N 候选转 `optix scan-journal register` 的 stdin payload；
+    rank 按列表顺序 1..N，ibkr_* 仅在非 None 时携带（与 Go 侧 CandidateInput
+    的 omitempty 语义对齐）。"""
+    candidates = []
+    for i, c in enumerate(result.candidates, 1):
+        row = {
+            "rank": i, "symbol": c.symbol, "expiry": c.expiry, "dte": c.dte,
+            "strike": c.strike, "spot": c.spot, "bid": c.bid, "ask": c.ask, "mid": c.mid,
+            "iv": c.iv, "delta": c.delta, "oi": c.oi, "volume": c.volume,
+            "cushion_pct": c.cushion_pct, "premium_yield_pct": c.premium_yield_pct,
+            "annualized_yield_pct": c.annualized_yield_pct, "score": c.score,
+        }
+        for key, value in (("ibkr_bid", c.ibkr_bid), ("ibkr_ask", c.ibkr_ask),
+                           ("ibkr_option_iv", c.ibkr_option_iv),
+                           ("ibkr_option_delta", c.ibkr_option_delta)):
+            if value is not None:
+                row[key] = value
+        candidates.append(row)
+    return {"symbol_source": symbol_source, "candidates": candidates}
+
+
+def run_scan_journal(
+    args: List[str], stdin_json: Optional[str] = None, timeout: int = 30
+) -> Tuple[Optional[dict], Optional[str]]:
+    """调 `optix scan-journal` 子命令；返回 (解析后的 JSON | None, 错误串 | None)。
+    走 run_optix_subprocess（进程组 SIGTERM→5s 宽限→SIGKILL），stdin_json 经
+    stdin_text 管道喂给子进程（register 靠它接收候选 payload）。"""
+    try:
+        completed = run_optix_subprocess(
+            ["bash", optix_script(), "scan-journal", *args],
+            timeout=timeout, stdin_text=stdin_json,
+        )
+    except Exception as exc:
+        return None, f"scan-journal {args[0]}: {type(exc).__name__}: {exc}"
+    if completed.returncode != 0:
+        err_lines = (completed.stderr or completed.stdout or "").strip().splitlines()
+        return None, f"scan-journal {args[0]}: " + "; ".join(err_lines[-2:])[:240]
+    try:
+        return json.loads(completed.stdout), None
+    except Exception as exc:
+        return None, f"scan-journal {args[0]}: parse JSON: {exc}"
+
+
+def render_review_section(rec: dict) -> list:
+    if not rec or rec.get("settled", 0) <= 0:
+        return []
+    lines = ["", f"—— 复盘（本次结算 {rec['settled']} 笔）——",
+             "| 标的 | Put | 到期 | 结果 | 到期收盘 | P&L/股 | 曾触及 | 最深击穿 |",
+             "|---|---:|---|---|---:|---:|---|---:|"]
+    for r in rec.get("results", []):
+        mark = "✅ hit" if r["outcome"] == "hit" else ("❌ miss" if r["outcome"] == "miss" else "⚪ void")
+        touched = "是" if r.get("touched") else "否"
+        breach = f"{r['max_breach_pct']:.1f}%" if r.get("touched") else "–"
+        lines.append(
+            f"| {r['symbol']} | {r['strike']:.0f} | {r['expiry'][5:]} | {mark} | "
+            f"{r['expiry_close']:.2f} | {r['realized_pnl']:+.2f} | {touched} | {breach} |")
+    hr = rec.get("hit_rate", {})
+    denom = hr.get("hit", 0) + hr.get("miss", 0)
+    if denom > 0:
+        sign = "+" if hr["avg_pnl"] >= 0 else "-"
+        lines.append(
+            f"累计：hit {hr['hit']} / miss {hr['miss']} / void {hr.get('void', 0)} · "
+            f"命中率 {hr['rate'] * 100:.0f}% · "
+            f"平均 P&L {sign}${abs(hr['avg_pnl']):.2f}/股")
+    return lines
+
+
 def render(result: ScanResult, symbols_count: int) -> str:
     now_ny = dt.datetime.now(tz=NY).strftime("%Y-%m-%d %H:%M ET")
     candidates = result.candidates
@@ -746,13 +823,35 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Run even outside the scheduled NY time window")
     parser.add_argument("--no-ibkr", action="store_true", help="Skip IBKR stock quote verification")
     parser.add_argument("--ibkr-top", type=int, default=DEFAULT_IBKR_TOP_N, help="Number of top candidates to validate through Optix/IBKR")
+    parser.add_argument("--no-journal", action="store_true", help="Skip scan-journal register/reconcile")
+    parser.add_argument("--with-journal", action="store_true", help="Force journal writes even with --dry-run")
     args = parser.parse_args()
 
     if not args.dry_run and not is_valid_window():
         return 0
     symbols = nasdaq100_symbols()
     ibkr_top_n = 0 if args.no_ibkr else args.ibkr_top
-    print(render(scan(symbols, ibkr_top_n=ibkr_top_n), len(symbols)))
+    result = scan(symbols, ibkr_top_n=ibkr_top_n)
+    journal_active = not args.no_journal and (not args.dry_run or args.with_journal)
+    journal_notes = []
+    review_lines = []
+    if journal_active and not result.data_quality_error and result.candidates:
+        payload = build_journal_payload(result, SYMBOL_SOURCE)
+        _, err = run_scan_journal(["register"], stdin_json=json.dumps(payload),
+                                  timeout=JOURNAL_REGISTER_TIMEOUT)
+        if err:
+            journal_notes.append(f"复盘入库失败：{err}")
+    if journal_active:
+        rec, err = run_scan_journal(["reconcile"], timeout=JOURNAL_RECONCILE_TIMEOUT)
+        if err:
+            journal_notes.append(f"复盘对账失败：{err}")
+        else:
+            review_lines = render_review_section(rec)
+    body = render(result, len(symbols))
+    extra = review_lines + journal_notes
+    if extra:
+        body = body + "\n" + "\n".join(extra)
+    print(body)
     return 0
 
 

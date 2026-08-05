@@ -17,6 +17,11 @@ def test_completes_within_timeout():
     assert cp.returncode == 0 and cp.stdout.strip() == "ok"
 
 
+def test_stdin_text_is_piped_to_child():
+    cp = scan.run_optix_subprocess(["/bin/sh", "-c", "cat"], timeout=5, stdin_text="hello")
+    assert cp.returncode == 0 and cp.stdout == "hello"
+
+
 def test_timeout_sends_sigterm_first():
     # 子进程 trap TERM 后写标记文件再退出——证明先收到的是 TERM 而非 KILL
     marker = Path(os.environ.get("TMPDIR", "/tmp")) / f"optix_term_test_{os.getpid()}"

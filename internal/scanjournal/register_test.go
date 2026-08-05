@@ -11,9 +11,9 @@ import (
 
 // fakeStore 内存实现（register/reconcile/stats 测试共用）。
 type fakeStore struct {
-	cands    []model.ScanCandidate
-	recs     map[string]model.ScanReconciliation
-	insertN  int
+	cands   []model.ScanCandidate
+	recs    map[string]model.ScanReconciliation
+	insertN int
 }
 
 func newFakeStore() *fakeStore { return &fakeStore{recs: map[string]model.ScanReconciliation{}} }

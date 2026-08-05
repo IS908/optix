@@ -12,6 +12,11 @@ above it.
 
 ## [Unreleased]
 
+## [0.14.30] - 2026-08-05
+
+Patch release stopping IB Gateway zombie sessions from SIGTERM'd optix
+processes (the "skill 用完后连不上" accumulation chain).
+
 ### Fixed
 
 - Stop orphaned IB Gateway sessions / zombie clientIDs from accumulating when
@@ -1666,7 +1671,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.14.29...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.14.30...HEAD
+[0.14.30]: https://github.com/IS908/optix/compare/v0.14.29...v0.14.30
 [0.14.29]: https://github.com/IS908/optix/compare/v0.14.28...v0.14.29
 [0.14.28]: https://github.com/IS908/optix/compare/v0.14.27...v0.14.28
 [0.14.27]: https://github.com/IS908/optix/compare/v0.14.26...v0.14.27

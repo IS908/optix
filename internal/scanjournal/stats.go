@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/pkg/model"
@@ -117,7 +118,7 @@ func groupBy(pairs []settledPair, key func(settledPair) string) []Band {
 		}
 		groups[k] = append(groups[k], p)
 	}
-	sort.Strings(order)
+	sort.Slice(order, func(i, j int) bool { return bandSortKey(order[i]) < bandSortKey(order[j]) })
 	bands := make([]Band, 0, len(order))
 	for _, k := range order {
 		bands = append(bands, bandOf(k, groups[k]))
@@ -148,4 +149,28 @@ func bandOf(label string, pairs []settledPair) Band {
 	b.TouchedRate = float64(touched) / n
 	b.AvgMaxBreach = breach / n
 	return b
+}
+
+// bandSortKey 提取标签里第一个数字段做自然排序键（rank-10 在 rank-2 之后、
+// dte-7-10 在 dte-11-17 之前）；无数字的标签排最后。
+func bandSortKey(label string) int {
+	start := -1
+	for i, r := range label {
+		if r >= '0' && r <= '9' {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return 1 << 30
+	}
+	end := start
+	for end < len(label) && label[end] >= '0' && label[end] <= '9' {
+		end++
+	}
+	n, err := strconv.Atoi(label[start:end])
+	if err != nil {
+		return 1 << 30
+	}
+	return n
 }

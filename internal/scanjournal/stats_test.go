@@ -18,6 +18,18 @@ func settled(fs *fakeStore, scanDate, symbol string, score float64, outcome stri
 	}
 }
 
+func settledWith(fs *fakeStore, symbol string, rank, dte int, outcome string) {
+	c := sampleModelCandidate("2026-07-20", symbol, "2026-07-24", 100, 2.0)
+	c.Rank = rank
+	c.DTE = dte
+	c.CandidateID = c.CandidateID + symbol // 防 UNIQUE 锚点碰撞（同价同到期不同 rank）
+	fs.cands = append(fs.cands, c)
+	fs.recs[c.CandidateID] = model.ScanReconciliation{
+		CandidateID: c.CandidateID, Outcome: outcome, RealizedPnL: 1,
+		ExpiryBasis: "delayed", SettledAt: time.Now().UTC(),
+	}
+}
+
 func TestStatsScoreBandsTerciles(t *testing.T) {
 	fs := newFakeStore()
 	// 6 条结算：score 6/5(高) 4/3(中) 2/1(低)；高档全 hit，低档全 miss
@@ -67,5 +79,47 @@ func TestStatsWindowFiltersAndVoidExcluded(t *testing.T) {
 	}
 	if total != 1 { // OLD 在窗口外，VOIDED 不计
 		t.Fatalf("total settled in 30d window = %d, want 1 (bands=%+v)", total, res.Bands)
+	}
+}
+
+// 数字序而非字典序：rank-2 必须在 rank-10 之前。
+func TestStatsByRankNumericOrder(t *testing.T) {
+	fs := newFakeStore()
+	settledWith(fs, "A", 10, 9, "hit")
+	settledWith(fs, "B", 2, 9, "miss")
+	settledWith(fs, "C", 1, 9, "hit")
+	svc := newTestService(fs)
+	res, err := svc.Stats(context.Background(), "all", "rank")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := []string{}
+	for _, b := range res.Bands {
+		labels = append(labels, b.Label)
+	}
+	want := []string{"rank-1", "rank-2", "rank-10"}
+	if len(labels) != 3 || labels[0] != want[0] || labels[1] != want[1] || labels[2] != want[2] {
+		t.Fatalf("labels = %v, want %v", labels, want)
+	}
+}
+
+// dte 档自然升序：7-10 在前，18-24 在后。
+func TestStatsByDTENaturalOrder(t *testing.T) {
+	fs := newFakeStore()
+	settledWith(fs, "A", 1, 22, "hit")
+	settledWith(fs, "B", 2, 8, "miss")
+	settledWith(fs, "C", 3, 14, "hit")
+	svc := newTestService(fs)
+	res, err := svc.Stats(context.Background(), "all", "dte")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := []string{}
+	for _, b := range res.Bands {
+		labels = append(labels, b.Label)
+	}
+	want := []string{"dte-7-10", "dte-11-17", "dte-18-24"}
+	if len(labels) != 3 || labels[0] != want[0] || labels[1] != want[1] || labels[2] != want[2] {
+		t.Fatalf("labels = %v, want %v", labels, want)
 	}
 }

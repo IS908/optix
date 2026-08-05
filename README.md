@@ -163,6 +163,7 @@ optix/
 | `./bin/optix journal list [--symbol] [--since] [--until]` | List persisted executions (auto-syncs; `--no-sync` to skip) |
 | `./bin/optix journal trips [--status open\|closed\|expired]` | FIFO-matched round trips with realized P&L |
 | `./bin/optix journal review [--since] [--until]` | Retrospective summary: win rate, total P&L, by-symbol breakdown |
+| `./bin/optix scan-journal register\|reconcile\|stats` | Sell-put scan journal: register candidates, settle expiries, banded hit-rate |
 | `./bin/optix intel status` | Market Intel clock state and resolved view |
 | `./bin/optix intel read\|narrative\|judge\|reconcile` | Judgment journal workflow for intraday hypotheses and reconciliation |
 | `./bin/optix premarket [--format json]` | M4 premarket bundle: overnight chain, gap-fill stats, movers, sentiment |
@@ -257,6 +258,8 @@ Override the runtime location with `export OPTIX_HOME=/path/to/optix` (useful wh
 # Manual run (bypasses the time window; skips IBKR with --no-ibkr)
 python scripts/lark_nasdaq100_sell_put_scan.py --dry-run --ibkr-top 3
 ```
+
+Each live run also closes a falsifiable scan → outcome loop: the day's Top-10 candidates are registered into the scan journal (`optix scan-journal register`), and every previously-registered candidate whose expiry has passed is settled (`reconcile`) with the result appended as a「复盘」section in the Lark message; journal failures degrade to an in-message warning line rather than blocking the scan. Journal writes run automatically on live (non-`--dry-run`) invocations — pass `--no-journal` to skip them entirely, or `--with-journal` to force them on a `--dry-run` run too.
 
 ## Development
 

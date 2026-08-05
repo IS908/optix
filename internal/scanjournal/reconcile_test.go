@@ -23,7 +23,7 @@ func (f fakeBars) DailyBars(_ context.Context, symbols []string, _ string) (map[
 
 func dailyBar(date string, close, low float64) model.OHLCV {
 	t, _ := time.Parse("2006-01-02", date)
-	return model.OHLCV{Timestamp: t.Add(21 * time.Hour), Close: close, Low: low} // 21:00 UTC ≈ NY 收盘后
+	return model.OHLCV{Timestamp: t, Close: close, Low: low} // naive-midnight-as-UTC，与生产 parseYahooTimestamp 一致
 }
 
 func seedCandidate(fs *fakeStore, scanDate, symbol, expiry string, strike, bid float64) model.ScanCandidate {

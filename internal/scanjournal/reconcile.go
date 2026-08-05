@@ -75,13 +75,17 @@ func (s *Service) Reconcile(ctx context.Context) (ReconcileResult, error) {
 			out.Pending = len(pending)
 		} else {
 			for _, c := range pending {
-				rec, state := settleCandidate(c, bars[c.Symbol], todayNY)
+				rec, state, barsInWindow := settleCandidate(c, bars[c.Symbol], todayNY)
 				switch state {
 				case "pending":
 					out.Pending++
 					continue
 				case "void":
 					out.Void++
+				case "settled":
+					if barsInWindow == 0 {
+						out.Warnings = append(out.Warnings, fmt.Sprintf("%s: touched 基于 0 根区间日线(数据不完整)", c.CandidateID))
+					}
 				}
 				rec.SettledAt = s.Now().UTC()
 				if err := s.Store.InsertScanReconciliation(ctx, rec); err != nil {
@@ -104,20 +108,24 @@ func (s *Service) Reconcile(ctx context.Context) (ReconcileResult, error) {
 	return out, nil
 }
 
-// settleCandidate 纯函数：候选 + 该标的日线 + 今天(NY) → (对账记录, settled|pending|void)。
-func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Time) (model.ScanReconciliation, string) {
-	ny := intelshared.NY()
+// settleCandidate 纯函数：候选 + 该标的日线 + 今天(NY) → (对账记录, settled|pending|void, 区间内日线根数)。
+// 日期匹配用 UTC 日历日：yfinance 日线的 naive-midnight 时间戳被上游 parseYahooTimestamp 当作 UTC
+// 解析（而非交易所本地时区），若在此再转 NY 会把每根日线都错移一个日历日
+// （周五到期永远匹配不上到期 bar → 宽限期耗尽后误判 void；周中到期则会结算到错误的收盘价）。
+func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Time) (model.ScanReconciliation, string, int) {
 	var expiryClose float64
 	found := false
 	minLow := 0.0
 	haveLow := false
+	barsInWindow := 0
 	for _, b := range bars {
-		d := b.Timestamp.In(ny).Format(dateLayout)
+		d := b.Timestamp.UTC().Format(dateLayout)
 		if d == c.Expiry && b.Close > 0 {
 			expiryClose = b.Close
 			found = true
 		}
 		if d >= c.ScanDate && d <= c.Expiry && b.Low > 0 {
+			barsInWindow++
 			if !haveLow || b.Low < minLow {
 				minLow = b.Low
 				haveLow = true
@@ -129,12 +137,12 @@ func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Tim
 		todayDate, _ := time.Parse(dateLayout, todayNY.Format(dateLayout))
 		daysSince := int(todayDate.Sub(expiryDate).Hours() / 24)
 		if daysSince <= GraceDays {
-			return model.ScanReconciliation{}, "pending"
+			return model.ScanReconciliation{}, "pending", 0
 		}
 		return model.ScanReconciliation{
 			CandidateID: c.CandidateID, ExpiryClose: 0, Outcome: "void",
 			RealizedPnL: 0, Touched: false, MaxBreachPct: 0, ExpiryBasis: ExpiryBasisDelayed,
-		}, "void"
+		}, "void", 0
 	}
 	outcome := "miss"
 	if expiryClose > c.Strike {
@@ -144,6 +152,8 @@ func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Tim
 	if intrinsic < 0 {
 		intrinsic = 0
 	}
+	// 部分日线缺失时 touched 按拿到的 bars 尽力计算;spec §5 允许并要求 warnings 标注 —
+	// 批级 warning 由 Reconcile 的调用侧承担,行级不阻塞。
 	touched := haveLow && minLow < c.Strike
 	breach := 0.0
 	if touched {
@@ -153,7 +163,7 @@ func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Tim
 		CandidateID: c.CandidateID, ExpiryClose: expiryClose, Outcome: outcome,
 		RealizedPnL: c.Bid - intrinsic, Touched: touched, MaxBreachPct: breach,
 		ExpiryBasis: ExpiryBasisDelayed,
-	}, "settled"
+	}, "settled", barsInWindow
 }
 
 // hitRateAll 全历史命中率（void 不进分母；avg_pnl 只平均 hit/miss）。

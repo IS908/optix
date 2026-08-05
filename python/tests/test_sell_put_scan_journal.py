@@ -128,3 +128,20 @@ def test_journal_flow_success_renders_review(monkeypatch):
         result, dry_run=False, no_journal=False, with_journal=False)
     assert journal_notes == []
     assert any("复盘（本次结算 1 笔）" in line for line in review_lines)
+
+
+def test_journal_flow_skips_register_on_circuit_breaker(monkeypatch):
+    calls = []
+
+    def fake(args, stdin_json=None, timeout=30):
+        calls.append(args[0])
+        assert args[0] == "reconcile", "register must not be called when circuit breaker tripped"
+        return ({"settled": 0, "void": 0, "pending": 0, "results": [],
+                  "hit_rate": {"hit": 0, "miss": 0, "void": 0, "rate": 0,
+                               "avg_pnl": 0, "window": "all"}}, None)
+
+    monkeypatch.setattr(scan, "run_scan_journal", fake)
+    result = _scan_result(candidates=[_cand()], data_quality_error="熔断")
+    review_lines, journal_notes = scan.run_journal_flow(
+        result, dry_run=False, no_journal=False, with_journal=False)
+    assert calls == ["reconcile"] and review_lines == [] and journal_notes == []

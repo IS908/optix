@@ -138,4 +138,24 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$PROJECT_ROOT"
-"$PROJECT_ROOT/bin/optix" --db "$PROJECT_ROOT/data/optix.db" --python "$PROJECT_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+"$PROJECT_ROOT/bin/optix" --db "$PROJECT_ROOT/data/optix.db" --python "$PROJECT_ROOT/python/.venv/bin/python" --ib-host "$IB_HOST" --ib-port "$IB_PORT" "$@" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} &
+OPTIX_PID=$!
+# 转发终止信号给 optix 子进程:否则 bash 死亡后 optix 被孤儿化,
+# IB Gateway 会话无人断开(僵尸 clientID → 下次连接 326)。
+forward_term() {
+    kill -TERM "$OPTIX_PID" 2>/dev/null || true
+}
+trap forward_term TERM INT
+# Some bash builds (notably macOS's stock bash 3.2) let a trapped signal make
+# `wait` return immediately with a synthetic 128+signum status instead of
+# resuming per POSIX once the trap handler returns — before optix has
+# actually disconnected from IB Gateway. Loop on kill -0 so we keep waiting
+# until optix's process is truly gone, and OPTIX_STATUS reflects its real
+# exit code (from the final, non-interrupted wait) rather than the signal
+# that merely interrupted our wait call.
+OPTIX_STATUS=0
+while kill -0 "$OPTIX_PID" 2>/dev/null; do
+    wait "$OPTIX_PID" && OPTIX_STATUS=0 || OPTIX_STATUS=$?
+done
+trap - TERM INT
+exit "$OPTIX_STATUS"

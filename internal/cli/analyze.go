@@ -86,6 +86,7 @@ Examples:
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			fmt.Println(b.SourceBanner())
 
 			// Create MarketDataService with SQLite caching
@@ -217,6 +218,7 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 		return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 	}
 	defer b.Disconnect()
+	RegisterBrokerCleanup(b)
 	fmt.Println(b.SourceBanner())
 
 	svc := server.NewMarketDataService(b, store)

@@ -77,6 +77,7 @@ from the option chain or inverted from the mark are skipped and listed.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			if jsonOut == "-" {
 				fmt.Fprintln(os.Stderr, b.SourceBanner())
 			} else {

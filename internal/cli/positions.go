@@ -58,6 +58,7 @@ Requires IBKR TWS/Gateway — account data is not available via Yahoo Finance.`,
 				return cliExit(fmt.Errorf("connect to broker: %w", err), exitIBKRUnreachable)
 			}
 			defer b.Disconnect()
+			RegisterBrokerCleanup(b)
 			if format == "json" {
 				fmt.Fprintln(os.Stderr, b.SourceBanner())
 			} else {

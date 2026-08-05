@@ -13,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -388,13 +389,32 @@ def optix_script() -> str:
     return str(Path.home() / ".agents" / "skills" / "optix" / "bin" / "optix.sh")
 
 
+def run_optix_subprocess(cmd: List[str], timeout: int) -> "subprocess.CompletedProcess[str]":
+    """subprocess.run 的优雅版:超时先 SIGTERM 进程组(给 optix 的信号清理注册表
+    断开 IB Gateway 的机会,防僵尸 clientID),宽限 5s 后再 SIGKILL。"""
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            out, err = proc.communicate()
+        raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def fetch_ibkr_stock_quote(symbol: str) -> Tuple[Optional[Dict], Optional[str]]:
     try:
-        completed = subprocess.run(
+        completed = run_optix_subprocess(
             ["bash", optix_script(), "quote", symbol, "--format", "json"],
-            check=False,
-            capture_output=True,
-            text=True,
             timeout=15,
         )
     except Exception as exc:
@@ -411,7 +431,7 @@ def fetch_ibkr_stock_quote(symbol: str) -> Tuple[Optional[Dict], Optional[str]]:
 def fetch_ibkr_option_quote(cand: Candidate) -> Tuple[Optional[Dict], Optional[str]]:
     strike = f"{cand.strike:.4f}".rstrip("0").rstrip(".")
     try:
-        completed = subprocess.run(
+        completed = run_optix_subprocess(
             [
                 "bash",
                 optix_script(),
@@ -426,9 +446,6 @@ def fetch_ibkr_option_quote(cand: Candidate) -> Tuple[Optional[Dict], Optional[s
                 "--format",
                 "json",
             ],
-            check=False,
-            capture_output=True,
-            text=True,
             timeout=20,
         )
     except Exception as exc:

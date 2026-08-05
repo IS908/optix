@@ -59,3 +59,72 @@ def test_render_review_section_table_and_cumulative():
     assert "NBIS" in text and "✅" in text and "❌" in text
     assert "命中率 80%" in text and "+$8.42" in text
     assert "3.2%" in text
+
+
+def test_render_review_section_void_row():
+    rec = {"settled": 1, "void": 1, "pending": 0,
+           "results": [
+               {"symbol": "NBIS", "strike": 145.0, "expiry": "2026-08-21", "outcome": "void",
+                "expiry_close": 152.30, "realized_pnl": 0.0, "touched": False, "max_breach_pct": 0}],
+           "hit_rate": {"hit": 0, "miss": 0, "void": 1, "rate": 0, "avg_pnl": 0, "window": "all"}}
+    lines = scan.render_review_section(rec)
+    text = "\n".join(lines)
+    assert "⚪" in text
+    assert "否" in text  # touched column renders for the void row
+
+
+def _scan_result(*, candidates=None, data_quality_error=None):
+    return scan.ScanResult(
+        candidates=candidates if candidates is not None else [_cand()],
+        stats={}, errors=[], ibkr_errors=[], ibkr_attempted=0,
+        data_quality_error=data_quality_error,
+    )
+
+
+def test_journal_flow_register_failure_degrades_to_note(monkeypatch):
+    def fake(args, stdin_json=None, timeout=30):
+        return None, "boom"
+
+    monkeypatch.setattr(scan, "run_scan_journal", fake)
+    result = _scan_result()
+    review_lines, journal_notes = scan.run_journal_flow(
+        result, dry_run=False, no_journal=False, with_journal=False)
+    assert review_lines == []
+    assert journal_notes == ["复盘入库失败：boom", "复盘对账失败：boom"]
+
+
+def test_journal_flow_inactive_when_dry_run_without_with_journal(monkeypatch):
+    def fake(args, stdin_json=None, timeout=30):
+        raise AssertionError("run_scan_journal should not be called when journal is inactive")
+
+    monkeypatch.setattr(scan, "run_scan_journal", fake)
+    result = _scan_result()
+
+    review_lines, journal_notes = scan.run_journal_flow(
+        result, dry_run=True, no_journal=False, with_journal=False)
+    assert review_lines == [] and journal_notes == []
+
+    review_lines, journal_notes = scan.run_journal_flow(
+        result, dry_run=False, no_journal=True, with_journal=False)
+    assert review_lines == [] and journal_notes == []
+
+
+def test_journal_flow_success_renders_review(monkeypatch):
+    rec = {"settled": 1, "void": 0, "pending": 0,
+           "results": [
+               {"symbol": "NBIS", "strike": 145.0, "expiry": "2026-08-21", "outcome": "hit",
+                "expiry_close": 152.30, "realized_pnl": 18.90, "touched": False, "max_breach_pct": 0}],
+           "hit_rate": {"hit": 1, "miss": 0, "void": 0, "rate": 1.0, "avg_pnl": 18.90, "window": "all"}}
+
+    def fake(args, stdin_json=None, timeout=30):
+        if args[0] == "register":
+            return {"registered": 1, "skipped": 0}, None
+        assert args[0] == "reconcile"
+        return rec, None
+
+    monkeypatch.setattr(scan, "run_scan_journal", fake)
+    result = _scan_result()
+    review_lines, journal_notes = scan.run_journal_flow(
+        result, dry_run=False, no_journal=False, with_journal=False)
+    assert journal_notes == []
+    assert any("复盘（本次结算 1 笔）" in line for line in review_lines)

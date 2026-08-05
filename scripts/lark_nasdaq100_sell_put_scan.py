@@ -417,6 +417,9 @@ def run_optix_subprocess(
         # start_new_session 让子进程脱离终端前台进程组,手动 Ctrl-C 不会自动
         # 送达 —— 这里补上进程组 SIGTERM,防止孤儿 optix 占住 IBKR clientID
         # (正是本修复要消灭的僵尸来源,不能自己再引入一个)。
+        # register 是 Go 侧单事务原子——KI 中断产生的半写 stdin 最多导致
+        # register 端 JSON 解析失败、整批拒绝,不会半批入库;KI 随后继续
+        # 向上传播终止全脚本。
         with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGTERM)
         with contextlib.suppress(Exception):
@@ -741,6 +744,30 @@ def render_review_section(rec: dict) -> list:
     return lines
 
 
+def run_journal_flow(
+    result: ScanResult, *, dry_run: bool, no_journal: bool, with_journal: bool
+) -> Tuple[List[str], List[str]]:
+    """执行 journal 接线(register + reconcile),返回 (复盘段行, 警示行)。
+    任何 journal 失败都只产生警示行 —— 扫描消息必须照发。"""
+    journal_active = not no_journal and (not dry_run or with_journal)
+    review_lines: List[str] = []
+    journal_notes: List[str] = []
+    if not journal_active:
+        return review_lines, journal_notes
+    if not result.data_quality_error and result.candidates:
+        payload = build_journal_payload(result, SYMBOL_SOURCE)
+        _, err = run_scan_journal(["register"], stdin_json=json.dumps(payload),
+                                  timeout=JOURNAL_REGISTER_TIMEOUT)
+        if err:
+            journal_notes.append(f"复盘入库失败：{err}")
+    rec, err = run_scan_journal(["reconcile"], timeout=JOURNAL_RECONCILE_TIMEOUT)
+    if err:
+        journal_notes.append(f"复盘对账失败：{err}")
+    else:
+        review_lines = render_review_section(rec)
+    return review_lines, journal_notes
+
+
 def render(result: ScanResult, symbols_count: int) -> str:
     now_ny = dt.datetime.now(tz=NY).strftime("%Y-%m-%d %H:%M ET")
     candidates = result.candidates
@@ -832,21 +859,8 @@ def main() -> int:
     symbols = nasdaq100_symbols()
     ibkr_top_n = 0 if args.no_ibkr else args.ibkr_top
     result = scan(symbols, ibkr_top_n=ibkr_top_n)
-    journal_active = not args.no_journal and (not args.dry_run or args.with_journal)
-    journal_notes = []
-    review_lines = []
-    if journal_active and not result.data_quality_error and result.candidates:
-        payload = build_journal_payload(result, SYMBOL_SOURCE)
-        _, err = run_scan_journal(["register"], stdin_json=json.dumps(payload),
-                                  timeout=JOURNAL_REGISTER_TIMEOUT)
-        if err:
-            journal_notes.append(f"复盘入库失败：{err}")
-    if journal_active:
-        rec, err = run_scan_journal(["reconcile"], timeout=JOURNAL_RECONCILE_TIMEOUT)
-        if err:
-            journal_notes.append(f"复盘对账失败：{err}")
-        else:
-            review_lines = render_review_section(rec)
+    review_lines, journal_notes = run_journal_flow(
+        result, dry_run=args.dry_run, no_journal=args.no_journal, with_journal=args.with_journal)
     body = render(result, len(symbols))
     extra = review_lines + journal_notes
     if extra:

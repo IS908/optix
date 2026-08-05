@@ -70,29 +70,30 @@ func (s *Service) Reconcile(ctx context.Context) (ReconcileResult, error) {
 		sort.Strings(syms)
 		bars, err := s.Bars.DailyBars(ctx, syms, barsPeriod)
 		if err != nil {
-			// 数据源整体失败：全部按 pending 处理（宽限期规则下自然重试）
+			// 数据源整体失败：全部按 pending 处理，零写入（瞬时故障不可逆污染历史）
 			out.Warnings = append(out.Warnings, fmt.Sprintf("daily bars unavailable: %v", err))
-			bars = map[string][]model.OHLCV{}
-		}
-		for _, c := range pending {
-			rec, state := settleCandidate(c, bars[c.Symbol], todayNY)
-			switch state {
-			case "pending":
-				out.Pending++
-				continue
-			case "void":
-				out.Void++
+			out.Pending = len(pending)
+		} else {
+			for _, c := range pending {
+				rec, state := settleCandidate(c, bars[c.Symbol], todayNY)
+				switch state {
+				case "pending":
+					out.Pending++
+					continue
+				case "void":
+					out.Void++
+				}
+				rec.SettledAt = s.Now().UTC()
+				if err := s.Store.InsertScanReconciliation(ctx, rec); err != nil {
+					return out, fmt.Errorf("insert reconciliation %s: %w", c.CandidateID, err)
+				}
+				out.Settled++
+				out.Results = append(out.Results, SettledRow{
+					CandidateID: c.CandidateID, Symbol: c.Symbol, Strike: c.Strike,
+					Expiry: c.Expiry, Outcome: rec.Outcome, ExpiryClose: rec.ExpiryClose,
+					RealizedPnL: rec.RealizedPnL, Touched: rec.Touched, MaxBreachPct: rec.MaxBreachPct,
+				})
 			}
-			rec.SettledAt = s.Now().UTC()
-			if err := s.Store.InsertScanReconciliation(ctx, rec); err != nil {
-				return out, fmt.Errorf("insert reconciliation %s: %w", c.CandidateID, err)
-			}
-			out.Settled++
-			out.Results = append(out.Results, SettledRow{
-				CandidateID: c.CandidateID, Symbol: c.Symbol, Strike: c.Strike,
-				Expiry: c.Expiry, Outcome: rec.Outcome, ExpiryClose: rec.ExpiryClose,
-				RealizedPnL: rec.RealizedPnL, Touched: rec.Touched, MaxBreachPct: rec.MaxBreachPct,
-			})
 		}
 	}
 	hr, err := s.hitRateAll(ctx)
@@ -124,8 +125,9 @@ func settleCandidate(c model.ScanCandidate, bars []model.OHLCV, todayNY time.Tim
 		}
 	}
 	if !found {
-		expiry, _ := time.Parse(dateLayout, c.Expiry)
-		daysSince := int(todayNY.Sub(expiry.In(time.UTC)).Hours() / 24)
+		expiryDate, _ := time.Parse(dateLayout, c.Expiry)
+		todayDate, _ := time.Parse(dateLayout, todayNY.Format(dateLayout))
+		daysSince := int(todayDate.Sub(expiryDate).Hours() / 24)
 		if daysSince <= GraceDays {
 			return model.ScanReconciliation{}, "pending"
 		}

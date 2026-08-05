@@ -2,6 +2,7 @@ package scanjournal
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -142,5 +143,62 @@ func TestReconcileExpiryBarMissingButLaterBarsExist(t *testing.T) {
 	res, _ := svc.Reconcile(context.Background())
 	if res.Pending != 1 || res.Settled != 0 {
 		t.Fatalf("res = %+v, want pending", res)
+	}
+}
+
+type errorBars struct{}
+
+func (errorBars) DailyBars(context.Context, []string, string) (map[string][]model.OHLCV, error) {
+	return nil, fmt.Errorf("yfinance down")
+}
+
+// Critical regression: 数据源整体失败时,即使候选已超 7 天宽限期也必须 pending,
+// 绝不能写 void(瞬时故障不可逆污染历史)。
+func TestReconcileBatchBarsFailureAllPendingEvenPastGrace(t *testing.T) {
+	fs := newFakeStore()
+	seedCandidate(fs, "2026-07-01", "OLD", "2026-07-10", 100, 2.0) // 到期已 19 天
+	svc := NewService(fs, errorBars{})
+	svc.Now = func() time.Time {
+		tm, _ := time.Parse("2006-01-02", "2026-07-29")
+		return tm.Add(16 * time.Hour)
+	}
+	res, err := svc.Reconcile(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pending != 1 || res.Settled != 0 || res.Void != 0 {
+		t.Fatalf("res = %+v, want all pending", res)
+	}
+	if len(fs.recs) != 0 {
+		t.Fatalf("store must be untouched on batch failure, got %d recs", len(fs.recs))
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatalf("expected a warning about bars unavailability")
+	}
+}
+
+// Important regression: 宽限期按纯日历日计,与运行时刻/DST 无关。
+// 到期 7/24;NY 时间 7/31 深夜 23:30(EDT)仍是第 7 天 → pending;8/1 任意时刻 → void。
+func TestReconcileGraceBoundaryImmuneToRunHourAndDST(t *testing.T) {
+	mk := func(nyWall string) (*Service, *fakeStore) {
+		fs := newFakeStore()
+		seedCandidate(fs, "2026-07-20", "DST", "2026-07-24", 100, 2.0)
+		svc := NewService(fs, fakeBars{bars: map[string][]model.OHLCV{}})
+		svc.Now = func() time.Time {
+			loc, _ := time.LoadLocation("America/New_York")
+			tm, _ := time.ParseInLocation("2006-01-02 15:04", nyWall, loc)
+			return tm
+		}
+		return svc, fs
+	}
+	svc, _ := mk("2026-07-31 23:30") // day 7, late evening EDT
+	res, _ := svc.Reconcile(context.Background())
+	if res.Pending != 1 || res.Void != 0 {
+		t.Fatalf("day-7 23:30 NY: %+v, want pending", res)
+	}
+	svc, _ = mk("2026-08-01 00:10") // day 8, just past midnight
+	res, _ = svc.Reconcile(context.Background())
+	if res.Void != 1 {
+		t.Fatalf("day-8 00:10 NY: %+v, want void", res)
 	}
 }

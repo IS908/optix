@@ -812,12 +812,14 @@ JOURNAL_REGISTER_TIMEOUT = 10
 JOURNAL_RECONCILE_TIMEOUT = 30
 
 
-def build_journal_payload(result: ScanResult, symbol_source: str) -> dict:
-    """Top-N 候选转 `optix scan-journal register` 的 stdin payload；
-    rank 按列表顺序 1..N，ibkr_* 仅在非 None 时携带（与 Go 侧 CandidateInput
-    的 omitempty 语义对齐）。"""
-    candidates = []
-    for i, c in enumerate(result.candidates, 1):
+def build_journal_payload(candidates: List[Candidate], symbol_source: str) -> dict:
+    """市场序 Top-N 候选 → `optix scan-journal register` 的 stdin payload。
+    契约(spec 2026-08-08 §6):调用方必须传 **市场面 score 降序** 列表
+    (ScanResult.candidates 的原序);组合感知只重排 Lark 显示,rank 语义与
+    2026-08-05 起的样本保持同口径。rank 按列表顺序 1..N,ibkr_* 仅在非
+    None 时携带(与 Go 侧 CandidateInput 的 omitempty 语义对齐)。"""
+    rows = []
+    for i, c in enumerate(candidates, 1):
         row = {
             "rank": i, "symbol": c.symbol, "expiry": c.expiry, "dte": c.dte,
             "strike": c.strike, "spot": c.spot, "bid": c.bid, "ask": c.ask, "mid": c.mid,
@@ -830,8 +832,8 @@ def build_journal_payload(result: ScanResult, symbol_source: str) -> dict:
                            ("ibkr_option_delta", c.ibkr_option_delta)):
             if value is not None:
                 row[key] = value
-        candidates.append(row)
-    return {"symbol_source": symbol_source, "candidates": candidates}
+        rows.append(row)
+    return {"symbol_source": symbol_source, "candidates": rows}
 
 
 def run_scan_journal(
@@ -891,7 +893,7 @@ def run_journal_flow(
     if not journal_active:
         return review_lines, journal_notes
     if not result.data_quality_error and result.candidates:
-        payload = build_journal_payload(result, SYMBOL_SOURCE)
+        payload = build_journal_payload(result.candidates, SYMBOL_SOURCE)
         _, err = run_scan_journal(["register"], stdin_json=json.dumps(payload),
                                   timeout=JOURNAL_REGISTER_TIMEOUT)
         if err:

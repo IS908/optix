@@ -191,3 +191,21 @@ def test_apply_awareness_no_overlap_line():
     cands = [_cand(symbol="AMD")]
     line = scan.apply_portfolio_awareness(cands, {"NVDA": _holding(stock_qty=1)}, "09:50 ET")
     assert line == "组合感知: 与当前持仓无重叠"
+
+
+import json as _json
+
+
+def test_journal_payload_immune_to_display_reorder():
+    """spec §6 关键回归:组合感知重排显示不得影响 journal payload。"""
+    market_order = [_cand(symbol="NVDA", score=0.9),
+                    _cand(symbol="AAPL", score=0.8, expiry="2026-08-21")]
+    before = _json.dumps(scan.build_journal_payload(market_order, "src"), sort_keys=True)
+    # NVDA 被重罚后显示序反转 —— 但 journal 输入仍是市场序列表
+    market_order[0].portfolio_penalty = scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    market_order[0].portfolio_labels = "撞期!"
+    display = sorted(market_order,
+                     key=lambda c: c.score - c.portfolio_penalty, reverse=True)
+    assert [c.symbol for c in display] == ["AAPL", "NVDA"]  # 显示序确实变了
+    after = _json.dumps(scan.build_journal_payload(market_order, "src"), sort_keys=True)
+    assert before == after  # 字节级不变:payload 不含 penalty/labels,顺序不受显示影响

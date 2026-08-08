@@ -1215,7 +1215,14 @@ func (c *Client) GetOptionQuoteDetails(ctx context.Context, underlying, expirati
 
 	reqID := c.nextReqID()
 	pq := c.wrapper.registerQuote(reqID, right)
-	errCh := c.wrapper.registerError(reqID)
+	// Strict routing: this is option-quote's own contract-validation path,
+	// so a whitelisted sub-2000 IB error (e.g. 200 "no security
+	// definition") must fail fast instead of being dropped as
+	// informational noise (#193 finding 1). 354 is excluded from the
+	// strict set even here — see strictErrorCodes' doc comment — so a
+	// "not subscribed" error doesn't kill a quote that delayed ticks would
+	// still satisfy.
+	errCh := c.wrapper.registerStrictError(reqID)
 	defer c.wrapper.unregister(reqID)
 
 	const genericTicks = "100,101,106,221"

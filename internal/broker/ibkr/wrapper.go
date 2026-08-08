@@ -452,8 +452,14 @@ type IbWrapper struct {
 	positions       *pendingPositions // singleton — ReqPositions has no reqID
 	executions      map[int64]*pendingExecutions
 	errors          map[int64]chan error
-	nextValidID     chan int64
-	connectErrors   chan error
+
+	// strictReqIDs marks reqIDs that opted into strict sub-2000 error
+	// routing via registerStrictError (see strictErrorCodes / Error).
+	// Populated/cleared under mu, same as the maps above.
+	strictReqIDs map[int64]bool
+
+	nextValidID   chan int64
+	connectErrors chan error
 
 	// disconnectCh is signaled when ibapi detects a TCP connection drop.
 	// Buffered 1 so ConnectionClosed() never blocks.
@@ -474,6 +480,7 @@ func newIbWrapper() *IbWrapper {
 		depth:           make(map[int64]*pendingDepth),
 		executions:      make(map[int64]*pendingExecutions),
 		errors:          make(map[int64]chan error),
+		strictReqIDs:    make(map[int64]bool),
 		nextValidID:     make(chan int64, 1),
 		connectErrors:   make(chan error, 1),
 		disconnectCh:    make(chan struct{}, 1),
@@ -573,6 +580,30 @@ func (w *IbWrapper) registerError(reqID int64) chan error {
 	return ch
 }
 
+// registerStrictError is like registerError, but also opts reqID into
+// strict sub-2000 error routing: Error() will route strictErrorCodes to
+// this reqID's errCh instead of dropping them as informational noise (see
+// strictErrorCodes / Error).
+//
+// Used ONLY by GetOptionQuoteDetails (client.go). Fast-failing on a
+// contract-validation error like 200 ("no security definition") is that
+// command's literal purpose. Every other reqID-keyed request type —
+// GetQuote, GetMarketDepth, GetHistoricalBars, GetOptionChain,
+// fetchOIForContract, GetExecutions, getConID — must keep the pre-#193
+// tolerant behavior (sub-2000 codes silently dropped), since a review
+// follow-up found the unconditional whitelist broke GetMarketDepth's
+// documented partial-rows-on-timeout contract and GetQuote's
+// no-subscription history fallback. Those call sites continue to use plain
+// registerError.
+func (w *IbWrapper) registerStrictError(reqID int64) chan error {
+	ch := make(chan error, 1)
+	w.mu.Lock()
+	w.errors[reqID] = ch
+	w.strictReqIDs[reqID] = true
+	w.mu.Unlock()
+	return ch
+}
+
 func (w *IbWrapper) unregister(reqID int64) {
 	w.mu.Lock()
 	delete(w.quotes, reqID)
@@ -583,6 +614,7 @@ func (w *IbWrapper) unregister(reqID int64) {
 	delete(w.depth, reqID)
 	delete(w.executions, reqID)
 	delete(w.errors, reqID)
+	delete(w.strictReqIDs, reqID)
 	w.mu.Unlock()
 }
 
@@ -893,16 +925,27 @@ func (w *IbWrapper) sendConnectError(err error) {
 	}
 }
 
-// errCodesAlwaysRouted whitelists sub-2000 IB error codes that are genuine
-// per-request failures, not informational noise. Most of the sub-2000 range
-// (farm-connectivity chatter etc.) really is safe to drop — see the general
-// `errCode < 2000` filter below — but a handful of codes in that range are
-// real request-level errors IB happens to number below 2000, and dropping
-// them silently burns the caller's full collection window instead of
-// failing fast with the real reason (#193 finding 1). Kept as an explicit
-// whitelist rather than a sub-range so the long-connection noise-suppression
-// contract can't regress — every other sub-2000 code (audited against IB's
-// error-code docs) is still swallowed exactly as before.
+// strictErrorCodes whitelists sub-2000 IB error codes that are genuine
+// per-request failures, not informational noise — but ONLY for reqIDs that
+// opted into strict routing via registerStrictError. Most of the sub-2000
+// range (farm-connectivity chatter etc.) really is safe to drop for every
+// request type — see the general `errCode < 2000` filter below — but a
+// handful of codes in that range are real request-level errors IB happens
+// to number below 2000, and dropping them silently burns the caller's full
+// collection window instead of failing fast with the real reason (#193
+// finding 1).
+//
+// This started as an UNCONDITIONAL whitelist applied to every reqID-keyed
+// request via the shared Error() callback. A review follow-up found that
+// broke GetMarketDepth's documented partial-rows-on-timeout contract (a
+// routed 354 discarded an already-collected partial snapshot) and
+// GetQuote's no-subscription history fallback (a routed 354 hard-failed
+// instead of falling through to isNoSubscriptionErr's 10089/10090 history
+// path, unlike the adjacent 10167 tolerance below). Strict routing is now
+// opt-in per reqID; only GetOptionQuoteDetails registers strict, since
+// fast-failing on contract validation is that command's literal purpose.
+// Every other sub-2000 code, and every non-strict reqID, is still swallowed
+// exactly as it was pre-#193.
 //
 //   - 200 — "No security definition has been found for the request": the
 //     contract itself doesn't exist (bad strike/expiry/right). This is
@@ -912,14 +955,21 @@ func (w *IbWrapper) sendConnectError(err error) {
 //   - 300 — "Can't find EId with tickerId": the reqID/ticker is unknown to
 //     TWS (e.g. request was already cancelled or never valid).
 //   - 321 — "Error validating request": malformed contract/request fields.
-//   - 354 — "Requested market data is not subscribed": per-contract
-//     subscription failure, not farm connectivity.
-var errCodesAlwaysRouted = map[int64]bool{
+//
+// 354 ("Requested market data is not subscribed") is deliberately NOT in
+// this set, even though option-quote is the only strict caller. IB can fire
+// 354 for a contract that has no live-data subscription before its
+// delayed/frozen ticks arrive; those ticks can still complete a usable
+// (degraded) quote (finding 2's early-completion path, or the timeout
+// fallback). Strict-routing 354 would kill that quote before it had a
+// chance to degrade gracefully — the same reasoning the 10167 special case
+// below already applies to "not subscribed, delayed data incoming". So 354
+// is always informational, for every reqID, strict or not.
+var strictErrorCodes = map[int64]bool{
 	200: true,
 	162: true,
 	300: true,
 	321: true,
-	354: true,
 }
 
 // Error routes IB errors to the corresponding pending request's error channel,
@@ -931,10 +981,16 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 		return
 	}
 	// Codes < 2000 are informational (e.g., "Market data farm connection"),
-	// EXCEPT the explicit whitelist above, which are genuine per-request
-	// failures that must reach the caller (#193 finding 1).
-	if errCode < 2000 && !errCodesAlwaysRouted[errCode] {
-		return
+	// EXCEPT strictErrorCodes on a reqID that opted into strict routing via
+	// registerStrictError — those are genuine per-request failures that
+	// must reach the caller (#193 finding 1, scoped per review follow-up).
+	if errCode < 2000 {
+		w.mu.Lock()
+		strict := w.strictReqIDs[reqID]
+		w.mu.Unlock()
+		if !strict || !strictErrorCodes[errCode] {
+			return
+		}
 	}
 	// 10167 = "Not subscribed; displaying delayed data" — IB will still deliver
 	// the delayed ticks, so treat this as informational and let the data arrive.

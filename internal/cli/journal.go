@@ -35,6 +35,13 @@ const (
 	// transactional (all-or-nothing), so a partial-write state is unreachable.
 	// Reserved; do not re-use without revisiting docs/journal_json_schema.md
 	// and skills/commands/optix/SKILL.md.
+	exitNoData = 5 // the broker/gateway was reachable and responded, but the
+	// specific request itself had no usable result — e.g. `option-quote`
+	// hitting IB error 200 "no security definition" for a bad
+	// strike/expiry/right, or an empty/degraded quote after the collection
+	// window. Distinct from exitIBKRUnreachable (2), which means the
+	// gateway/connection itself failed, so scanner-style callers can branch
+	// on exit code alone instead of string-matching stderr (#193 finding 6a).
 
 	// journalClientID is the IBKR ClientID used by every `optix journal …`
 	// subcommand and by the web UI's background journal sync ticker.

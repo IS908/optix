@@ -485,6 +485,14 @@ def fetch_ibkr_option_quote(cand: Candidate) -> Tuple[Optional[Dict], Optional[s
 def compact_ibkr_error(message: str) -> str:
     if "IBKR TWS/Gateway not detected" in message or "Couldn't connect to TWS" in message:
         return "IBKR unavailable/connect failed"
+    if "option quote unavailable:" in message:
+        # optix #193 finding 1: a bad strike/expiry/right now fails fast with
+        # the real IB per-request error (e.g. errCode 200 "no security
+        # definition") instead of burning the full collection window and
+        # reporting the misleading "no usable price data" below. Surface
+        # that real reason verbatim rather than falling through to the
+        # generic 240-char truncation.
+        return "IBKR option quote invalid: " + message.split("option quote unavailable:", 1)[-1].strip()
     if "no usable price data" in message:
         return "IBKR option quote has no usable price data"
     if "no_price_data" in message:

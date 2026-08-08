@@ -12,6 +12,57 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Six audited correctness findings in the `optix option-quote` chain (#193,
+  follow-up to #187):
+  - **Contract-validation errors were silently swallowed and slow-failed.**
+    `IbWrapper.Error` treated every IB error code below 2000 as informational
+    noise, including 200 ("no security definition" — a bad strike/expiry/
+    right), 162, 300, 321, and 354, which are genuine per-request failures.
+    A validation request against a nonexistent strike burned the full 5s
+    collection window and reported the misleading `no usable price data`
+    instead of the real reason. These five codes are now explicitly
+    whitelisted through to the request's error channel; every other
+    sub-2000 code (farm-connectivity chatter etc.) is still dropped exactly
+    as before.
+  - **`option-quote` always waited out the full 5s window.** `ReqMktData`
+    is called with `snapshot=false` (streaming), so `TickSnapshotEnd` —
+    which only fires for snapshot requests — never arrived, and the pending
+    quote had no other way to finish early. The wrapper now closes the
+    request as soon as bid, ask, a mark/last price, IV, and delta have all
+    arrived, falling back to the existing timeout when they don't.
+  - **A put's open interest/volume could be silently overwritten by the
+    call's.** `TickSize` accepted `OPTION_CALL_*`/`OPTION_PUT_*` ticks for
+    either side regardless of which contract was requested, so whichever
+    arrived last won. Ticks are now filtered to the requested side; the
+    side-safe per-contract tick (86) is still always accepted.
+  - **Mark price and implied volatility had no defined source priority.**
+    `MODEL_OPTION`'s computed price and IV could arrive in any order
+    relative to the genuine `MARK_PRICE` tick (generic tick 221) and the
+    other IV-bearing computation ticks, so the reported values depended on
+    tick arrival order. Mark now prefers a genuine `MARK_PRICE` tick over
+    the model-computed fallback once one has arrived; IV now resolves with
+    an explicit priority (`MODEL_OPTION` > `LAST_OPTION_COMPUTATION` >
+    bid/ask computation midpoint).
+  - **Position-marking errors collapsed into a generic message.**
+    `GetOptionQuote` (used to mark option positions) reported a bare
+    `no price data` even when IBKR had returned a specific error — the real
+    detail only reached `Warnings`. It now surfaces that real IB error text
+    when one is available.
+  - **`option-quote` couldn't distinguish "gateway unreachable" from
+    "contract invalid" by exit code**, and `FallbackBroker.GetOptionQuoteDetails`
+    reported the account-data error message (`does not support account
+    data`) for what is actually a market-data capability. `option-quote`
+    now exits `5` (new `exitNoData`, documented alongside the existing
+    codes) with the real IB error as the headline message when the gateway
+    responded but the contract itself was invalid, keeping exit `2` for
+    gateway/connection failures; it also gained a `--timeout` flag for
+    scanner-style callers that need a hard subprocess budget (default
+    unchanged: `ctx.Background()` plus the existing internal collection
+    window). `FallbackBroker.GetOptionQuoteDetails` now returns the new
+    `ErrMarketDataNotSupported` instead of `ErrAccountNotSupported`.
+
 ## [0.15.1] - 2026-08-07
 
 Patch release repairing the IBKR-first intraday cards (#191).

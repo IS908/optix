@@ -156,6 +156,29 @@ func TestFallbackBroker_MarketDepthDelegatesToActiveBroker(t *testing.T) {
 	}
 }
 
+// TestFallbackBroker_OptionQuoteDetailsUnsupportedUsesMarketDataError pins
+// #193 finding 6(b): GetOptionQuoteDetails is single-contract *market* data
+// (bid/ask/mark/IV/Greeks), not account data, so the "unsupported" error it
+// returns when the active broker lacks DetailedOptionQuoter must say so —
+// not the account-data wording used by GetPositions/GetExecutions/
+// GetOptionQuote.
+func TestFallbackBroker_OptionQuoteDetailsUnsupportedUsesMarketDataError(t *testing.T) {
+	primary := &fakeBroker{name: "primary"}
+	fb := &fakeBroker{name: "fallback"}
+
+	wrapper := NewFallbackBroker(primary, fb)
+	if err := wrapper.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_, err := wrapper.GetOptionQuoteDetails(context.Background(), "AAPL", "20260717", "P", 290)
+	if !errors.Is(err, ErrMarketDataNotSupported) {
+		t.Fatalf("GetOptionQuoteDetails error = %v, want ErrMarketDataNotSupported", err)
+	}
+	if errors.Is(err, ErrAccountNotSupported) {
+		t.Fatalf("GetOptionQuoteDetails error = %v, must NOT be ErrAccountNotSupported (market data, not account data)", err)
+	}
+}
+
 func TestFallbackBroker_MarketDepthUnsupportedWhenActiveBrokerCannotProvideIt(t *testing.T) {
 	primary := &fakeBroker{name: "primary"}
 	fb := &fakeBroker{name: "fallback"}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
@@ -190,6 +191,25 @@ func optionMarketDataType(s string) string {
 		return "unknown"
 	}
 	return s
+}
+
+// ibkrErrorDetail returns the raw IB error text (stripped of the
+// "ibkr_error: " prefix ibkr.GetOptionQuoteDetails attaches to Warnings) for
+// the first such warning found, or "" when the quote is nil or carries none.
+// Used to surface the real per-request failure reason (e.g. "IB error 200:
+// No security definition has been found for the request") instead of the
+// generic "no usable price data" message — see #193 findings 1 and 6(a).
+func ibkrErrorDetail(q *model.OptionQuote) string {
+	if q == nil {
+		return ""
+	}
+	const prefix = "ibkr_error: "
+	for _, w := range q.Warnings {
+		if strings.HasPrefix(w, prefix) {
+			return strings.TrimPrefix(w, prefix)
+		}
+	}
+	return ""
 }
 
 func optionQuoteValidationWarnings(q *model.OptionQuote) []string {

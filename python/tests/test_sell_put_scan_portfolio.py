@@ -118,6 +118,18 @@ def test_fetch_positions_missing_list_degrades(monkeypatch):
     assert rows is None and "positions" in err
 
 
+def test_fetch_positions_nonzero_exit_empty_output_still_has_reason(monkeypatch):
+    """外部 SIGKILL/OOM 场景:stdout/stderr 都空,compact_ibkr_error("") 曾返回
+    "" (falsy) —— err 必须非空,否则 resolve_portfolio_line 的 `if err:` 判断
+    会误判为成功,继续拿 rows=None 去 build_holdings_index 炸 TypeError。"""
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=137, stdout="", stderr=""))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None
+    assert err  # 非空:falsy 原因会让 resolve_portfolio_line 的 `if err:` 判断失灵
+
+
 def _cand(**kw):
     base = dict(symbol="NVDA", spot=170.0, expiry="2026-08-14", dte=6, strike=160.0,
                 bid=1.20, ask=1.40, mid=1.30, iv=0.45, oi=500, volume=200,
@@ -234,7 +246,9 @@ def test_render_stable_order_without_penalty():
     out = scan.render(_result([a, b]), 100)
     rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
     assert "NVDA" in rows[0] and "AAPL" in rows[1]  # 稳定:保持市场序
-    assert "组合感知" not in out                     # portfolio_line=None → 无摘要行
+    # portfolio_line=None → 无摘要行(注意:口径footnote 固定提到「组合感知降权」
+    # 这个概念,不含冒号;真正的摘要行/警示行才带冒号或「不可用」,专门校验这两种)
+    assert "组合感知:" not in out and "组合感知不可用" not in out
 
 
 def test_render_zero_candidates_carries_degrade_line():
@@ -271,3 +285,20 @@ def test_resolve_portfolio_line_applies(monkeypatch):
     line = scan.resolve_portfolio_line(r, no_portfolio=False)
     assert "1 项降权" in line
     assert r.candidates[0].portfolio_labels == "正股"
+
+
+def test_resolve_portfolio_line_survives_killed_subprocess_end_to_end(monkeypatch):
+    """回归(final review Critical):positions 子进程被外部 SIGKILL/OOM 杀死,
+    returncode=137、stdout/stderr 全空。fetch_portfolio_positions 曾会在此路径
+    返回 (None, "")(falsy 原因),resolve_portfolio_line 的 `if err:` 随之判断
+    为「无故障」,继续拿 rows=None 传给 build_holdings_index → 未捕获
+    TypeError 一路冒到 __main__,整张 Lark 表被异常行取代、exit 1,且
+    journal register/reconcile(在 resolve_portfolio_line 之后跑)被静默跳过。
+    这里直接打桩 run_optix_subprocess 走全链路,不只测 fetch 单元。"""
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=137, stdout="", stderr=""))
+    r = _result([_cand(symbol="NVDA")])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)  # 不得抛出
+    assert line is not None and "不可用" in line
+    assert r.candidates[0].portfolio_penalty == 0.0

@@ -209,10 +209,11 @@ def fetch_portfolio_positions() -> Tuple[Optional[List[dict]], Optional[str]]:
             timeout=PORTFOLIO_POSITIONS_TIMEOUT,
         )
     except Exception as exc:
-        return None, f"{type(exc).__name__}: {exc}"
+        return None, compact_ibkr_error(f"{type(exc).__name__}: {exc}")
     if completed.returncode != 0:
         err_lines = (completed.stderr or completed.stdout or "").strip().splitlines()
-        return None, compact_ibkr_error("; ".join(err_lines[-2:]))
+        err = "; ".join(err_lines[-2:]) if err_lines else f"optix positions exit {completed.returncode}"
+        return None, compact_ibkr_error(err)
     try:
         data = json.loads(completed.stdout)
     except Exception as exc:
@@ -277,8 +278,12 @@ def resolve_portfolio_line(result: ScanResult, *, no_portfolio: bool) -> Optiona
     if no_portfolio or result.data_quality_error or not result.candidates:
         return None
     rows, err = fetch_portfolio_positions()
-    if err:
-        return f"⚠️ 组合感知不可用（{err}），本次未降权"
+    if err or rows is None:
+        # 防御性双保险(final review Critical):即便 fetch_portfolio_positions
+        # 某条路径漏发非空 err(如空 stdout/stderr 的外部 SIGKILL),也不能
+        # 拿 rows=None 去 build_holdings_index 炸 TypeError —— 组合感知任何
+        # 故障都必须降级为警告行,不得让整个扫描异常退出。
+        return f"⚠️ 组合感知不可用（{err or 'positions 无输出'}），本次未降权"
     fetched_at = dt.datetime.now(tz=NY).strftime("%H:%M ET")
     return apply_portfolio_awareness(result.candidates, build_holdings_index(rows), fetched_at)
 
@@ -988,7 +993,7 @@ def render(result: ScanResult, symbols_count: int, portfolio_line: Optional[str]
     lines.extend([
         "",
         "提示：这只是候选池，不是下单指令；优先复核财报日、真实期权盘口、组合集中度和可接受接货价。",
-        "口径：表内年化/OTM 为 mid 口径；排名打分用 bid 口径（卖方最差成交价），故行序可能与年化列不完全一致，按 bid 实际成交的年化会更低。",
+        "口径：表内年化/OTM 为 mid 口径；排名打分用 bid 口径（卖方最差成交价），故行序可能与年化列不完全一致，按 bid 实际成交的年化会更低；行序还包含组合感知降权（见「持仓」列），score 列本身不受影响。",
         "IBKR 核实：`option-quote` 是 IBKR-only；没有自动 fallback 到 yfinance。脚本 fallback 逻辑是在 IBKR 失败/无数据时保留 yfinance 初筛值并标注错误样本。",
     ])
     if SYMBOL_WARNING:

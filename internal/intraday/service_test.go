@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/internal/portfolio"
 	"github.com/IS908/optix/pkg/model"
 )
@@ -397,6 +398,44 @@ func TestMoversLeavesVolumeZeroWhenBarVolumeAbsent(t *testing.T) {
 	}
 	if dto.Gainers[0].Volume != 0 {
 		t.Fatalf("volume = %d, want 0 (must not backfill from the unrelated daily quote volume 99999)", dto.Gainers[0].Volume)
+	}
+}
+
+// TestSessionOpenAndVolumeAcceptsIBZoneSuffixedNYOpenBar is the cross-layer
+// regression test for the #191 review finding: internal/broker/ibkr's
+// parseIBDate parses IB's "YYYYMMDD HH:MM:SS US/Eastern" bar dates (see
+// TestParseIBDateHandlesTrailingZoneToken in
+// internal/broker/ibkr/client_test.go) in the zone the suffix names, so a
+// bar timestamped "09:30:00 US/Eastern" lands as NY wall-clock 09:30 — the
+// production convention this fixture documents by constructing the
+// Timestamp directly in intelshared.NY() rather than UTC.
+//
+// Before the fix, parseIBDate mislabeled that same wall-clock text as UTC,
+// which is 4-5h early in NY terms; sessionOpenAndVolume's
+// `barNY.Hour() < sessionOpenHour` filter then rejected the true 09:30 ET
+// bar outright, so the reported open price came from a much later bar and
+// session volume undercounted the missing 09:30-onward bars.
+func TestSessionOpenAndVolumeAcceptsIBZoneSuffixedNYOpenBar(t *testing.T) {
+	ny := intelshared.NY()
+	openBar := model.OHLCV{
+		Timestamp: time.Date(2026, 8, 7, 9, 30, 0, 0, ny),
+		Open:      100, High: 101, Low: 99, Close: 100.5, Volume: 500,
+	}
+	laterBar := model.OHLCV{
+		Timestamp: time.Date(2026, 8, 7, 10, 0, 0, 0, ny),
+		Open:      100.5, High: 102, Low: 100, Close: 101, Volume: 300,
+	}
+	asOf := time.Date(2026, 8, 7, 10, 30, 0, 0, ny)
+
+	open, volume, found := sessionOpenAndVolume([]model.OHLCV{openBar, laterBar}, asOf)
+	if !found {
+		t.Fatal("sessionOpenAndVolume did not find a session-open bar for a 09:30 ET timestamp")
+	}
+	if open != 100 {
+		t.Fatalf("open = %v, want 100 (the true 09:30 ET open bar, not a later one)", open)
+	}
+	if volume != 800 {
+		t.Fatalf("volume = %d, want 800 (both in-session bars counted)", volume)
 	}
 }
 

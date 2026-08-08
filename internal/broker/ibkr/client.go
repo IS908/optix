@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/IS908/optix/internal/broker"
+	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/pkg/model"
 	"github.com/rs/zerolog"
 	"github.com/scmhub/ibapi"
@@ -981,21 +982,32 @@ func pickRequestedExpiry(chain *model.OptionChain, requested string) (*model.Opt
 //   - "20240101 09:30:00" — older/documented intraday form, no zone.
 //   - "20240101 09:30:00 US/Eastern" — what IB actually sends for
 //     sub-daily bar sizes (confirmed live against IB Gateway during #191
-//     verification). The trailing zone token is a descriptive label, not a
-//     UTC offset — IB already renders the date/time in that zone — so it's
-//     dropped and the two leading fields are parsed as UTC-labeled
-//     wall-clock text, consistent with the existing no-zone convention.
+//     verification). The trailing zone token names the zone the leading
+//     date/time fields are *already expressed in* — it's NY wall-clock
+//     (IB formatDate=1), not a UTC-offset comment to discard.
 //
-// Pre-fix, the 3-token form fell into the `else` branch below and failed
-// `time.ParseInLocation("20060102 15:04:05", s, ...)` outright (extra
-// trailing text) — every intraday-bar Timestamp silently zeroed out at the
-// call site (`t, _ := parseIBDate(...)`), which defeated
-// intraday.sessionOpenAndVolume's same-day filtering on the live IBKR path
-// (a zero-value Timestamp never matches "today"). This was never caught
-// pre-#191 because the IBKR path had never been exercised end-to-end (see
-// issue #191's own note that #184's E2E ran with IBKR forced unavailable).
+// An adversarial review of the original #191 fix caught a regression here:
+// that version parsed the 3-token form's date/time fields as UTC-labeled
+// text and dropped the zone suffix, which shifted every intraday bar's
+// instant 4-5h early (NY is UTC-4 in EDT / UTC-5 in EST). Downstream,
+// intraday.sessionOpenAndVolume converts each bar back to NY wall-clock and
+// filters on `Hour() < 9`, so the true 09:30 ET open bar re-appeared at
+// 05:30 ET and was rejected outright — the reported "open" came from a much
+// later bar, and session volume dropped every bar between 09:30 and
+// whichever later bar first passed the filter.
 //
-// Parsed in UTC to ensure consistent storage regardless of server timezone.
+// The fix: resolve the trailing token as an IANA zone name via
+// time.LoadLocation and parse the wall-clock fields in *that* zone. IB's
+// token (e.g. "US/Eastern") is a legacy but valid IANA name, so this
+// round-trips correctly against the local tzdata. If the token doesn't
+// resolve (unrecognized zone, missing tzdata entry), fall back to
+// intelshared.NY(): every parseIBDate caller in this codebase deals in US
+// stock bars, whose session zone is always US/Eastern, so NY is a safe
+// default rather than a guess — never fall back to UTC, which is exactly
+// the mislabeling bug this fix corrects.
+//
+// The 1-token (date-only) and 2-token (no-zone datetime) forms are
+// unaffected and keep parsing as UTC-labeled text, matching prior behavior.
 func parseIBDate(s string) (time.Time, error) {
 	fields := strings.Fields(s)
 	switch len(fields) {
@@ -1003,8 +1015,14 @@ func parseIBDate(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("parseIBDate: empty date string")
 	case 1:
 		return time.ParseInLocation("20060102", fields[0], time.UTC)
-	default:
+	case 2:
 		return time.ParseInLocation("20060102 15:04:05", fields[0]+" "+fields[1], time.UTC)
+	default:
+		loc, err := time.LoadLocation(fields[2])
+		if err != nil {
+			loc = intelshared.NY()
+		}
+		return time.ParseInLocation("20060102 15:04:05", fields[0]+" "+fields[1], loc)
 	}
 }
 

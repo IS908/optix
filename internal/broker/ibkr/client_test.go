@@ -354,18 +354,54 @@ func TestHistoricalQuoteFromBarsRequiresBars(t *testing.T) {
 // TestParseIBDateHandlesTrailingZoneToken is a live-E2E-discovered
 // regression test (#191 verification): IB Gateway actually sends intraday
 // bar dates as "20260807 09:30:00 US/Eastern" (a trailing zone token), not
-// the two-field "20260807 09:30:00" the old parser assumed. Pre-fix, this
-// silently failed to parse and every intraday bar's Timestamp zeroed out —
-// which defeats sessionOpenAndVolume's same-day filter downstream in
-// internal/intraday/service.go.
+// the two-field "20260807 09:30:00" the old parser assumed.
+//
+// The zone token is NY *wall-clock* labeling (IB formatDate=1), not a
+// discardable comment: "09:30:00 US/Eastern" names the actual NYSE/NASDAQ
+// session open. A prior version of this test asserted the wrong thing —
+// that the two leading fields get parsed as UTC-labeled text with the zone
+// suffix dropped — which is the exact regression an adversarial review
+// caught on #191: parsing NY wall-clock as UTC shifts every intraday bar
+// 4-5h early, so downstream sessionOpenAndVolume's `Hour() < 9` filter (see
+// internal/intraday/service.go) rejects the true 09:30 ET open bar.
 func TestParseIBDateHandlesTrailingZoneToken(t *testing.T) {
 	got, err := parseIBDate("20260807 09:30:00 US/Eastern")
 	if err != nil {
 		t.Fatalf("parseIBDate returned error: %v", err)
 	}
-	want := time.Date(2026, 8, 7, 9, 30, 0, 0, time.UTC)
+	easternLoc, locErr := time.LoadLocation("America/New_York")
+	if locErr != nil {
+		t.Fatalf("time.LoadLocation(America/New_York) error: %v", locErr)
+	}
+	want := time.Date(2026, 8, 7, 9, 30, 0, 0, easternLoc)
 	if !got.Equal(want) {
-		t.Fatalf("parseIBDate = %v, want %v", got, want)
+		t.Fatalf("parseIBDate = %v, want %v (same instant as 09:30 ET)", got, want)
+	}
+	if gotHour := got.In(easternLoc).Hour(); gotHour != 9 {
+		t.Fatalf("parseIBDate(...).In(NY).Hour() = %d, want 9 (the true session open, not shifted by the UTC-mislabel bug)", gotHour)
+	}
+}
+
+// TestParseIBDateFallsBackToNYForUnrecognizedZoneToken covers the case
+// where IB (or a test fixture) sends a zone token that isn't a real IANA
+// name. Every parseIBDate caller in this codebase deals in US stock bars,
+// whose session zone is always US/Eastern, so falling back to NY is the
+// documented, deliberate default rather than a silent UTC mislabel.
+func TestParseIBDateFallsBackToNYForUnrecognizedZoneToken(t *testing.T) {
+	got, err := parseIBDate("20260807 09:30:00 Bogus/Zone")
+	if err != nil {
+		t.Fatalf("parseIBDate returned error: %v", err)
+	}
+	easternLoc, locErr := time.LoadLocation("America/New_York")
+	if locErr != nil {
+		t.Fatalf("time.LoadLocation(America/New_York) error: %v", locErr)
+	}
+	want := time.Date(2026, 8, 7, 9, 30, 0, 0, easternLoc)
+	if !got.Equal(want) {
+		t.Fatalf("parseIBDate with unknown zone = %v, want %v (NY fallback)", got, want)
+	}
+	if got.In(time.UTC).Hour() == 9 {
+		t.Fatalf("parseIBDate with unknown zone landed on UTC 09:00, want NY fallback (not UTC mislabel)")
 	}
 }
 

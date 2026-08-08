@@ -12,6 +12,8 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-08-08
+
 ### Fixed
 
 - **`optix server` could truncate its own graceful shutdown on SIGTERM/SIGINT,
@@ -1906,7 +1908,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.3...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.4...HEAD
+[0.15.4]: https://github.com/IS908/optix/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/IS908/optix/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/IS908/optix/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/IS908/optix/compare/v0.15.0...v0.15.1

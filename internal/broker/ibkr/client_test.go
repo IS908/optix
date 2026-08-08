@@ -350,3 +350,85 @@ func TestHistoricalQuoteFromBarsRequiresBars(t *testing.T) {
 		t.Fatal("expected error for no bars")
 	}
 }
+
+// TestParseIBDateHandlesTrailingZoneToken is a live-E2E-discovered
+// regression test (#191 verification): IB Gateway actually sends intraday
+// bar dates as "20260807 09:30:00 US/Eastern" (a trailing zone token), not
+// the two-field "20260807 09:30:00" the old parser assumed. Pre-fix, this
+// silently failed to parse and every intraday bar's Timestamp zeroed out —
+// which defeats sessionOpenAndVolume's same-day filter downstream in
+// internal/intraday/service.go.
+func TestParseIBDateHandlesTrailingZoneToken(t *testing.T) {
+	got, err := parseIBDate("20260807 09:30:00 US/Eastern")
+	if err != nil {
+		t.Fatalf("parseIBDate returned error: %v", err)
+	}
+	want := time.Date(2026, 8, 7, 9, 30, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("parseIBDate = %v, want %v", got, want)
+	}
+}
+
+func TestParseIBDateStillHandlesDateOnlyAndNoZoneDatetime(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want time.Time
+	}{
+		{"date only", "20260807", time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)},
+		{"date+time, no zone", "20260807 09:30:00", time.Date(2026, 8, 7, 9, 30, 0, 0, time.UTC)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseIBDate(tc.in)
+			if err != nil {
+				t.Fatalf("parseIBDate(%q) error: %v", tc.in, err)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("parseIBDate(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseIBDateEmptyStringReturnsError(t *testing.T) {
+	if _, err := parseIBDate(""); err == nil {
+		t.Fatal("expected error for empty date string")
+	}
+}
+
+// TestHistoricalDurationEmptyStartDatePreservesOneYearDefault locks the
+// unchanged behavior for callers that never supply a startDate (e.g. daily
+// bar fetches elsewhere in the codebase) — #191 only touches the has-a-range
+// branch.
+func TestHistoricalDurationEmptyStartDatePreservesOneYearDefault(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	if got := historicalDuration("", "", now); got != "1 Y" {
+		t.Fatalf("historicalDuration(\"\",\"\") = %q, want \"1 Y\"", got)
+	}
+}
+
+func TestHistoricalDurationBucketsByStartDateDistance(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		startDate string
+		endDate   string
+		want      string
+	}{
+		{"same day (#191 intraday lookback)", "20260625", "", "1 D"},
+		{"one day back", "20260624", "", "1 D"},
+		{"one week back", "20260619", "", "1 W"},
+		{"three weeks back", "20260605", "", "1 M"},
+		{"three months back", "20260325", "", "6 M"},
+		{"explicit endDate narrows the window", "20260624", "20260625", "1 D"},
+		{"malformed startDate falls back to 6 M", "not-a-date", "", "6 M"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := historicalDuration(tc.startDate, tc.endDate, now); got != tc.want {
+				t.Fatalf("historicalDuration(%q,%q) = %q, want %q", tc.startDate, tc.endDate, got, tc.want)
+			}
+		})
+	}
+}

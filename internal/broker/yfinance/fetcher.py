@@ -102,8 +102,13 @@ def fetch_bars(symbol: str, timeframe: str, days: int) -> list:
     }
     interval = interval_map.get(timeframe, "1d")
 
-    # yfinance period based on days
-    if days <= 5:
+    # yfinance period based on days. days<=1 must map to "1d" (not fall into
+    # the 5d bucket) so a sub-day intraday lookback (e.g. optix's 8h movers
+    # window, #191) doesn't over-request history for 5m/1m bars, which
+    # yfinance caps at ~60 days and silently returns empty past that.
+    if days <= 1:
+        period = "1d"
+    elif days <= 5:
         period = "5d"
     elif days <= 30:
         period = "1mo"

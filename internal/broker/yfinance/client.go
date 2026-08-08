@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,24 +190,51 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 
 // GetHistoricalBars retrieves historical OHLCV data via yfinance.
 func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, startDate, endDate string) ([]model.OHLCV, error) {
-	// Calculate days from date range
-	days := 365
-	if startDate != "" && endDate != "" {
-		start, err1 := time.Parse("20060102", startDate)
-		end, err2 := time.Parse("20060102", endDate)
-		if err1 == nil && err2 == nil {
-			days = int(end.Sub(start).Hours() / 24)
-			if days < 1 {
-				days = 30
-			}
-		}
-	}
+	days := historicalDays(startDate, endDate, time.Now())
 
 	out, err := c.runFetcher(ctx, "bars", symbol, timeframe, fmt.Sprintf("%d", days))
 	if err != nil {
 		return nil, fmt.Errorf("yfinance bars %s: %w", symbol, err)
 	}
 	return parseBarsJSON(out)
+}
+
+// historicalDays turns a startDate/endDate range into the day-count the
+// Python fetcher maps to a yfinance `period` (see fetcher.py's fetch_bars).
+//
+// startDate == "" preserves the original default (365 days) for callers
+// that don't supply a range at all (daily-bar fetches elsewhere in the
+// codebase) — unchanged so this fix doesn't ripple into unrelated call
+// paths.
+//
+// endDate == "" means "through now", not "unknown" — treating it as
+// "unknown" (the previous behavior) silently fell back to the 365-day
+// default even when a real startDate was supplied, which is exactly the
+// intraday lookback case that needs a short window (#191 finding 1).
+//
+// The previous code also clamped any span under a day up to 30 days ("days
+// < 1 → days = 30"), which defeated a sub-day intraday lookback entirely.
+// Floor at 1 day instead — the Python side buckets `days<=1` to a "1d"
+// yfinance period.
+func historicalDays(startDate, endDate string, now time.Time) int {
+	if startDate == "" {
+		return 365
+	}
+	start, err := time.Parse("20060102", startDate)
+	if err != nil {
+		return 365
+	}
+	end := now
+	if endDate != "" {
+		if e, err := time.Parse("20060102", endDate); err == nil {
+			end = e
+		}
+	}
+	days := int(math.Ceil(end.Sub(start).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	return days
 }
 
 // parseBarsJSON converts yfinance's bars JSON response into a slice of

@@ -544,11 +544,7 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
-	// duration covers roughly the requested period.  Keep it simple: 1 Y.
-	duration := "1 Y"
-	if startDate != "" {
-		duration = "6 M"
-	}
+	duration := historicalDuration(startDate, endDate, time.Now())
 
 	// For daily bars, always use RTH to get standard OHLCV.
 	// For intraday bars during extended hours, include outside-RTH data
@@ -980,13 +976,77 @@ func pickRequestedExpiry(chain *model.OptionChain, requested string) (*model.Opt
 	}
 }
 
-// parseIBDate parses IB historical bar date strings ("20240101" or "20240101 09:30:00").
+// parseIBDate parses IB historical bar date strings. Observed formats:
+//   - "20240101" — daily+ bar sizes.
+//   - "20240101 09:30:00" — older/documented intraday form, no zone.
+//   - "20240101 09:30:00 US/Eastern" — what IB actually sends for
+//     sub-daily bar sizes (confirmed live against IB Gateway during #191
+//     verification). The trailing zone token is a descriptive label, not a
+//     UTC offset — IB already renders the date/time in that zone — so it's
+//     dropped and the two leading fields are parsed as UTC-labeled
+//     wall-clock text, consistent with the existing no-zone convention.
+//
+// Pre-fix, the 3-token form fell into the `else` branch below and failed
+// `time.ParseInLocation("20060102 15:04:05", s, ...)` outright (extra
+// trailing text) — every intraday-bar Timestamp silently zeroed out at the
+// call site (`t, _ := parseIBDate(...)`), which defeated
+// intraday.sessionOpenAndVolume's same-day filtering on the live IBKR path
+// (a zero-value Timestamp never matches "today"). This was never caught
+// pre-#191 because the IBKR path had never been exercised end-to-end (see
+// issue #191's own note that #184's E2E ran with IBKR forced unavailable).
+//
 // Parsed in UTC to ensure consistent storage regardless of server timezone.
 func parseIBDate(s string) (time.Time, error) {
-	if len(s) == 8 {
-		return time.ParseInLocation("20060102", s, time.UTC)
+	fields := strings.Fields(s)
+	switch len(fields) {
+	case 0:
+		return time.Time{}, fmt.Errorf("parseIBDate: empty date string")
+	case 1:
+		return time.ParseInLocation("20060102", fields[0], time.UTC)
+	default:
+		return time.ParseInLocation("20060102 15:04:05", fields[0]+" "+fields[1], time.UTC)
 	}
-	return time.ParseInLocation("20060102 15:04:05", s, time.UTC)
+}
+
+// historicalDuration picks an IB ReqHistoricalData `durationStr` sized to the
+// requested startDate..endDate span.
+//
+// startDate == "" preserves the original coarse default (a full year) used
+// by callers that don't supply a range at all (e.g. daily-bar fetches
+// elsewhere in the codebase) — unchanged so this fix doesn't ripple into
+// unrelated call paths.
+//
+// When a startDate IS supplied (e.g. the intraday package derives one from
+// its lookback window, see internal/intraday/adapter.go), the previous code
+// blindly used "6 M" regardless of how short the actual span was. For a
+// sub-day intraday lookback, IB rejects a 6-month request for 5-min bars
+// (pacing violation) and silently returns nothing (#191 finding 1). Bucket
+// the duration to the actual distance instead.
+func historicalDuration(startDate, endDate string, now time.Time) string {
+	if startDate == "" {
+		return "1 Y"
+	}
+	start, err := parseIBDate(startDate)
+	if err != nil {
+		return "6 M"
+	}
+	end := now
+	if endDate != "" {
+		if e, err := parseIBDate(endDate); err == nil {
+			end = e
+		}
+	}
+	days := end.Sub(start).Hours() / 24
+	switch {
+	case days < 2:
+		return "1 D"
+	case days < 8:
+		return "1 W"
+	case days < 32:
+		return "1 M"
+	default:
+		return "6 M"
+	}
 }
 
 // GetPositions fetches all current account holdings via ReqPositions.

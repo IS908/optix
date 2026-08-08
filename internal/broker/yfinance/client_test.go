@@ -94,3 +94,46 @@ func TestParseBarsJSON(t *testing.T) {
 		}
 	})
 }
+
+// TestHistoricalDaysEmptyStartDatePreservesDefault locks the unchanged
+// behavior for callers that never supply a startDate (e.g. daily bar
+// fetches elsewhere in the codebase) — #191 only touches the has-a-range
+// branch.
+func TestHistoricalDaysEmptyStartDatePreservesDefault(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	if got := historicalDays("", "", now); got != 365 {
+		t.Fatalf("historicalDays(\"\",\"\") = %d, want 365", got)
+	}
+}
+
+// TestHistoricalDaysUsesNowWhenEndDateEmpty is the #191 finding-1 regression
+// case: the intraday adapter supplies a startDate but leaves endDate empty
+// (meaning "through now"). The pre-fix code required BOTH dates to be set
+// before it would compute anything, so this silently fell back to the
+// 365-day default and requested a year of 5m bars from yfinance's 60-day-cap
+// endpoint — yielding an empty DataFrame with no warning.
+func TestHistoricalDaysUsesNowWhenEndDateEmpty(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	got := historicalDays("20260624", "", now)
+	if got != 2 {
+		t.Fatalf("historicalDays(startDate-only) = %d, want 2 (1.5 days ceil'd)", got)
+	}
+}
+
+// TestHistoricalDaysFloorsAtOneDayInsteadOfThirty locks the fix for the
+// pre-existing "days < 1 → days = 30" clamp, which defeated a sub-day
+// intraday lookback by silently requesting a month of history instead.
+func TestHistoricalDaysFloorsAtOneDayInsteadOfThirty(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	got := historicalDays("20260625", "20260625", now)
+	if got != 1 {
+		t.Fatalf("historicalDays(same-day range) = %d, want 1 (not the old 30-day clamp)", got)
+	}
+}
+
+func TestHistoricalDaysMalformedStartDateFallsBackToDefault(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	if got := historicalDays("not-a-date", "", now); got != 365 {
+		t.Fatalf("historicalDays(malformed) = %d, want 365 fallback", got)
+	}
+}

@@ -412,7 +412,7 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*model.StockQuote
 	session := model.USMarketSession(time.Now())
 
 	reqID := c.nextReqID()
-	pq := c.wrapper.registerQuote(reqID)
+	pq := c.wrapper.registerQuote(reqID, "") // "" — stock quote, no option side
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
@@ -1154,9 +1154,38 @@ func (c *Client) GetOptionQuote(ctx context.Context, underlying, expiration, rig
 		return 0, err
 	}
 	if quote == nil || quote.Mark <= 0 {
-		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: no price data", underlying, expiration, right, strike)
+		// GetOptionQuoteDetails never returns errCh failures as `err` — it
+		// folds them into quote.Warnings as "ibkr_error: ..." instead (see
+		// below). Surface that real reason here rather than collapsing every
+		// failure (bad contract, no subscription, timeout, ...) into the
+		// same generic "no price data" — position marking callers need to
+		// tell "IB error 200: no security definition" apart from an ordinary
+		// timeout (#193 finding 5).
+		detail := "no price data"
+		if ibErr := firstIBKRErrorWarning(quote); ibErr != "" {
+			detail = ibErr
+		}
+		return 0, fmt.Errorf("GetOptionQuote %s %s %s %.2f: %s", underlying, expiration, right, strike, detail)
 	}
 	return quote.Mark, nil
+}
+
+// firstIBKRErrorWarning extracts the first "ibkr_error: ..." warning
+// GetOptionQuoteDetails attached to a quote (see the ibkr_error prefix used
+// in the warnings slice below), stripping the prefix so callers get the raw
+// IB error text. Returns "" when the quote is nil or carries no such
+// warning.
+func firstIBKRErrorWarning(q *model.OptionQuote) string {
+	if q == nil {
+		return ""
+	}
+	const prefix = "ibkr_error: "
+	for _, w := range q.Warnings {
+		if strings.HasPrefix(w, prefix) {
+			return strings.TrimPrefix(w, prefix)
+		}
+	}
+	return ""
 }
 
 // GetOptionQuoteDetails returns a single option contract quote from IBKR with
@@ -1185,7 +1214,7 @@ func (c *Client) GetOptionQuoteDetails(ctx context.Context, underlying, expirati
 	}
 
 	reqID := c.nextReqID()
-	pq := c.wrapper.registerQuote(reqID)
+	pq := c.wrapper.registerQuote(reqID, right)
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 

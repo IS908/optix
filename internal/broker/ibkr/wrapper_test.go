@@ -1,6 +1,7 @@
 package ibkr
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -81,7 +82,7 @@ func TestWrapperExecutionsAccumulator(t *testing.T) {
 func TestWrapperQuoteAccumulatorConcurrentSnapshotRace(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1001)
-	pq := w.registerQuote(reqID)
+	pq := w.registerQuote(reqID, "")
 	defer w.unregister(reqID)
 
 	var wg sync.WaitGroup
@@ -116,7 +117,7 @@ func TestWrapperQuoteAccumulatorConcurrentSnapshotRace(t *testing.T) {
 func TestWrapperQuoteAccumulatorCapturesDelayedPrices(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1003)
-	pq := w.registerQuote(reqID)
+	pq := w.registerQuote(reqID, "")
 	defer w.unregister(reqID)
 
 	w.TickPrice(reqID, ibapi.DELAYED_BID, 99.50, ibapi.TickAttrib{})
@@ -139,7 +140,7 @@ func TestWrapperQuoteAccumulatorCapturesDelayedPrices(t *testing.T) {
 func TestWrapperOptionQuoteAccumulatorCapturesValidationTicks(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1005)
-	pq := w.registerQuote(reqID)
+	pq := w.registerQuote(reqID, "P")
 	defer w.unregister(reqID)
 
 	w.MarketDataType(reqID, int64(ibapi.REALTIME))
@@ -163,6 +164,231 @@ func TestWrapperOptionQuoteAccumulatorCapturesValidationTicks(t *testing.T) {
 	if snap.impliedVolatility != 0.31 || snap.greeks.Delta != -0.24 || snap.greeks.Gamma != 0.01 ||
 		snap.greeks.Vega != 0.12 || snap.greeks.Theta != -0.04 {
 		t.Fatalf("option computation mismatch: %+v", snap)
+	}
+}
+
+// --- #193 finding 1: whitelisted sub-2000 IB error codes must reach errCh --
+
+func TestWrapperErrorRoutesWhitelistedContractValidationCodes(t *testing.T) {
+	// Pre-fix, ALL errCode < 2000 were treated as informational noise and
+	// dropped — including codes that mean "this specific request failed",
+	// e.g. 200 "No security definition has been found for the request" (bad
+	// strike/expiry/right). That silently starved the caller until its
+	// timeout instead of failing fast with the real reason (#193 finding 1).
+	for _, code := range []int64{200, 162, 300, 321, 354} {
+		t.Run(fmt.Sprintf("code_%d", code), func(t *testing.T) {
+			w := newIbWrapper()
+			reqID := int64(2000 + code)
+			pq := w.registerQuote(reqID, "P")
+			errCh := w.registerError(reqID)
+			defer w.unregister(reqID)
+
+			w.Error(reqID, 0, code, "synthetic test error", "")
+
+			select {
+			case err := <-errCh:
+				if !strings.Contains(err.Error(), fmt.Sprintf("%d", code)) {
+					t.Fatalf("errCh error = %q, want it to mention code %d", err, code)
+				}
+			default:
+				t.Fatalf("code %d did not reach errCh — still swallowed as informational", code)
+			}
+			select {
+			case <-pq.done:
+			default:
+				t.Fatalf("code %d did not close pq.done — caller would still wait out the full timeout", code)
+			}
+		})
+	}
+}
+
+func TestWrapperErrorStillSwallowsNonWhitelistedSub2000Codes(t *testing.T) {
+	// Guards the other half of finding 1's contract: the fix must not turn
+	// the sub-2000 filter into a no-op. A code NOT on the whitelist (e.g.
+	// 202 "Order Cancelled" — unrelated to market-data/contract validation)
+	// must keep being dropped as informational, exactly as before.
+	w := newIbWrapper()
+	reqID := int64(2202)
+	pq := w.registerQuote(reqID, "P")
+	errCh := w.registerError(reqID)
+	defer w.unregister(reqID)
+
+	w.Error(reqID, 0, 202, "Order Cancelled - synthetic", "")
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("non-whitelisted code 202 reached errCh: %v", err)
+	default:
+	}
+	select {
+	case <-pq.done:
+		t.Fatal("non-whitelisted code 202 closed pq.done")
+	default:
+	}
+}
+
+// --- #193 finding 2: early-completion heuristic for streaming quotes ------
+
+func TestWrapperQuoteClosesDoneAsSoonAsKeyFieldsArrive(t *testing.T) {
+	// ReqMktData(snapshot=false) is a streaming request — TickSnapshotEnd
+	// never fires for it (that callback only exists for snapshot requests),
+	// so before this fix pq.done only closed via Error() or the caller's own
+	// timeout: every GetOptionQuoteDetails call burned the full 5s
+	// collection window even when everything it needed arrived in
+	// milliseconds (#193 finding 2).
+	w := newIbWrapper()
+	reqID := int64(3001)
+	pq := w.registerQuote(reqID, "P")
+	defer w.unregister(reqID)
+
+	w.TickPrice(reqID, ibapi.BID, 1.20, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.ASK, 1.25, ibapi.TickAttrib{})
+	select {
+	case <-pq.done:
+		t.Fatal("done closed before last/mark, IV, and delta arrived")
+	default:
+	}
+
+	w.TickPrice(reqID, ibapi.LAST, 1.23, ibapi.TickAttrib{})
+	select {
+	case <-pq.done:
+		t.Fatal("done closed before IV and delta arrived")
+	default:
+	}
+
+	w.TickOptionComputation(reqID, ibapi.MODEL_OPTION, 0, 0.31, -0.24, 1.23, 0, 0.01, 0.12, -0.04, 290)
+
+	select {
+	case <-pq.done:
+	default:
+		t.Fatal("done did not close once bid+ask+last+IV+delta were all present")
+	}
+}
+
+func TestWrapperQuoteDoesNotCloseDoneWhenFieldsStayIncomplete(t *testing.T) {
+	// Safety half of the heuristic: if the key fields never fully arrive,
+	// `done` must stay open so the caller falls through to its existing
+	// timeout — the heuristic may only ever shorten the wait, never skip
+	// legitimately incomplete data.
+	w := newIbWrapper()
+	reqID := int64(3002)
+	pq := w.registerQuote(reqID, "P")
+	defer w.unregister(reqID)
+
+	w.TickPrice(reqID, ibapi.BID, 1.20, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.ASK, 1.25, ibapi.TickAttrib{})
+	w.TickPrice(reqID, ibapi.LAST, 1.23, ibapi.TickAttrib{})
+	// IV/delta never arrive.
+
+	select {
+	case <-pq.done:
+		t.Fatal("done closed without IV/delta ever arriving")
+	default:
+	}
+}
+
+// --- #193 finding 3: OI/volume must not leak across call/put sides --------
+
+func TestWrapperTickSizeRejectsOppositeSideOptionTicks(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(4001)
+	pq := w.registerQuote(reqID, "P") // this request is for the PUT contract
+	defer w.unregister(reqID)
+
+	// IB can (and does) deliver the CALL side's aggregate volume/OI to the
+	// same reqID; pre-fix, last-writer-wins meant these silently clobbered
+	// the put's real volume/OI (#193 finding 3).
+	w.TickSize(reqID, ibapi.OPTION_CALL_VOLUME, ibapi.StringToDecimal("9999"))
+	w.TickSize(reqID, ibapi.OPTION_CALL_OPEN_INTEREST, ibapi.StringToDecimal("8888"))
+
+	snap := pq.snapshot()
+	if snap.volume != 0 || snap.openInterest != 0 {
+		t.Fatalf("opposite-side (CALL) ticks leaked into PUT request: %+v", snap)
+	}
+
+	w.TickSize(reqID, ibapi.OPTION_PUT_VOLUME, ibapi.StringToDecimal("1234"))
+	w.TickSize(reqID, ibapi.OPTION_PUT_OPEN_INTEREST, ibapi.StringToDecimal("5678"))
+
+	snap = pq.snapshot()
+	if snap.volume != 1234 || snap.openInterest != 5678 {
+		t.Fatalf("matching-side (PUT) ticks not captured: %+v", snap)
+	}
+}
+
+func TestWrapperTickSizeGenericTick86AlwaysAcceptedRegardlessOfSide(t *testing.T) {
+	// Tick type 86 is already scoped to the specific contract requested
+	// (not a call/put aggregate), so it must remain side-agnostic.
+	w := newIbWrapper()
+	reqID := int64(4002)
+	pq := w.registerQuote(reqID, "C")
+	defer w.unregister(reqID)
+
+	w.TickSize(reqID, 86, ibapi.StringToDecimal("42"))
+
+	snap := pq.snapshot()
+	if snap.openInterest != 42 {
+		t.Fatalf("generic tick 86 openInterest = %v, want 42", snap.openInterest)
+	}
+}
+
+// --- #193 finding 4: mark and IV source priority ---------------------------
+
+func TestWrapperMarkPrefersGenuineMarkPriceTickOverModelComputation(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(5001)
+	pq := w.registerQuote(reqID, "P")
+	defer w.unregister(reqID)
+
+	// MODEL_OPTION arrives first — used as a fallback mark since no genuine
+	// MARK_PRICE tick has arrived yet.
+	w.TickOptionComputation(reqID, ibapi.MODEL_OPTION, 0, 0.31, -0.24, 1.10, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().mark; got != 1.10 {
+		t.Fatalf("mark after MODEL_OPTION only = %v, want 1.10 (fallback)", got)
+	}
+
+	// A genuine MARK_PRICE tick (generic tick 221) arrives — it must win
+	// over the model-computed price.
+	w.TickPrice(reqID, ibapi.MARK_PRICE, 1.24, ibapi.TickAttrib{})
+	if got := pq.snapshot().mark; got != 1.24 {
+		t.Fatalf("mark after MARK_PRICE tick = %v, want 1.24 (genuine tick)", got)
+	}
+
+	// A later MODEL_OPTION recompute must NOT override the genuine tick.
+	w.TickOptionComputation(reqID, ibapi.MODEL_OPTION, 0, 0.32, -0.25, 1.11, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().mark; got != 1.24 {
+		t.Fatalf("mark after later MODEL_OPTION = %v, want 1.24 (genuine tick must not be overwritten)", got)
+	}
+}
+
+func TestWrapperImpliedVolatilityPriorityOrder(t *testing.T) {
+	w := newIbWrapper()
+	reqID := int64(5002)
+	pq := w.registerQuote(reqID, "P")
+	defer w.unregister(reqID)
+
+	// Lowest tier: bid/ask computation midpoint.
+	w.TickOptionComputation(reqID, ibapi.BID_OPTION_COMPUTATION, 0, 0.20, 0, 0, 0, 0, 0, 0, 0)
+	w.TickOptionComputation(reqID, ibapi.ASK_OPTION_COMPUTATION, 0, 0.30, 0, 0, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().impliedVolatility; got != 0.25 {
+		t.Fatalf("IV with only bid/ask computation = %v, want 0.25 (midpoint)", got)
+	}
+
+	// Middle tier: LAST_OPTION_COMPUTATION overrides the bid/ask midpoint.
+	w.TickOptionComputation(reqID, ibapi.LAST_OPTION_COMPUTATION, 0, 0.40, 0, 0, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().impliedVolatility; got != 0.40 {
+		t.Fatalf("IV after LAST_OPTION_COMPUTATION = %v, want 0.40", got)
+	}
+
+	// Highest tier: MODEL_OPTION overrides LAST.
+	w.TickOptionComputation(reqID, ibapi.MODEL_OPTION, 0, 0.50, 0, 0, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().impliedVolatility; got != 0.50 {
+		t.Fatalf("IV after MODEL_OPTION = %v, want 0.50", got)
+	}
+
+	// A later, lower-tier bid/ask update must not override MODEL.
+	w.TickOptionComputation(reqID, ibapi.BID_OPTION_COMPUTATION, 0, 0.99, 0, 0, 0, 0, 0, 0, 0)
+	if got := pq.snapshot().impliedVolatility; got != 0.50 {
+		t.Fatalf("IV after later low-tier update = %v, want 0.50 (MODEL must stay authoritative)", got)
 	}
 }
 

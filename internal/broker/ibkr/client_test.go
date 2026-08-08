@@ -328,6 +328,42 @@ func TestOptionQuoteFromSnapshotBuildsValidationQuote(t *testing.T) {
 	}
 }
 
+// TestFirstIBKRErrorWarningExtractsRealIBErrorText pins #193 finding 5: when
+// GetOptionQuoteDetails failed to collect price data because IB rejected the
+// request (e.g. errCode 200 "no security definition"), that detail lands in
+// Warnings as "ibkr_error: ...". GetOptionQuote must surface it verbatim
+// instead of collapsing every failure into the generic "no price data".
+func TestFirstIBKRErrorWarningExtractsRealIBErrorText(t *testing.T) {
+	q := &model.OptionQuote{Warnings: []string{
+		"bid_unavailable",
+		"ibkr_error: IB error 200: No security definition has been found for the request",
+		"no_price_data",
+	}}
+	got := firstIBKRErrorWarning(q)
+	want := "IB error 200: No security definition has been found for the request"
+	if got != want {
+		t.Fatalf("firstIBKRErrorWarning = %q, want %q", got, want)
+	}
+}
+
+func TestFirstIBKRErrorWarningReturnsEmptyWithoutIBKRErrorWarning(t *testing.T) {
+	cases := []struct {
+		name string
+		q    *model.OptionQuote
+	}{
+		{name: "nil quote", q: nil},
+		{name: "no warnings", q: &model.OptionQuote{}},
+		{name: "only derived warnings", q: &model.OptionQuote{Warnings: []string{"bid_unavailable", "no_price_data"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstIBKRErrorWarning(tc.q); got != "" {
+				t.Fatalf("firstIBKRErrorWarning = %q, want empty", got)
+			}
+		})
+	}
+}
+
 func TestHistoricalQuoteFromBarsUsesPreviousCloseForChange(t *testing.T) {
 	q, err := historicalQuoteFromBars("AAPL", []model.OHLCV{
 		{Close: 100, Timestamp: time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC)},

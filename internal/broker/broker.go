@@ -79,6 +79,14 @@ type DetailedOptionQuoter interface {
 // data (e.g., the yfinance fallback).
 var ErrAccountNotSupported = errors.New("broker does not support account data (requires IBKR)")
 
+// ErrMarketDataNotSupported is returned by brokers that cannot provide the
+// detailed single-contract option market data used to validate a specific
+// contract (bid/ask/mark/IV/Greeks). This is a market-data capability, not
+// an account/position capability — see #193 finding 6(b): the fallback
+// previously returned ErrAccountNotSupported here, whose "does not support
+// account data" wording was misleading for a pure market-data request.
+var ErrMarketDataNotSupported = errors.New("broker does not support single-contract option market data (requires IBKR)")
+
 // Broker defines the interface for interacting with a brokerage.
 type Broker interface {
 	// Connect establishes a connection to the broker.

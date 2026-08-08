@@ -11,19 +11,43 @@ import (
 
 // pendingQuote accumulates tick data for a snapshot market data request.
 type pendingQuote struct {
-	mu                sync.Mutex
-	bid               float64
-	ask               float64
-	mark              float64
-	last              float64
-	close             float64
-	volume            float64
-	openInterest      int32
+	mu sync.Mutex
+
+	// right is "C" or "P" for option-contract requests, "" for stock quotes.
+	// TickSize uses it to reject OPTION_CALL_*/OPTION_PUT_* ticks for the
+	// wrong side — IB can otherwise deliver the opposite contract's volume/OI
+	// onto this request (#193 finding 3).
+	right string
+
+	bid   float64
+	ask   float64
+	mark  float64
+	last  float64
+	close float64
+
+	// markFromTick is true once a genuine MARK_PRICE tick (generic tick 221)
+	// has arrived. While false, setOptionComputation is allowed to use
+	// MODEL_OPTION's computed price as a mark fallback; once true, the real
+	// MARK_PRICE tick wins and MODEL_OPTION must not overwrite it (#193
+	// finding 4).
+	markFromTick bool
+
+	volume       float64
+	openInterest int32
+
+	// impliedVolatility is the resolved IV, recomputed on every
+	// TickOptionComputation from the tiered ivModel/ivLast/ivBid/ivAsk
+	// fields below — see resolveIVLocked (#193 finding 4).
 	impliedVolatility float64
-	greeks            model.Greeks
-	marketDataType    string
-	done              chan struct{}
-	once              sync.Once
+	ivModel           float64
+	ivLast            float64
+	ivBid             float64
+	ivAsk             float64
+
+	greeks         model.Greeks
+	marketDataType string
+	done           chan struct{}
+	once           sync.Once
 }
 
 type quoteSnapshot struct {
@@ -54,10 +78,36 @@ func (pq *pendingQuote) setPrice(tickType ibapi.TickType, price float64) {
 		pq.ask = price
 	case ibapi.MARK_PRICE:
 		pq.mark = price
+		pq.markFromTick = true
 	case ibapi.LAST, ibapi.DELAYED_LAST:
 		pq.last = price
 	case ibapi.CLOSE, ibapi.DELAYED_CLOSE:
 		pq.close = price
+	}
+}
+
+// complete reports whether the key validation fields — both sides of the
+// market plus a price and IV/delta — have all arrived. Used by maybeComplete
+// to close `done` as soon as the quote is usable rather than always burning
+// the full collection window (#193 finding 2: ReqMktData(snapshot=false) is
+// streaming, so TickSnapshotEnd never fires and `done` would otherwise only
+// close on error or timeout).
+func (pq *pendingQuote) complete() bool {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	return pq.bid > 0 && pq.ask > 0 &&
+		(pq.mark > 0 || pq.last > 0) &&
+		pq.impliedVolatility > 0 &&
+		pq.greeks.Delta != 0
+}
+
+// maybeComplete closes `done` (idempotently, via pq.once) once complete()
+// is satisfied. Safe to call after every tick — when the fields aren't all
+// in yet it's a no-op, so the caller falls through to the existing
+// timeout/error paths unchanged.
+func (pq *pendingQuote) maybeComplete() {
+	if pq.complete() {
+		pq.once.Do(func() { close(pq.done) })
 	}
 }
 
@@ -93,11 +143,24 @@ func (pq *pendingQuote) setOptionComputation(tickType ibapi.TickType, impliedVol
 	defer pq.mu.Unlock()
 
 	if impliedVol > 0 && impliedVol != ibapi.UNSET_FLOAT {
-		pq.impliedVolatility = impliedVol
+		switch tickType {
+		case ibapi.MODEL_OPTION, ibapi.DELAYED_MODEL_OPTION:
+			pq.ivModel = impliedVol
+		case ibapi.LAST_OPTION_COMPUTATION, ibapi.DELAYED_LAST_OPTION:
+			pq.ivLast = impliedVol
+		case ibapi.BID_OPTION_COMPUTATION, ibapi.DELAYED_BID_OPTION:
+			pq.ivBid = impliedVol
+		case ibapi.ASK_OPTION_COMPUTATION, ibapi.DELAYED_ASK_OPTION:
+			pq.ivAsk = impliedVol
+		}
+		pq.impliedVolatility = pq.resolveIVLocked()
 	}
 	if optPrice > 0 && optPrice != ibapi.UNSET_FLOAT {
 		pq.greeks.Price = optPrice
-		if tickType == ibapi.MODEL_OPTION || tickType == ibapi.DELAYED_MODEL_OPTION {
+		// MODEL_OPTION's computed price is only a mark fallback: it must
+		// yield to a genuine MARK_PRICE tick (221) once one has arrived, and
+		// must never override one already received (#193 finding 4).
+		if (tickType == ibapi.MODEL_OPTION || tickType == ibapi.DELAYED_MODEL_OPTION) && !pq.markFromTick {
 			pq.mark = optPrice
 		}
 	}
@@ -113,6 +176,35 @@ func (pq *pendingQuote) setOptionComputation(tickType ibapi.TickType, impliedVol
 	if vega != ibapi.UNSET_FLOAT {
 		pq.greeks.Vega = vega
 	}
+}
+
+// resolveIVLocked picks the implied volatility to report given IB's four
+// possible IV sources, in descending reliability order (#193 finding 4):
+//
+//  1. MODEL_OPTION — IB's live pricing-model IV, continuously recomputed
+//     from the current NBBO; the most representative "current" IV.
+//  2. LAST_OPTION_COMPUTATION — IV implied by the last executed trade price;
+//     can lag the model during fast-moving markets or a stale last trade.
+//  3. BID/ASK_OPTION_COMPUTATION midpoint — IV backed out of the quoted
+//     bid/ask themselves, with no trade or model computation behind it;
+//     least reliable, used only when nothing better has arrived. Uses the
+//     average when both sides are present, otherwise whichever side is.
+//
+// Caller must hold pq.mu.
+func (pq *pendingQuote) resolveIVLocked() float64 {
+	if pq.ivModel > 0 {
+		return pq.ivModel
+	}
+	if pq.ivLast > 0 {
+		return pq.ivLast
+	}
+	if pq.ivBid > 0 && pq.ivAsk > 0 {
+		return (pq.ivBid + pq.ivAsk) / 2
+	}
+	if pq.ivBid > 0 {
+		return pq.ivBid
+	}
+	return pq.ivAsk
 }
 
 func (pq *pendingQuote) snapshot() quoteSnapshot {
@@ -391,8 +483,12 @@ func newIbWrapper() *IbWrapper {
 
 // --- helpers to register pending requests ---------------------------------
 
-func (w *IbWrapper) registerQuote(reqID int64) *pendingQuote {
-	pq := &pendingQuote{done: make(chan struct{})}
+// registerQuote registers a pending market-data request. `right` is "C" or
+// "P" for option-contract requests (used to filter side-specific volume/OI
+// ticks, see TickSize) and "" for stock quotes, which never receive
+// OPTION_CALL_*/OPTION_PUT_* ticks in the first place.
+func (w *IbWrapper) registerQuote(reqID int64, right string) *pendingQuote {
+	pq := &pendingQuote{done: make(chan struct{}), right: right}
 	w.mu.Lock()
 	w.quotes[reqID] = pq
 	w.mu.Unlock()
@@ -532,6 +628,7 @@ func (w *IbWrapper) TickPrice(reqID ibapi.TickerID, tickType ibapi.TickType, pri
 		return
 	}
 	pq.setPrice(tickType, price)
+	pq.maybeComplete()
 }
 
 // TickSize is called for VOLUME, OPEN_INTEREST and other size-based ticks.
@@ -541,6 +638,14 @@ func (w *IbWrapper) TickPrice(reqID ibapi.TickerID, tickType ibapi.TickType, pri
 // (put OI), and 86 (generic OPEN_INTEREST for the specific contract) are all
 // treated as the contract's open interest. Whichever arrives first closes the
 // done channel so the caller can cancel the streaming subscription quickly.
+//
+// OPTION_CALL_VOLUME/OPEN_INTEREST and OPTION_PUT_VOLUME/OPEN_INTEREST are
+// per-underlying aggregates split by side — IB will happily deliver BOTH to
+// the same reqID regardless of which right was requested. Accepting whichever
+// arrived last (as this used to) can silently attribute a put's volume/OI to
+// a call request or vice versa. We only accept the tick matching pq.right;
+// tick type 86 is already scoped to the specific contract requested, so it's
+// side-safe and always accepted (#193 finding 3).
 func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size ibapi.Decimal) {
 	w.mu.Lock()
 	pq, qOK := w.quotes[reqID]
@@ -549,11 +654,31 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 
 	if qOK {
 		switch tickType {
-		case ibapi.VOLUME, ibapi.DELAYED_VOLUME, ibapi.OPTION_CALL_VOLUME, ibapi.OPTION_PUT_VOLUME:
+		case ibapi.VOLUME, ibapi.DELAYED_VOLUME:
 			pq.setVolume(size.Float())
 			return
-		case ibapi.OPEN_INTEREST, ibapi.OPTION_CALL_OPEN_INTEREST, ibapi.OPTION_PUT_OPEN_INTEREST, 86:
+		case ibapi.OPTION_CALL_VOLUME:
+			if pq.right == "C" {
+				pq.setVolume(size.Float())
+			}
+			return
+		case ibapi.OPTION_PUT_VOLUME:
+			if pq.right == "P" {
+				pq.setVolume(size.Float())
+			}
+			return
+		case ibapi.OPEN_INTEREST, 86:
 			pq.setOpenInterest(int32(size.Float()))
+			return
+		case ibapi.OPTION_CALL_OPEN_INTEREST:
+			if pq.right == "C" {
+				pq.setOpenInterest(int32(size.Float()))
+			}
+			return
+		case ibapi.OPTION_PUT_OPEN_INTEREST:
+			if pq.right == "P" {
+				pq.setOpenInterest(int32(size.Float()))
+			}
 			return
 		}
 	}
@@ -587,6 +712,7 @@ func (w *IbWrapper) TickOptionComputation(
 	}
 	if qOK {
 		pq.setOptionComputation(tickType, impliedVol, delta, optPrice, gamma, vega, theta)
+		pq.maybeComplete()
 	}
 }
 
@@ -767,6 +893,35 @@ func (w *IbWrapper) sendConnectError(err error) {
 	}
 }
 
+// errCodesAlwaysRouted whitelists sub-2000 IB error codes that are genuine
+// per-request failures, not informational noise. Most of the sub-2000 range
+// (farm-connectivity chatter etc.) really is safe to drop — see the general
+// `errCode < 2000` filter below — but a handful of codes in that range are
+// real request-level errors IB happens to number below 2000, and dropping
+// them silently burns the caller's full collection window instead of
+// failing fast with the real reason (#193 finding 1). Kept as an explicit
+// whitelist rather than a sub-range so the long-connection noise-suppression
+// contract can't regress — every other sub-2000 code (audited against IB's
+// error-code docs) is still swallowed exactly as before.
+//
+//   - 200 — "No security definition has been found for the request": the
+//     contract itself doesn't exist (bad strike/expiry/right). This is
+//     exactly what `option-quote` contract validation needs to catch.
+//   - 162 — "Historical Market Data Service error message": per-request
+//     historical/market-data query failure (e.g. no data returned).
+//   - 300 — "Can't find EId with tickerId": the reqID/ticker is unknown to
+//     TWS (e.g. request was already cancelled or never valid).
+//   - 321 — "Error validating request": malformed contract/request fields.
+//   - 354 — "Requested market data is not subscribed": per-contract
+//     subscription failure, not farm connectivity.
+var errCodesAlwaysRouted = map[int64]bool{
+	200: true,
+	162: true,
+	300: true,
+	321: true,
+	354: true,
+}
+
 // Error routes IB errors to the corresponding pending request's error channel,
 // or logs them as informational messages (errCode < 2000 are often warnings).
 func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errString string, _ string) {
@@ -775,8 +930,10 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 		w.sendConnectError(ibErr)
 		return
 	}
-	// Codes < 2000 are informational (e.g., "Market data farm connection").
-	if errCode < 2000 {
+	// Codes < 2000 are informational (e.g., "Market data farm connection"),
+	// EXCEPT the explicit whitelist above, which are genuine per-request
+	// failures that must reach the caller (#193 finding 1).
+	if errCode < 2000 && !errCodesAlwaysRouted[errCode] {
 		return
 	}
 	// 10167 = "Not subscribed; displaying delayed data" — IB will still deliver

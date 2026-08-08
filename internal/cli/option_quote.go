@@ -23,6 +23,7 @@ func newOptionQuoteCmd() *cobra.Command {
 	var right string
 	var strike float64
 	var format string
+	var timeout time.Duration
 
 	cmd := &cobra.Command{
 		Use:           "option-quote [symbol]",
@@ -52,6 +53,11 @@ func newOptionQuoteCmd() *cobra.Command {
 
 			symbol := strings.ToUpper(args[0])
 			ctx := context.Background()
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
 			b := ibkr.New(ibkr.Config{
 				Host:     ibHost,
 				Port:     ibPort,
@@ -80,7 +86,7 @@ func newOptionQuoteCmd() *cobra.Command {
 				renderOptionQuoteText(os.Stdout, q)
 			}
 			if !optionQuoteHasPriceData(q) {
-				return cliExit(fmt.Errorf("option quote has no usable price data; warnings: %s", strings.Join(optionQuoteValidationWarnings(q), ", ")), exitIBKRUnreachable)
+				return optionQuoteFailureExit(q)
 			}
 			return nil
 		},
@@ -90,7 +96,28 @@ func newOptionQuoteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&right, "right", "", "Option right: C/call or P/put")
 	cmd.Flags().Float64Var(&strike, "strike", 0, "Option strike")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "Overall command timeout, e.g. 20s (0 = no explicit timeout; the internal per-request collection window still applies). For scanner-style callers that need a hard subprocess budget.")
 	return cmd
+}
+
+// optionQuoteFailureExit builds the CLI error for a quote with no usable
+// price data, choosing the exit code by failure class (#193 finding 6a):
+//
+//   - IBKR responded with an explicit per-request error (e.g. errCode 200
+//     "no security definition" for a bad strike/expiry/right) — the gateway
+//     is reachable and working, the *contract* is what's invalid. Reports
+//     that real IB error as the headline message (finding 1) under
+//     exitNoData, so scanner-style callers can branch on exit code alone
+//     instead of string-matching stderr.
+//   - Otherwise (still connected, but the collection window elapsed with no
+//     IB error — e.g. no real-time subscription, a thin/expired contract,
+//     or a request that simply timed out) falls back to the full
+//     structured warnings list, preserving today's behavior and exit code.
+func optionQuoteFailureExit(q *model.OptionQuote) error {
+	if ibErr := ibkrErrorDetail(q); ibErr != "" {
+		return cliExit(fmt.Errorf("option quote unavailable: %s", ibErr), exitNoData)
+	}
+	return cliExit(fmt.Errorf("option quote has no usable price data; warnings: %s", strings.Join(optionQuoteValidationWarnings(q), ", ")), exitIBKRUnreachable)
 }
 
 func optionQuoteHasPriceData(q *model.OptionQuote) bool {

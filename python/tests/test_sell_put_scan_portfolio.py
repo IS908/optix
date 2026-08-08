@@ -1,0 +1,304 @@
+"""Portfolio-aware scan pure functions (#spec 2026-08-08)."""
+import importlib.util
+import os
+from pathlib import Path
+
+os.environ["OPTIX_SCAN_RUNTIME_CHECKED"] = "1"
+_spec = importlib.util.spec_from_file_location(
+    "sell_put_scan", Path(__file__).resolve().parents[2] / "scripts" / "lark_nasdaq100_sell_put_scan.py")
+scan = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(scan)
+
+
+def _pos(**kw):
+    """positions --format json 单条记录（字段名对齐 internal/cli/json_output.go positionOutput）。"""
+    base = dict(account="U123", symbol="AAPL", sec_type="STK", quantity=100.0,
+                avg_cost=180.0, multiplier=1.0, currency="USD",
+                last_price=0.0, market_value=0.0, unrealized_pnl=0.0, unrealized_pnl_pct=0.0)
+    base.update(kw)
+    return base
+
+
+def test_normalize_portfolio_symbol():
+    assert scan.normalize_portfolio_symbol(" brk b ") == "BRK-B"
+    assert scan.normalize_portfolio_symbol("nvda") == "NVDA"
+
+
+def test_index_stock_long_and_short():
+    idx = scan.build_holdings_index([
+        _pos(symbol="AAPL", quantity=100.0),
+        _pos(symbol="TSLA", quantity=-50.0),
+    ])
+    assert idx["AAPL"].stock_qty == 100.0 and idx["AAPL"].short_puts == []
+    assert idx["TSLA"].stock_qty == -50.0
+
+
+def test_index_aggregates_stock_across_accounts():
+    idx = scan.build_holdings_index([
+        _pos(account="U1", quantity=100.0), _pos(account="U2", quantity=-100.0)])
+    assert idx["AAPL"].stock_qty == 0.0
+
+
+def test_index_short_put_converts_expiry():
+    idx = scan.build_holdings_index([
+        _pos(symbol="NVDA", sec_type="OPT", right="P", quantity=-2.0,
+             expiration="20260814", strike=170.0, multiplier=100.0)])
+    puts = idx["NVDA"].short_puts
+    assert len(puts) == 1
+    assert puts[0].strike == 170.0 and puts[0].expiry == "2026-08-14" and puts[0].qty == -2.0
+
+
+def test_index_ignores_long_puts_calls_and_zero_qty():
+    idx = scan.build_holdings_index([
+        _pos(symbol="A", sec_type="OPT", right="P", quantity=1.0,
+             expiration="20260814", strike=10.0),     # long put — 忽略
+        _pos(symbol="B", sec_type="OPT", right="C", quantity=-1.0,
+             expiration="20260814", strike=10.0),     # short call — 忽略
+        _pos(symbol="C", quantity=0.0),                # 零仓 — 忽略
+    ])
+    assert "A" not in idx and "B" not in idx and "C" not in idx
+
+
+def test_index_skips_malformed_row_keeps_rest():
+    idx = scan.build_holdings_index([
+        {"symbol": "X"},                              # 缺 quantity — 跳过
+        {"symbol": None, "sec_type": "STK", "quantity": 1},  # symbol 畸形 — 跳过
+        _pos(symbol="MSFT", quantity=10.0),
+        _pos(symbol="AMD", sec_type="OPT", right="P", quantity=-1.0,
+             expiration="bad", strike=100.0),          # expiration 畸形 — 跳过该腿
+    ])
+    assert list(idx.keys()) == ["MSFT"]
+    assert idx["MSFT"].stock_qty == 10.0
+
+
+import subprocess
+
+
+class _FakeCompleted:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def test_fetch_positions_ok(monkeypatch):
+    payload = '{"positions": [{"symbol": "AAPL", "sec_type": "STK", "quantity": 100}], "source": "IBKR"}'
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout=payload))
+    rows, err = scan.fetch_portfolio_positions()
+    assert err is None and rows == [{"symbol": "AAPL", "sec_type": "STK", "quantity": 100}]
+
+
+def test_fetch_positions_nonzero_exit_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=2, stderr="连接 IBKR 失败: dial tcp 127.0.0.1:4001: connection refused"))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None
+    assert err is not None and "Traceback" not in err  # 紧凑原因,非裸堆栈
+
+
+def test_fetch_positions_timeout_degrades(monkeypatch):
+    def _boom(cmd, timeout, stdin_text=None):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(scan, "run_optix_subprocess", _boom)
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "TimeoutExpired" in err
+
+
+def test_fetch_positions_bad_json_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout="not json"))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "parse positions JSON" in err
+
+
+def test_fetch_positions_missing_list_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout='{"source": "IBKR"}'))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "positions" in err
+
+
+def test_fetch_positions_nonzero_exit_empty_output_still_has_reason(monkeypatch):
+    """外部 SIGKILL/OOM 场景:stdout/stderr 都空,compact_ibkr_error("") 曾返回
+    "" (falsy) —— err 必须非空,否则 resolve_portfolio_line 的 `if err:` 判断
+    会误判为成功,继续拿 rows=None 去 build_holdings_index 炸 TypeError。"""
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=137, stdout="", stderr=""))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None
+    assert err  # 非空:falsy 原因会让 resolve_portfolio_line 的 `if err:` 判断失灵
+
+
+def _cand(**kw):
+    base = dict(symbol="NVDA", spot=170.0, expiry="2026-08-14", dte=6, strike=160.0,
+                bid=1.20, ask=1.40, mid=1.30, iv=0.45, oi=500, volume=200,
+                cushion_pct=5.9, premium_yield_pct=0.8, annualized_yield_pct=44.0,
+                delta=-0.22, score=0.61)
+    base.update(kw)
+    return scan.Candidate(**base)
+
+
+def _holding(stock_qty=0.0, puts=()):
+    return scan.Holding(stock_qty=stock_qty, short_puts=list(puts))
+
+
+def test_classify_no_overlap():
+    labels, penalty = scan.classify_candidate(_cand(), {})
+    assert labels == "" and penalty == 0.0
+
+
+def test_classify_stock_long():
+    idx = {"NVDA": _holding(stock_qty=100)}
+    labels, penalty = scan.classify_candidate(_cand(), idx)
+    assert labels == "正股" and penalty == scan.PORTFOLIO_PENALTY_STOCK
+
+
+def test_classify_stock_short_annotate_only():
+    idx = {"NVDA": _holding(stock_qty=-100)}
+    labels, penalty = scan.classify_candidate(_cand(), idx)
+    assert labels == "空股" and penalty == 0.0
+
+
+def test_classify_short_put_other_expiry():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-08-21", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SHORT_PUT
+    assert labels == "sp 150@08-21"
+
+
+def test_classify_same_expiry_any_strike_is_clash():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-08-14", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14", strike=160.0), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    assert labels.startswith("撞期!") and "sp 150@08-14" in labels
+
+
+def test_classify_multi_puts_nearest_and_count():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-09-18", -1.0),
+                                  scan.ShortPut(155.0, "2026-08-21", -2.0)])}
+    labels, _ = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert "sp 155@08-21×2" in labels  # 取最近到期一笔,总条数 ×N
+
+
+def test_classify_combined_takes_max_penalty_and_all_labels():
+    idx = {"NVDA": _holding(stock_qty=100,
+                            puts=[scan.ShortPut(150.0, "2026-08-14", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    assert "撞期!" in labels and "正股" in labels
+
+
+def test_apply_awareness_mutates_and_summarizes():
+    cands = [_cand(symbol="NVDA"), _cand(symbol="AAPL", expiry="2026-08-21")]
+    idx = {"NVDA": _holding(stock_qty=100)}
+    line = scan.apply_portfolio_awareness(cands, idx, "09:50 ET")
+    assert cands[0].portfolio_labels == "正股"
+    assert cands[0].portfolio_penalty == scan.PORTFOLIO_PENALTY_STOCK
+    assert cands[1].portfolio_labels == "" and cands[1].portfolio_penalty == 0.0
+    assert line == "组合感知: 持仓 1 标的，1 项降权（positions@09:50 ET）"
+
+
+def test_apply_awareness_no_overlap_line():
+    cands = [_cand(symbol="AMD")]
+    line = scan.apply_portfolio_awareness(cands, {"NVDA": _holding(stock_qty=1)}, "09:50 ET")
+    assert line == "组合感知: 与当前持仓无重叠"
+
+
+import json as _json
+
+
+def test_journal_payload_immune_to_display_reorder():
+    """spec §6 关键回归:组合感知重排显示不得影响 journal payload。"""
+    market_order = [_cand(symbol="NVDA", score=0.9),
+                    _cand(symbol="AAPL", score=0.8, expiry="2026-08-21")]
+    before = _json.dumps(scan.build_journal_payload(market_order, "src"), sort_keys=True)
+    # NVDA 被重罚后显示序反转 —— 但 journal 输入仍是市场序列表
+    market_order[0].portfolio_penalty = scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    market_order[0].portfolio_labels = "撞期!"
+    display = sorted(market_order,
+                     key=lambda c: c.score - c.portfolio_penalty, reverse=True)
+    assert [c.symbol for c in display] == ["AAPL", "NVDA"]  # 显示序确实变了
+    after = _json.dumps(scan.build_journal_payload(market_order, "src"), sort_keys=True)
+    assert before == after  # 字节级不变:payload 不含 penalty/labels,顺序不受显示影响
+
+
+def _result(cands):
+    return scan.ScanResult(candidates=cands, stats={}, errors=[],
+                           ibkr_errors=[], ibkr_attempted=0)
+
+
+def test_render_has_portfolio_column_and_reorders():
+    a = _cand(symbol="NVDA", score=0.9)
+    b = _cand(symbol="AAPL", score=0.8, expiry="2026-08-21")
+    a.portfolio_labels, a.portfolio_penalty = "撞期! sp 150@08-14", scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    out = scan.render(_result([a, b]), 100, portfolio_line="组合感知: 持仓 1 标的，1 项降权（positions@09:50 ET）")
+    assert "| 持仓 |" in out.splitlines()[6]  # 表头行含新列
+    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    assert "AAPL" in rows[0] and "NVDA" in rows[1]      # 0.8 > 0.9-0.40 → AAPL 升到第 1
+    assert "撞期! sp 150@08-14" in rows[1] and "| - |" in rows[0]
+    assert "组合感知: 持仓 1 标的，1 项降权" in out
+
+
+def test_render_stable_order_without_penalty():
+    a = _cand(symbol="NVDA", score=0.9)
+    b = _cand(symbol="AAPL", score=0.9, expiry="2026-08-21")  # 同分
+    out = scan.render(_result([a, b]), 100)
+    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    assert "NVDA" in rows[0] and "AAPL" in rows[1]  # 稳定:保持市场序
+    # portfolio_line=None → 无摘要行(注意:口径footnote 固定提到「组合感知降权」
+    # 这个概念,不含冒号;真正的摘要行/警示行才带冒号或「不可用」,专门校验这两种)
+    assert "组合感知:" not in out and "组合感知不可用" not in out
+
+
+def test_render_zero_candidates_carries_degrade_line():
+    out = scan.render(_result([]), 100,
+                      portfolio_line="⚠️ 组合感知不可用（连接失败），本次未降权")
+    assert "组合感知不可用" in out
+
+
+def test_resolve_portfolio_line_disabled():
+    r = _result([_cand()])
+    assert scan.resolve_portfolio_line(r, no_portfolio=True) is None
+
+
+def test_resolve_portfolio_line_skips_when_no_candidates(monkeypatch):
+    called = []
+    monkeypatch.setattr(scan, "fetch_portfolio_positions",
+                        lambda: called.append(1) or (None, "x"))
+    assert scan.resolve_portfolio_line(_result([]), no_portfolio=False) is None
+    assert called == []  # 零候选不浪费 IBKR 往返
+
+
+def test_resolve_portfolio_line_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "fetch_portfolio_positions", lambda: (None, "连接失败"))
+    r = _result([_cand()])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)
+    assert line == "⚠️ 组合感知不可用（连接失败），本次未降权"
+    assert r.candidates[0].portfolio_penalty == 0.0
+
+
+def test_resolve_portfolio_line_applies(monkeypatch):
+    monkeypatch.setattr(scan, "fetch_portfolio_positions",
+                        lambda: ([_pos(symbol="NVDA", quantity=100.0)], None))
+    r = _result([_cand(symbol="NVDA")])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)
+    assert "1 项降权" in line
+    assert r.candidates[0].portfolio_labels == "正股"
+
+
+def test_resolve_portfolio_line_survives_killed_subprocess_end_to_end(monkeypatch):
+    """回归(final review Critical):positions 子进程被外部 SIGKILL/OOM 杀死,
+    returncode=137、stdout/stderr 全空。fetch_portfolio_positions 曾会在此路径
+    返回 (None, "")(falsy 原因),resolve_portfolio_line 的 `if err:` 随之判断
+    为「无故障」,继续拿 rows=None 传给 build_holdings_index → 未捕获
+    TypeError 一路冒到 __main__,整张 Lark 表被异常行取代、exit 1,且
+    journal register/reconcile(在 resolve_portfolio_line 之后跑)被静默跳过。
+    这里直接打桩 run_optix_subprocess 走全链路,不只测 fetch 单元。"""
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=137, stdout="", stderr=""))
+    r = _result([_cand(symbol="NVDA")])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)  # 不得抛出
+    assert line is not None and "不可用" in line
+    assert r.candidates[0].portfolio_penalty == 0.0

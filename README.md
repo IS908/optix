@@ -276,6 +276,11 @@ python scripts/lark_nasdaq100_sell_put_scan.py --dry-run --ibkr-top 3
 
 Each live run also closes a falsifiable scan → outcome loop: the day's Top-10 candidates are registered into the scan journal (`optix scan-journal register`), and every previously-registered candidate whose expiry has passed is settled (`reconcile`) with the result appended as a「复盘」section in the Lark message; journal failures degrade to an in-message warning line rather than blocking the scan. Journal writes run automatically on live (non-`--dry-run`) invocations — pass `--no-journal` to skip them entirely, or `--with-journal` to force them on a `--dry-run` run too.
 
+The scanner is portfolio-aware: candidates overlapping current IBKR holdings
+(stock, or an existing short put on the same name/expiry) are annotated and
+de-ranked in the table without affecting top-N membership or journal
+comparability; disable with `--no-portfolio`.
+
 ## Development
 
 ### Build

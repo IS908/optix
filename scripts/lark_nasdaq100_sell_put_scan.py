@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.request
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -131,6 +131,8 @@ class Candidate:
     ibkr_option_error: Optional[str] = None
     ibkr_premium_yield_pct: Optional[float] = None
     ibkr_annualized_yield_pct: Optional[float] = None
+    portfolio_labels: str = ""      # 组合感知标注(空串=无重叠);只进 Lark 显示,不进 journal
+    portfolio_penalty: float = 0.0  # 组合感知扣分;只影响显示排序,不改 score
 
 
 @dataclass
@@ -141,6 +143,149 @@ class ScanResult:
     ibkr_errors: List[str]
     ibkr_attempted: int
     data_quality_error: Optional[str] = None
+
+
+# ── 组合感知（spec 2026-08-08）────────────────────────────────────────────
+# 契约:只改「读表顺序」,不改「进表资格」——top-N 与 journal 全维持市场面
+# score 口径,penalty 只作用于 Lark 显示排序。
+
+
+def normalize_portfolio_symbol(symbol: str) -> str:
+    # IBKR 类股符号带空格(如 "BRK B"),yfinance 用连字符;NDX 成分股当前
+    # 无点分类股,upper+空格转连字符已覆盖 —— 已知简化,写在 spec §3。
+    return symbol.strip().upper().replace(" ", "-")
+
+
+@dataclass
+class ShortPut:
+    strike: float
+    expiry: str  # YYYY-MM-DD(由 positions 的 YYYYMMDD 转换)
+    qty: float   # 负数为空头
+
+
+@dataclass
+class Holding:
+    stock_qty: float = 0.0
+    short_puts: List[ShortPut] = field(default_factory=list)
+
+
+def build_holdings_index(rows: List[dict]) -> Dict[str, Holding]:
+    """positions --format json 的记录列表 → {规范化 symbol: Holding}。
+    单条畸形记录跳过(宽进);正股数量跨账户求和;只收 short put 期权腿。"""
+    index: Dict[str, Holding] = {}
+    for row in rows:
+        try:
+            symbol = normalize_portfolio_symbol(str(row["symbol"]))
+            sec_type = str(row.get("sec_type", "")).upper()
+            qty = float(row["quantity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not symbol or symbol == "NONE" or qty == 0:
+            continue
+        if sec_type == "STK":
+            index.setdefault(symbol, Holding()).stock_qty += qty
+        elif sec_type == "OPT" and str(row.get("right", "")).upper() == "P" and qty < 0:
+            expiration = str(row.get("expiration", ""))
+            try:
+                strike = float(row.get("strike", 0))
+            except (TypeError, ValueError):
+                continue
+            if len(expiration) == 8 and expiration.isdigit() and strike > 0:
+                expiry = f"{expiration[:4]}-{expiration[4:6]}-{expiration[6:]}"
+                index.setdefault(symbol, Holding()).short_puts.append(
+                    ShortPut(strike=strike, expiry=expiry, qty=qty))
+    return index
+
+
+PORTFOLIO_POSITIONS_TIMEOUT = 30
+
+
+def fetch_portfolio_positions() -> Tuple[Optional[List[dict]], Optional[str]]:
+    """调 `optix positions --format json`。成功 (rows, None);任何故障
+    (None, 紧凑原因) —— 组合感知是增强项,绝不让它失败整个扫描。"""
+    try:
+        completed = run_optix_subprocess(
+            ["bash", optix_script(), "positions", "--format", "json"],
+            timeout=PORTFOLIO_POSITIONS_TIMEOUT,
+        )
+    except Exception as exc:
+        return None, compact_ibkr_error(f"{type(exc).__name__}: {exc}")
+    if completed.returncode != 0:
+        err_lines = (completed.stderr or completed.stdout or "").strip().splitlines()
+        err = "; ".join(err_lines[-2:]) if err_lines else f"optix positions exit {completed.returncode}"
+        return None, compact_ibkr_error(err)
+    try:
+        data = json.loads(completed.stdout)
+    except Exception as exc:
+        return None, f"parse positions JSON: {exc}"
+    rows = data.get("positions")
+    if not isinstance(rows, list):
+        return None, "positions JSON 缺 positions 列表"
+    return rows, None
+
+
+PORTFOLIO_PENALTY_STOCK = 0.10        # 仅持正股 —— 接货会叠加既有仓位
+PORTFOLIO_PENALTY_SHORT_PUT = 0.25    # 已有同名 short put(不同到期)
+PORTFOLIO_PENALTY_SAME_EXPIRY = 0.40  # 同名同到期撞车(strike 不论);score 典型
+                                      # 量级 0.4-0.9,0.40 压到表尾但不消失
+
+
+def classify_candidate(cand: Candidate, index: Dict[str, Holding]) -> Tuple[str, float]:
+    """候选 vs 持仓索引 → (标注串, penalty)。多情形并存取最大 penalty、标注全显。"""
+    holding = index.get(normalize_portfolio_symbol(cand.symbol))
+    if holding is None:
+        return "", 0.0
+    labels: List[str] = []
+    penalty = 0.0
+    if holding.short_puts:
+        if any(p.expiry == cand.expiry for p in holding.short_puts):
+            labels.append("撞期!")
+            penalty = max(penalty, PORTFOLIO_PENALTY_SAME_EXPIRY)
+        else:
+            penalty = max(penalty, PORTFOLIO_PENALTY_SHORT_PUT)
+        nearest = min(holding.short_puts, key=lambda p: p.expiry)
+        detail = f"sp {nearest.strike:g}@{nearest.expiry[5:]}"
+        if len(holding.short_puts) > 1:
+            detail += f"×{len(holding.short_puts)}"
+        labels.append(detail)
+    if holding.stock_qty > 0:
+        labels.append("正股")
+        penalty = max(penalty, PORTFOLIO_PENALTY_STOCK)
+    elif holding.stock_qty < 0:
+        labels.append("空股")  # 卖 put 对空头实为对冲方向 —— 仅标注,不扣分
+    return " ".join(labels), penalty
+
+
+def apply_portfolio_awareness(
+    candidates: List[Candidate], index: Dict[str, Holding], fetched_at: str
+) -> str:
+    """就地写入每个候选的 portfolio_labels/portfolio_penalty,返回摘要行。"""
+    flagged = penalized = 0
+    for cand in candidates:
+        labels, penalty = classify_candidate(cand, index)
+        cand.portfolio_labels = labels
+        cand.portfolio_penalty = penalty
+        flagged += 1 if labels else 0
+        penalized += 1 if penalty > 0 else 0
+    if flagged == 0:
+        return "组合感知: 与当前持仓无重叠"
+    return f"组合感知: 持仓 {len(index)} 标的，{penalized} 项降权（positions@{fetched_at}）"
+
+
+def resolve_portfolio_line(result: ScanResult, *, no_portfolio: bool) -> Optional[str]:
+    """组合感知编排:fetch → index → apply。返回 Lark 摘要行(或 None)。
+    --no-portfolio、零候选、扫描熔断时直接跳过(不发 IBKR 请求)。"""
+    if no_portfolio or result.data_quality_error or not result.candidates:
+        return None
+    rows, err = fetch_portfolio_positions()
+    if err or rows is None:
+        # 防御性双保险(final review Critical):即便 fetch_portfolio_positions
+        # 某条路径漏发非空 err(如空 stdout/stderr 的外部 SIGKILL),也不能
+        # 拿 rows=None 去 build_holdings_index 炸 TypeError —— 组合感知任何
+        # 故障都必须降级为警告行,不得让整个扫描异常退出。
+        return f"⚠️ 组合感知不可用（{err or 'positions 无输出'}），本次未降权"
+    fetched_at = dt.datetime.now(tz=NY).strftime("%H:%M ET")
+    return apply_portfolio_awareness(result.candidates, build_holdings_index(rows), fetched_at)
 
 
 def nth_weekday(year: int, month: int, weekday: int, nth: int) -> dt.date:
@@ -684,12 +829,14 @@ JOURNAL_REGISTER_TIMEOUT = 10
 JOURNAL_RECONCILE_TIMEOUT = 30
 
 
-def build_journal_payload(result: ScanResult, symbol_source: str) -> dict:
-    """Top-N 候选转 `optix scan-journal register` 的 stdin payload；
-    rank 按列表顺序 1..N，ibkr_* 仅在非 None 时携带（与 Go 侧 CandidateInput
-    的 omitempty 语义对齐）。"""
-    candidates = []
-    for i, c in enumerate(result.candidates, 1):
+def build_journal_payload(candidates: List[Candidate], symbol_source: str) -> dict:
+    """市场序 Top-N 候选 → `optix scan-journal register` 的 stdin payload。
+    契约(spec 2026-08-08 §6):调用方必须传 **市场面 score 降序** 列表
+    (ScanResult.candidates 的原序);组合感知只重排 Lark 显示,rank 语义与
+    2026-08-05 起的样本保持同口径。rank 按列表顺序 1..N,ibkr_* 仅在非
+    None 时携带(与 Go 侧 CandidateInput 的 omitempty 语义对齐)。"""
+    rows = []
+    for i, c in enumerate(candidates, 1):
         row = {
             "rank": i, "symbol": c.symbol, "expiry": c.expiry, "dte": c.dte,
             "strike": c.strike, "spot": c.spot, "bid": c.bid, "ask": c.ask, "mid": c.mid,
@@ -702,8 +849,8 @@ def build_journal_payload(result: ScanResult, symbol_source: str) -> dict:
                            ("ibkr_option_delta", c.ibkr_option_delta)):
             if value is not None:
                 row[key] = value
-        candidates.append(row)
-    return {"symbol_source": symbol_source, "candidates": candidates}
+        rows.append(row)
+    return {"symbol_source": symbol_source, "candidates": rows}
 
 
 def run_scan_journal(
@@ -763,7 +910,7 @@ def run_journal_flow(
     if not journal_active:
         return review_lines, journal_notes
     if not result.data_quality_error and result.candidates:
-        payload = build_journal_payload(result, SYMBOL_SOURCE)
+        payload = build_journal_payload(result.candidates, SYMBOL_SOURCE)
         _, err = run_scan_journal(["register"], stdin_json=json.dumps(payload),
                                   timeout=JOURNAL_REGISTER_TIMEOUT)
         if err:
@@ -776,9 +923,10 @@ def run_journal_flow(
     return review_lines, journal_notes
 
 
-def render(result: ScanResult, symbols_count: int) -> str:
+def render(result: ScanResult, symbols_count: int, portfolio_line: Optional[str] = None) -> str:
     now_ny = dt.datetime.now(tz=NY).strftime("%Y-%m-%d %H:%M ET")
-    candidates = result.candidates
+    candidates = sorted(result.candidates,
+                        key=lambda c: c.score - c.portfolio_penalty, reverse=True)
     stats = result.stats
     stats_line = (
         f"过滤统计：候选 {stats.get('candidate', 0)} / 标的 {stats.get('symbols', symbols_count)}；"
@@ -811,6 +959,8 @@ def render(result: ScanResult, symbols_count: int) -> str:
             stats_line,
             f"成分股来源：{SYMBOL_SOURCE}。",
         ]
+        if portfolio_line:
+            lines.append(portfolio_line)
         if SYMBOL_WARNING:
             lines.append(f"成分股提醒：{SYMBOL_WARNING}")
         if result.errors:
@@ -825,12 +975,12 @@ def render(result: ScanResult, symbols_count: int) -> str:
         f"成分股来源：{SYMBOL_SOURCE}。{stats_line}",
         f"数据源：Yahoo/yfinance 做全市场初筛；Top {result.ibkr_attempted} 候选串行调用 Optix/IBKR `option-quote` 做单合约盘口复核，失败时保留 yfinance 初筛值作为 fallback。",
         "",
-        "| # | 标的 | YF现价 | IBKR正股 last(bid/ask) | 到期 | Put | YF期权bid/ask | IBKR期权bid/ask mid | YF/IBKR OTM | YF年化 | IBKR年化 | YF/IBKR IV | YF/IBKR Δ | YF OI/Vol | IBKR OI/Vol |",
-        "|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| # | 标的 | 持仓 | YF现价 | IBKR正股 last(bid/ask) | 到期 | Put | YF期权bid/ask | IBKR期权bid/ask mid | YF/IBKR OTM | YF年化 | IBKR年化 | YF/IBKR IV | YF/IBKR Δ | YF OI/Vol | IBKR OI/Vol |",
+        "|---|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for i, c in enumerate(candidates, 1):
         lines.append(
-            f"| {i} | {c.symbol} | {c.spot:.2f} | {fmt_ibkr_quote(c)} | {c.expiry} ({c.dte}d) | "
+            f"| {i} | {c.symbol} | {c.portfolio_labels or '-'} | {c.spot:.2f} | {fmt_ibkr_quote(c)} | {c.expiry} ({c.dte}d) | "
             f"{c.strike:.2f} | {c.bid:.2f}/{c.ask:.2f} | {fmt_ibkr_option_quote(c)} | "
             f"{c.cushion_pct:.1f}%/{fmt_pct(c.ibkr_cushion_pct)} | "
             f"{c.annualized_yield_pct:.1f}% | {fmt_pct(c.ibkr_annualized_yield_pct)} | "
@@ -838,10 +988,12 @@ def render(result: ScanResult, symbols_count: int) -> str:
             f"{fmt_delta(c.delta)}/{fmt_delta(c.ibkr_option_delta)} | {c.oi}/{c.volume} | "
             f"{fmt_int_pair(c.ibkr_option_oi, c.ibkr_option_volume)} |"
         )
+    if portfolio_line:
+        lines.extend(["", portfolio_line])
     lines.extend([
         "",
         "提示：这只是候选池，不是下单指令；优先复核财报日、真实期权盘口、组合集中度和可接受接货价。",
-        "口径：表内年化/OTM 为 mid 口径；排名打分用 bid 口径（卖方最差成交价），故行序可能与年化列不完全一致，按 bid 实际成交的年化会更低。",
+        "口径：表内年化/OTM 为 mid 口径；排名打分用 bid 口径（卖方最差成交价），故行序可能与年化列不完全一致，按 bid 实际成交的年化会更低；行序还包含组合感知降权（见「持仓」列），score 列本身不受影响。",
         "IBKR 核实：`option-quote` 是 IBKR-only；没有自动 fallback 到 yfinance。脚本 fallback 逻辑是在 IBKR 失败/无数据时保留 yfinance 初筛值并标注错误样本。",
     ])
     if SYMBOL_WARNING:
@@ -860,6 +1012,8 @@ def main() -> int:
     parser.add_argument("--ibkr-top", type=int, default=DEFAULT_IBKR_TOP_N, help="Number of top candidates to validate through Optix/IBKR")
     parser.add_argument("--no-journal", action="store_true", help="Skip scan-journal register/reconcile")
     parser.add_argument("--with-journal", action="store_true", help="Force journal writes even with --dry-run")
+    parser.add_argument("--no-portfolio", action="store_true",
+                        help="Skip IBKR positions fetch and portfolio-aware ranking")
     args = parser.parse_args()
 
     if not args.dry_run and not is_valid_window():
@@ -867,9 +1021,10 @@ def main() -> int:
     symbols = nasdaq100_symbols()
     ibkr_top_n = 0 if args.no_ibkr else args.ibkr_top
     result = scan(symbols, ibkr_top_n=ibkr_top_n)
+    portfolio_line = resolve_portfolio_line(result, no_portfolio=args.no_portfolio)
     review_lines, journal_notes = run_journal_flow(
         result, dry_run=args.dry_run, no_journal=args.no_journal, with_journal=args.with_journal)
-    body = render(result, len(symbols))
+    body = render(result, len(symbols), portfolio_line=portfolio_line)
     extra = review_lines + journal_notes
     if extra:
         body = body + "\n" + "\n".join(extra)

@@ -20,9 +20,8 @@ def _cand(**kw):
 
 
 def test_build_journal_payload_shape():
-    result = scan.ScanResult(candidates=[_cand(), _cand(symbol="SNDK", strike=890.0)],
-                             stats={}, errors=[], ibkr_errors=[], ibkr_attempted=0)
-    p = scan.build_journal_payload(result, "Nasdaq official API")
+    p = scan.build_journal_payload([_cand(), _cand(symbol="SNDK", strike=890.0)],
+                                   "Nasdaq official API")
     assert p["symbol_source"] == "Nasdaq official API"
     assert [c["rank"] for c in p["candidates"]] == [1, 2]
     c0 = p["candidates"][0]
@@ -34,8 +33,7 @@ def test_build_journal_payload_carries_ibkr_when_present():
     c = _cand()
     c.ibkr_bid, c.ibkr_ask = 155.0, 155.2
     c.ibkr_option_iv, c.ibkr_option_delta = 1.61, -0.36
-    result = scan.ScanResult(candidates=[c], stats={}, errors=[], ibkr_errors=[], ibkr_attempted=1)
-    c0 = scan.build_journal_payload(result, "test")["candidates"][0]
+    c0 = scan.build_journal_payload([c], "test")["candidates"][0]
     assert c0["ibkr_bid"] == 155.0 and c0["ibkr_option_delta"] == -0.36
 
 

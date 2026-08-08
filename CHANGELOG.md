@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-07
+
+Patch release repairing the IBKR-first intraday cards (#191).
+
 ### Fixed
 
 - Six audited correctness findings in the IBKR-first intraday Movers/Sector
@@ -1746,7 +1750,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/IS908/optix/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/IS908/optix/compare/v0.14.30...v0.15.0
 [0.14.30]: https://github.com/IS908/optix/compare/v0.14.29...v0.14.30
 [0.14.29]: https://github.com/IS908/optix/compare/v0.14.28...v0.14.29

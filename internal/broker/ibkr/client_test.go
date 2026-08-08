@@ -9,6 +9,7 @@ import (
 
 	"github.com/IS908/optix/internal/broker"
 	"github.com/IS908/optix/pkg/model"
+	"github.com/scmhub/ibapi"
 )
 
 func TestPickRequestedExpiryReturnsErrExpiryNotAvailable(t *testing.T) {
@@ -295,6 +296,456 @@ func TestConnectAttemptsErrorIncludesEndpointForSingleAttempt(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("connectAttemptsError = %q, want substring %q", err, want)
 		}
+	}
+}
+
+// --- #192: handshake-retry budget --------------------------------------
+
+// newHandshakeTestClient builds a Client wired to a fresh IbWrapper and a
+// never-connected real *ibapi.EClient, for exercising awaitHandshakeLocked /
+// finishConnectLocked directly against wrapper channels without a real TCP
+// dial to IB Gateway/TWS. Disconnect() on an unconnected EClient is a safe
+// no-op (ibapi checks IsConnected() first), so this is safe to call from the
+// timeout/error paths under test.
+func newHandshakeTestClient(clientID int64) *Client {
+	w := newIbWrapper()
+	return &Client{
+		cfg:              Config{ClientID: clientID},
+		wrapper:          w,
+		ibClient:         ibapi.NewEClient(w),
+		handshakeTimeout: ibHandshakeTimeout,
+	}
+}
+
+// TestAwaitHandshakeLockedWedgedGatewayTimesOutRetryableOnce pins #192 round
+// 2's hybrid retry policy — a DELIBERATE CONTRACT CHANGE from 4fbcbbb's
+// TestAwaitHandshakeLockedWedgedGatewayTimesOutNonRetryable, which this test
+// replaces. The adversarial review on #192 rejected 4fbcbbb's "never retry a
+// timeout" design: #188/#189's wedge symptom is a handshake TIMEOUT on a
+// zombie-held PRIMARY clientID (not error 326), and #189's fix was precisely
+// retrying onto a fresh fallback ID — a plain "never retry timeouts" policy
+// regresses that. A wedged gateway (NextValidID never arrives) must now
+// produce a *ibConnectError with retryable=true AND timeout=true, so
+// runClientIDAttempts retries it exactly once onto the next candidate
+// (capped by maxTimeoutRetries — see the runClientIDAttempts-level tests
+// below for the cap itself).
+func TestAwaitHandshakeLockedWedgedGatewayTimesOutRetryableOnce(t *testing.T) {
+	c := newHandshakeTestClient(4)
+
+	start := time.Now()
+	err := c.awaitHandshakeLocked(context.Background(), 4, 20*time.Millisecond)
+	elapsed := time.Since(start)
+
+	var connErr *ibConnectError
+	if !errors.As(err, &connErr) {
+		t.Fatalf("err = %v, want *ibConnectError", err)
+	}
+	if !connErr.retryable {
+		t.Fatal("handshake timeout marked non-retryable; want retryable — #192 round 2 hybrid policy retries a timeout once onto a fresh clientID")
+	}
+	if !connErr.timeout {
+		t.Fatal("handshake timeout not marked timeout=true; runClientIDAttempts needs this to cap timeout-retries separately from 326 (#192 round 2)")
+	}
+	if !errors.Is(err, errIBKRHandshakeTimeout) {
+		t.Fatalf("err = %v, want errIBKRHandshakeTimeout", err)
+	}
+	if elapsed < 20*time.Millisecond || elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want ~1 handshake window (20ms), not a multiple of it", elapsed)
+	}
+}
+
+// TestAwaitHandshakeLockedClientIDInUseIsRetryable pins the #189 behavior
+// this fix must preserve: error 326 (clientID already in use) is classified
+// retryable but NOT timeout — it resolves near-instantly against a fresh
+// candidate ID and must not consume runClientIDAttempts' separate
+// timeout-retry budget (#192 round 2).
+func TestAwaitHandshakeLockedClientIDInUseIsRetryable(t *testing.T) {
+	c := newHandshakeTestClient(4)
+	c.wrapper.Error(0, 0, ibClientIDInUseCode, "client id already in use", "")
+
+	err := c.awaitHandshakeLocked(context.Background(), 4, time.Second)
+
+	var connErr *ibConnectError
+	if !errors.As(err, &connErr) {
+		t.Fatalf("err = %v, want *ibConnectError", err)
+	}
+	if !connErr.retryable {
+		t.Fatal("clientID-in-use (326) marked non-retryable; want retryable (#189 behavior preserved)")
+	}
+	if connErr.timeout {
+		t.Fatal("clientID-in-use (326) marked timeout=true; want false — it must not consume the timeout-retry budget (#192 round 2)")
+	}
+}
+
+// TestAwaitHandshakeLockedSucceedsOnNextValidID is the control case: a
+// timely NextValidID must still succeed and seed the request-ID counter.
+func TestAwaitHandshakeLockedSucceedsOnNextValidID(t *testing.T) {
+	c := newHandshakeTestClient(4)
+	c.wrapper.NextValidID(7)
+
+	if err := c.awaitHandshakeLocked(context.Background(), 4, time.Second); err != nil {
+		t.Fatalf("awaitHandshakeLocked: %v", err)
+	}
+	if got := c.nextReqID(); got != 8 {
+		t.Fatalf("nextReqID() = %d, want 8 (seeded from NextValidID=7)", got)
+	}
+}
+
+// TestAwaitHandshakeLockedOuterCtxCancelReturnsRawCtxErr pins the existing
+// #41-adjacent behavior: when the CALLER's ctx is cancelled mid-handshake
+// (as opposed to this attempt's own handshakeTimeout elapsing), the raw
+// ctx.Err() propagates unwrapped so FallbackBroker's ctx.Err()!=nil guardrail
+// keeps working regardless of how this package wraps other failures.
+func TestAwaitHandshakeLockedOuterCtxCancelReturnsRawCtxErr(t *testing.T) {
+	c := newHandshakeTestClient(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.awaitHandshakeLocked(ctx, 4, time.Minute) // handshake window far longer than the cancel
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	var connErr *ibConnectError
+	if errors.As(err, &connErr) {
+		t.Fatalf("err = %v, want raw ctx.Err(), not wrapped in *ibConnectError", err)
+	}
+}
+
+// --- #192 round 2: hybrid retry policy (window formula) ----------------
+//
+// perAttemptHandshakeWindow is a pure function of ctx.Deadline() and
+// time.Now(), so the walkthroughs below that only need to check the FORMULA
+// (not the retry loop's timing behavior) construct ctx values with whatever
+// deadline they want to represent and call it immediately — no sleeping
+// required, even to exercise the #192 issue's real 15s/10s/4s/1s numbers.
+
+func TestPerAttemptHandshakeWindowUsesDefaultWithoutDeadline(t *testing.T) {
+	window, ok := perAttemptHandshakeWindow(context.Background(), 7*time.Second)
+	if !ok || window != 7*time.Second {
+		t.Fatalf("window=%v ok=%v, want 7s default with no ctx deadline", window, ok)
+	}
+}
+
+func TestPerAttemptHandshakeWindowCapsAtDefault(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	window, ok := perAttemptHandshakeWindow(ctx, 10*time.Second)
+	if !ok || window != 10*time.Second {
+		t.Fatalf("window=%v ok=%v, want capped at the 10s default", window, ok)
+	}
+}
+
+func TestPerAttemptHandshakeWindowExpiredCtxReturnsNotOK(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), -time.Second) // already expired
+	defer cancel()
+
+	window, ok := perAttemptHandshakeWindow(ctx, 10*time.Second)
+	if ok || window != 0 {
+		t.Fatalf("window=%v ok=%v, want 0/false (budget already exhausted)", window, ok)
+	}
+}
+
+// TestPerAttemptHandshakeWindowFloorBlocksAttempt pins the #192 issue's
+// window-floor walkthrough: 2.5s remaining ctx budget minus the 1s
+// fallbackHandshakeReserve leaves 1.5s, below the 2s minHandshakeWindow
+// floor, so perAttemptHandshakeWindow must refuse the attempt entirely
+// (Connect()'s hook then returns the accumulated error immediately without
+// dialing IB) rather than let a doomed sub-floor attempt burn the reserve.
+func TestPerAttemptHandshakeWindowFloorBlocksAttempt(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+
+	window, ok := perAttemptHandshakeWindow(ctx, 10*time.Second)
+	if ok {
+		t.Fatalf("ok = true (window=%v), want false: 1.5s remaining after the 1s reserve is below the 2s floor", window)
+	}
+	if window != 0 {
+		t.Fatalf("window = %v, want 0 when not attempting", window)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("ctx.Err() = %v, want nil (checking the floor must not touch ctx)", ctx.Err())
+	}
+}
+
+// TestPerAttemptHandshakeWindowPoolPathWalkthrough pins the #192 issue's
+// pool-path walkthrough (ctx deadline 15s, mirroring the web UI broker
+// pool's reconnectTimeout; handshakeDefault 10s) at the formula level: the
+// primary attempt's window hits the 10s def cap (15s-1s reserve=14s > def),
+// and — modeled as a second ctx representing "5s remaining", i.e. as if the
+// primary's full 10s window had already elapsed — the retry's window
+// shrinks to min(10s, 5s-1s reserve)=4s, exactly the numbers in the issue.
+func TestPerAttemptHandshakeWindowPoolPathWalkthrough(t *testing.T) {
+	const def = 10 * time.Second
+
+	primaryCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	window1, ok1 := perAttemptHandshakeWindow(primaryCtx, def)
+	if !ok1 {
+		t.Fatal("primary window: ok = false, want true")
+	}
+	if window1 != def {
+		t.Fatalf("primary window = %v, want exactly %v (capped at def; 15s-1s reserve=14s > def)", window1, def)
+	}
+
+	retryCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second) // "as if" the primary's 10s window already elapsed from the 15s budget
+	defer cancel2()
+	window2, ok2 := perAttemptHandshakeWindow(retryCtx, def)
+	if !ok2 {
+		t.Fatal("retry window: ok = false, want true")
+	}
+	if window2 < 3900*time.Millisecond || window2 > 4*time.Second {
+		t.Fatalf("retry window = %v, want ~4s (min(10s, 5s-1s reserve))", window2)
+	}
+}
+
+// --- #192 round 2: hybrid retry policy (retry-loop mechanics) -----------
+
+// TestRunClientIDAttemptsNoDeadlineTimeoutRetriesOnceThenSucceeds mirrors
+// the #192 issue's no-deadline walkthrough — `optix positions` runs with a
+// fixed ClientID 4 under context.Background() and has no yfinance
+// equivalent (AccountReader isn't implemented by the yfinance broker), so a
+// hard-fail on the first zombie-held-primary timeout would have no
+// fallback. The hybrid policy retries the timeout once onto the next
+// candidate; connecting on that SECOND attempt is exactly the #189 escape
+// hatch the #192 adversarial review required this fix to restore.
+func TestRunClientIDAttemptsNoDeadlineTimeoutRetriesOnceThenSucceeds(t *testing.T) {
+	candidates := []int64{4, 101, 102}
+	connectCalls := 0
+	waitCalls := 0
+
+	result, err := runClientIDAttempts(context.Background(), candidates, clientIDAttemptHooks{
+		reset: func() {},
+		connect: func(_ context.Context, clientID int64) error {
+			connectCalls++
+			if connectCalls == 1 {
+				return &ibConnectError{clientID: clientID, retryable: true, timeout: true, err: errIBKRHandshakeTimeout}
+			}
+			return nil // fresh clientID succeeds immediately (#189 live evidence)
+		},
+		wait: func(context.Context, int) error {
+			waitCalls++
+			return nil
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if !result.connected || result.clientID != 101 {
+		t.Fatalf("result = %+v, want connected on fallback clientID 101", result)
+	}
+	if connectCalls != 2 {
+		t.Fatalf("connectCalls = %d, want 2 (one timeout-retry then success)", connectCalls)
+	}
+	if waitCalls != 1 {
+		t.Fatalf("waitCalls = %d, want 1", waitCalls)
+	}
+}
+
+// TestRunClientIDAttemptsNoDeadlineSecondTimeoutAbortsWithoutThirdAttempt
+// pins #192 round 2's hybrid retry cap at the retry-loop level. This is a
+// DELIBERATE CONTRACT CHANGE from 4fbcbbb's
+// TestRunClientIDAttemptsWedgedHandshakeTimeoutDoesNotRetry, which this test
+// replaces: 4fbcbbb asserted a wedged gateway stops after exactly ONE
+// attempt (it never retried a timeout at all). The #192 adversarial review
+// rejected that design — #188/#189's wedge symptom IS a handshake timeout
+// on a zombie-held PRIMARY clientID, and #189's whole fix was retrying onto
+// a fresh fallback ID, so never retrying timeouts regressed #189's core
+// scenario. The hybrid policy now retries a handshake timeout exactly ONCE
+// onto the next candidate; a SECOND timeout means even a fresh clientID
+// wedged (the gateway itself is down/unresponsive), so THAT is where
+// retries stop — after 2 attempts, not 1 and not the full 3-candidate
+// chain.
+func TestRunClientIDAttemptsNoDeadlineSecondTimeoutAbortsWithoutThirdAttempt(t *testing.T) {
+	candidates := []int64{4, 101, 102}
+	connectCalls := 0
+	waitCalls := 0
+	const window = 5 * time.Millisecond
+
+	result, err := runClientIDAttempts(context.Background(), candidates, clientIDAttemptHooks{
+		reset: func() {},
+		connect: func(_ context.Context, clientID int64) error {
+			connectCalls++
+			time.Sleep(window) // simulate the handshake window actually elapsing
+			return &ibConnectError{clientID: clientID, retryable: true, timeout: true, err: errIBKRHandshakeTimeout}
+		},
+		wait: func(context.Context, int) error {
+			waitCalls++
+			return nil
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if result.connected {
+		t.Fatal("result.connected = true, want false (every candidate wedges)")
+	}
+	if connectCalls != 2 {
+		t.Fatalf("connect called %d times, want 2 (one timeout-retry, then a SECOND timeout aborts — never a 3rd attempt on the last candidate)", connectCalls)
+	}
+	if waitCalls != 1 {
+		t.Fatalf("wait called %d times, want 1 (only the first timeout retries; the second aborts before waiting)", waitCalls)
+	}
+	if len(result.errors) != 2 {
+		t.Fatalf("errors = %v, want 2", result.errors)
+	}
+}
+
+// TestRunClientIDAttemptsClientIDInUseDoesNotConsumeTimeoutRetryBudget pins
+// the independence of the two retry counters (#192 round 2): error 326
+// (clientID-in-use) retries via the ordinary candidates-list bound and must
+// NOT touch runClientIDAttempts' separate timeout-retry cap. A fast 326 on
+// the primary, followed by a genuine handshake timeout on the first
+// fallback (the one timeout-retry the hybrid policy allows), followed by
+// success on the second fallback, proves the 326 didn't burn the
+// timeout-retry budget — if it had, the timeout on attempt 2 would have hit
+// the cap and aborted instead of reaching attempt 3. The candidates list
+// still bounds the total at 3 attempts either way.
+func TestRunClientIDAttemptsClientIDInUseDoesNotConsumeTimeoutRetryBudget(t *testing.T) {
+	candidates := []int64{4, 101, 102}
+	var attempted []int64
+
+	result, err := runClientIDAttempts(context.Background(), candidates, clientIDAttemptHooks{
+		reset: func() {},
+		connect: func(_ context.Context, clientID int64) error {
+			attempted = append(attempted, clientID)
+			switch len(attempted) {
+			case 1:
+				// Fast 326 rejection on the primary — retryable, not a timeout.
+				return &ibConnectError{clientID: clientID, retryable: true, timeout: false, err: &ibAPIError{code: ibClientIDInUseCode}}
+			case 2:
+				// A genuine handshake timeout on the first fallback ID — the
+				// one timeout-retry the hybrid policy allows.
+				return &ibConnectError{clientID: clientID, retryable: true, timeout: true, err: errIBKRHandshakeTimeout}
+			default:
+				return nil // success on the second fallback ID
+			}
+		},
+		wait: func(context.Context, int) error { return nil },
+	})
+
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if !result.connected || result.clientID != 102 {
+		t.Fatalf("result = %+v, want connected on clientID 102 (326 must not have burned the timeout-retry budget)", result)
+	}
+	if len(attempted) != 3 {
+		t.Fatalf("attempted = %v, want all 3 candidates tried (326 + one timeout-retry + success)", attempted)
+	}
+}
+
+// scaleHandshakeBudgetForTest temporarily shrinks fallbackHandshakeReserve
+// and minHandshakeWindow (both package `var`s, defaulting to the production
+// 1s/2s) so a test can exercise perAttemptHandshakeWindow's real formula,
+// wired exactly the way Client.Connect's `connect` hook wires it, over a
+// multi-second ctx-budget walkthrough (e.g. the web UI broker pool's 15s
+// reconnectTimeout) in milliseconds instead of real wall-clock seconds. The
+// ratio between def, the ctx deadline, reserve, and minWindow is preserved —
+// only the absolute scale shrinks, so what's exercised is the identical
+// formula and retry-loop code, just faster.
+func scaleHandshakeBudgetForTest(t *testing.T, reserve, minWindow time.Duration) {
+	t.Helper()
+	origReserve, origMinWindow := fallbackHandshakeReserve, minHandshakeWindow
+	fallbackHandshakeReserve, minHandshakeWindow = reserve, minWindow
+	t.Cleanup(func() {
+		fallbackHandshakeReserve, minHandshakeWindow = origReserve, origMinWindow
+	})
+}
+
+// TestConnectHookPoolPathWalkthroughTimeoutRetryThenAbort mirrors the #192
+// issue's pool-path walkthrough end to end, wiring the REAL
+// perAttemptHandshakeWindow formula exactly the way Client.Connect's
+// `connect` hook wires it: a ctx deadline shaped like the web UI broker
+// pool's reconnectTimeout (real: 15s; scaled here to 300ms), a wedged
+// gateway (every attempt times out), handshakeDefault (real: 10s; scaled to
+// 150ms), and fallbackHandshakeReserve/minHandshakeWindow scaled
+// proportionally (real: 1s/2s; scaled to 30ms/50ms) via
+// scaleHandshakeBudgetForTest — so the test finishes in well under a second
+// instead of ~14 real seconds, while exercising the identical formula and
+// retry-loop code the production path uses.
+//
+// Walkthrough: the primary window hits the def cap (150ms, wedge) → the
+// timeout-retry window shrinks to the remaining budget minus the reserve
+// (wedge again) → the SECOND timeout aborts (maxTimeoutRetries=1) → ctx
+// still has budget left alive, matching the real walkthrough's "abort at
+// ~14s, 1s remains, FallbackBroker proceeds to yfinance."
+func TestConnectHookPoolPathWalkthroughTimeoutRetryThenAbort(t *testing.T) {
+	scaleHandshakeBudgetForTest(t, 30*time.Millisecond, 50*time.Millisecond)
+
+	const def = 150 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	var windows []time.Duration
+	result, err := runClientIDAttempts(ctx, []int64{4, 101, 102}, clientIDAttemptHooks{
+		reset: func() {},
+		connect: func(ctx context.Context, clientID int64) error {
+			window, ok := perAttemptHandshakeWindow(ctx, def)
+			if !ok {
+				return &ibConnectError{clientID: clientID, err: errors.New("insufficient budget")}
+			}
+			windows = append(windows, window)
+			time.Sleep(window) // simulate the handshake window actually elapsing (wedge)
+			return &ibConnectError{clientID: clientID, retryable: true, timeout: true, err: errIBKRHandshakeTimeout}
+		},
+		wait: func(context.Context, int) error { return nil },
+	})
+
+	if err != nil {
+		t.Fatalf("runClientIDAttempts: %v", err)
+	}
+	if result.connected {
+		t.Fatal("result.connected = true, want false (both attempts wedge)")
+	}
+	if len(windows) != 2 {
+		t.Fatalf("attempts = %d, want 2 (one timeout-retry, then abort — not a 3rd)", len(windows))
+	}
+	if windows[0] != def {
+		t.Fatalf("windows[0] = %v, want exactly %v (def cap: 300ms-30ms reserve=270ms > def)", windows[0], def)
+	}
+	if windows[1] <= 0 || windows[1] >= windows[0] {
+		t.Fatalf("windows[1] = %v, want in (0, %v) — shrinking budget as real time is consumed between attempts", windows[1], windows[0])
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("ctx.Err() = %v, want nil (the reserve must keep ctx alive so FallbackBroker's #41 guard still lets yfinance run)", ctx.Err())
+	}
+}
+
+// TestFinishConnectLockedDoesNotDrainDisconnectCh pins #192 finding 2/4: a
+// disconnect signal sitting in the wrapper's buffered disconnectCh when
+// finishConnectLocked runs is NOT stale leftover from a prior session (every
+// connect attempt gets a fresh wrapper via resetAPIClientLocked) — it is a
+// genuine drop that happened between NextValidID and finishConnectLocked.
+// Draining it would leave connected=true on a dead socket until the next 30s
+// Ping cycle; finishConnectLocked must leave it alone so watchDisconnect
+// (started right after) observes it immediately.
+func TestFinishConnectLockedDoesNotDrainDisconnectCh(t *testing.T) {
+	c := newHandshakeTestClient(44)
+
+	c.mu.Lock()
+	// Simulate a genuine TCP drop landing between the handshake completing
+	// and finishConnectLocked running — buffered 1, exactly like the real
+	// ConnectionClosed callback delivers it.
+	c.wrapper.ConnectionClosed()
+	c.finishConnectLocked()
+	c.mu.Unlock()
+	t.Cleanup(func() {
+		c.mu.Lock()
+		if c.watchCancel != nil {
+			c.watchCancel()
+		}
+		c.mu.Unlock()
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && c.IsConnected() {
+		time.Sleep(time.Millisecond)
+	}
+	if c.IsConnected() {
+		t.Fatal("connected still true after 1s; finishConnectLocked drained the genuine disconnect signal (#192 regression)")
 	}
 }
 

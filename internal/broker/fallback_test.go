@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/IS908/optix/pkg/model"
 )
@@ -124,6 +125,42 @@ func TestFallbackBroker_PrimaryFailsFallbackSucceeds(t *testing.T) {
 	// the comment in fallback.go cites this as defense against partial TCP state.
 	if primary.disconnectCalls < 1 {
 		t.Errorf("primary.Disconnect was called %d times after Connect failure; want ≥1", primary.disconnectCalls)
+	}
+}
+
+// TestFallbackBroker_HandshakeTimeoutWithLiveDeadlineFallsBack pins #192:
+// once ibkr.Client stops retrying wedged-gateway handshake timeouts (fix b),
+// a primary failure with that shape completes well within the web UI broker
+// pool's reconnectTimeout (15s) budget, leaving ctx.Err()==nil. This test
+// locks the FallbackBroker side of that contract directly: a primary error
+// shaped like a wedged-gateway handshake timeout, under a ctx that mirrors
+// the pool's reconnectTimeout and hasn't expired, must still fall through to
+// yfinance — the #41 guardrail only blocks fallback when ctx itself is dead,
+// never merely because the primary failed.
+func TestFallbackBroker_HandshakeTimeoutWithLiveDeadlineFallsBack(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second) // mirrors broker_pool.reconnectTimeout
+	defer cancel()
+
+	primary := &fakeBroker{
+		name: "primary",
+		connectErr: errors.New(
+			"IB Gateway/TWS handshake failed for clientID 30: timeout waiting for NextValidID (TCP connected but handshake did not complete)",
+		),
+	}
+	fb := &fakeBroker{name: "fallback"}
+
+	wrapper := NewFallbackBroker(primary, fb)
+	if err := wrapper.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !wrapper.UsingFallback() {
+		t.Fatal("UsingFallback()=false; want true (wedged-gateway primary failure with a live ctx deadline must fall back)")
+	}
+	if fb.connectCalls != 1 {
+		t.Errorf("fallback.Connect was called %d times; want 1", fb.connectCalls)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("ctx.Err() = %v, want nil (fallback must have run while ctx was still live)", ctx.Err())
 	}
 }
 

@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-08-08
+
+Patch release for hybrid IBKR handshake retry budgeting (#192).
+
 ### Fixed
 
 - **Handshake-retry budget could blow past the web UI broker pool's 15s
@@ -1850,7 +1854,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/IS908/optix/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/IS908/optix/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/IS908/optix/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/IS908/optix/compare/v0.14.30...v0.15.0

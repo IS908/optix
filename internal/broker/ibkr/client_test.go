@@ -350,3 +350,121 @@ func TestHistoricalQuoteFromBarsRequiresBars(t *testing.T) {
 		t.Fatal("expected error for no bars")
 	}
 }
+
+// TestParseIBDateHandlesTrailingZoneToken is a live-E2E-discovered
+// regression test (#191 verification): IB Gateway actually sends intraday
+// bar dates as "20260807 09:30:00 US/Eastern" (a trailing zone token), not
+// the two-field "20260807 09:30:00" the old parser assumed.
+//
+// The zone token is NY *wall-clock* labeling (IB formatDate=1), not a
+// discardable comment: "09:30:00 US/Eastern" names the actual NYSE/NASDAQ
+// session open. A prior version of this test asserted the wrong thing —
+// that the two leading fields get parsed as UTC-labeled text with the zone
+// suffix dropped — which is the exact regression an adversarial review
+// caught on #191: parsing NY wall-clock as UTC shifts every intraday bar
+// 4-5h early, so downstream sessionOpenAndVolume's `Hour() < 9` filter (see
+// internal/intraday/service.go) rejects the true 09:30 ET open bar.
+func TestParseIBDateHandlesTrailingZoneToken(t *testing.T) {
+	got, err := parseIBDate("20260807 09:30:00 US/Eastern")
+	if err != nil {
+		t.Fatalf("parseIBDate returned error: %v", err)
+	}
+	easternLoc, locErr := time.LoadLocation("America/New_York")
+	if locErr != nil {
+		t.Fatalf("time.LoadLocation(America/New_York) error: %v", locErr)
+	}
+	want := time.Date(2026, 8, 7, 9, 30, 0, 0, easternLoc)
+	if !got.Equal(want) {
+		t.Fatalf("parseIBDate = %v, want %v (same instant as 09:30 ET)", got, want)
+	}
+	if gotHour := got.In(easternLoc).Hour(); gotHour != 9 {
+		t.Fatalf("parseIBDate(...).In(NY).Hour() = %d, want 9 (the true session open, not shifted by the UTC-mislabel bug)", gotHour)
+	}
+}
+
+// TestParseIBDateFallsBackToNYForUnrecognizedZoneToken covers the case
+// where IB (or a test fixture) sends a zone token that isn't a real IANA
+// name. Every parseIBDate caller in this codebase deals in US stock bars,
+// whose session zone is always US/Eastern, so falling back to NY is the
+// documented, deliberate default rather than a silent UTC mislabel.
+func TestParseIBDateFallsBackToNYForUnrecognizedZoneToken(t *testing.T) {
+	got, err := parseIBDate("20260807 09:30:00 Bogus/Zone")
+	if err != nil {
+		t.Fatalf("parseIBDate returned error: %v", err)
+	}
+	easternLoc, locErr := time.LoadLocation("America/New_York")
+	if locErr != nil {
+		t.Fatalf("time.LoadLocation(America/New_York) error: %v", locErr)
+	}
+	want := time.Date(2026, 8, 7, 9, 30, 0, 0, easternLoc)
+	if !got.Equal(want) {
+		t.Fatalf("parseIBDate with unknown zone = %v, want %v (NY fallback)", got, want)
+	}
+	if got.In(time.UTC).Hour() == 9 {
+		t.Fatalf("parseIBDate with unknown zone landed on UTC 09:00, want NY fallback (not UTC mislabel)")
+	}
+}
+
+func TestParseIBDateStillHandlesDateOnlyAndNoZoneDatetime(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want time.Time
+	}{
+		{"date only", "20260807", time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)},
+		{"date+time, no zone", "20260807 09:30:00", time.Date(2026, 8, 7, 9, 30, 0, 0, time.UTC)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseIBDate(tc.in)
+			if err != nil {
+				t.Fatalf("parseIBDate(%q) error: %v", tc.in, err)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("parseIBDate(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseIBDateEmptyStringReturnsError(t *testing.T) {
+	if _, err := parseIBDate(""); err == nil {
+		t.Fatal("expected error for empty date string")
+	}
+}
+
+// TestHistoricalDurationEmptyStartDatePreservesOneYearDefault locks the
+// unchanged behavior for callers that never supply a startDate (e.g. daily
+// bar fetches elsewhere in the codebase) — #191 only touches the has-a-range
+// branch.
+func TestHistoricalDurationEmptyStartDatePreservesOneYearDefault(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	if got := historicalDuration("", "", now); got != "1 Y" {
+		t.Fatalf("historicalDuration(\"\",\"\") = %q, want \"1 Y\"", got)
+	}
+}
+
+func TestHistoricalDurationBucketsByStartDateDistance(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		startDate string
+		endDate   string
+		want      string
+	}{
+		{"same day (#191 intraday lookback)", "20260625", "", "1 D"},
+		{"one day back", "20260624", "", "1 D"},
+		{"one week back", "20260619", "", "1 W"},
+		{"three weeks back", "20260605", "", "1 M"},
+		{"three months back", "20260325", "", "6 M"},
+		{"explicit endDate narrows the window", "20260624", "20260625", "1 D"},
+		{"malformed startDate falls back to 6 M", "not-a-date", "", "6 M"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := historicalDuration(tc.startDate, tc.endDate, now); got != tc.want {
+				t.Fatalf("historicalDuration(%q,%q) = %q, want %q", tc.startDate, tc.endDate, got, tc.want)
+			}
+		})
+	}
+}

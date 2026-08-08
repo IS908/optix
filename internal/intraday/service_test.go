@@ -3,9 +3,11 @@ package intraday
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/internal/portfolio"
 	"github.com/IS908/optix/pkg/model"
 )
@@ -271,6 +273,223 @@ func TestMoversTimesOutBlockedSourcesWithWarnings(t *testing.T) {
 	}
 	if len(dto.Warnings) == 0 {
 		t.Fatalf("warnings empty, want timeout warning")
+	}
+}
+
+// TestMoversReportsDelayedBasisOnTotalSourceFailure is the #191 finding-3
+// regression test: on total load failure, the DTO's top-level Basis must not
+// repeat the source's nominal "realtime" claim next to an "unavailable"
+// warning — that's what the pre-fix code did, since basisName(s.src) simply
+// echoed the (still-nominal-realtime) BrokerSource.Basis() regardless of
+// whether the load actually happened.
+func TestMoversReportsDelayedBasisOnTotalSourceFailure(t *testing.T) {
+	svc := NewService(fakeSource{err: errors.New("ibkr down")}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Basis == "realtime" {
+		t.Fatalf("basis = realtime on total load failure — must not claim realtime with zero data")
+	}
+	if dto.Basis != "delayed" {
+		t.Fatalf("basis = %s, want the canonical-enum honest floor (delayed)", dto.Basis)
+	}
+}
+
+func TestSectorHeatmapReportsDelayedBasisOnTotalSourceFailure(t *testing.T) {
+	svc := NewService(fakeSource{err: errors.New("ibkr down")}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.SectorHeatmap(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Basis == "realtime" {
+		t.Fatalf("basis = realtime on total load failure — must not claim realtime with zero data")
+	}
+}
+
+func TestMoversNilSourceReportsUnavailableSourceAndHonestBasis(t *testing.T) {
+	svc := NewService(nil, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.Movers(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Source != "unavailable" {
+		t.Fatalf("source = %s, want unavailable", dto.Source)
+	}
+	if dto.Basis == "realtime" || dto.Basis == "degraded" {
+		t.Fatalf("basis = %s, want a canonical non-realtime basis (never the invalid 'degraded' sentinel)", dto.Basis)
+	}
+}
+
+// TestAggregateBasisPicksDominantInsteadOfMixed is the other half of finding
+// 3: "mixed" is not a member of the canonical basis enum
+// (realtime|delayed|approx|frozen), so the top-level aggregate must pick the
+// dominant per-row basis instead of returning the literal string "mixed".
+func TestAggregateBasisPicksDominantInsteadOfMixed(t *testing.T) {
+	movers := []Mover{{Basis: "realtime"}, {Basis: "realtime"}, {Basis: "delayed"}}
+
+	got := aggregateBasis(movers, "delayed")
+
+	if got == "mixed" {
+		t.Fatalf("aggregateBasis returned the invalid enum value %q", got)
+	}
+	if got != "realtime" {
+		t.Fatalf("aggregateBasis = %s, want dominant value realtime", got)
+	}
+}
+
+// TestMoversWarnsWithCountWhenSomeSymbolsUnavailable is the #191 finding-2
+// regression test: pre-fix, emptyDataWarnings only fired when the ENTIRE
+// quotes/bars map came back empty, so a partial per-symbol shortfall (some
+// GetQuote/GetHistoricalBars calls failing, or the 8s LoadTimeout firing
+// mid-loop) rendered as a clean, silently-truncated result.
+func TestMoversWarnsWithCountWhenSomeSymbolsUnavailable(t *testing.T) {
+	svc := NewService(fakeSource{
+		quotes: map[string]Quote{"AAPL": {Symbol: "AAPL", Last: 110, AsOf: fixedNow()}},
+		bars: map[string][]model.OHLCV{
+			"AAPL": {bar("2026-06-25T13:30:00Z", 100, 101, 1000)},
+		},
+	}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	// curatedMovers alone is a 9-symbol universe; only AAPL has data, so 8/9
+	// symbols should be reported unavailable for both quotes and bars.
+	dto, err := svc.Movers(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range dto.Warnings {
+		if strings.Contains(w, "8/9") && strings.Contains(w, "unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %#v, want an \"8/9 ... unavailable\" style partial-failure warning", dto.Warnings)
+	}
+}
+
+// TestMoversLeavesVolumeZeroWhenBarVolumeAbsent is the #191 finding-4
+// regression test: substituting the daily quote volume for a missing
+// session-bar volume mixes two different measures under one label. When bar
+// volume is absent, Volume must stay 0 (existing warnings already surface
+// the gap) rather than being silently backfilled from quote.Volume.
+func TestMoversLeavesVolumeZeroWhenBarVolumeAbsent(t *testing.T) {
+	svc := NewService(fakeSource{
+		quotes: map[string]Quote{"AAPL": {Symbol: "AAPL", Last: 110, Volume: 99999, AsOf: fixedNow()}},
+		bars: map[string][]model.OHLCV{
+			"AAPL": {bar("2026-06-25T13:30:00Z", 100, 101, 0)},
+		},
+	}, testSectors(), "<test>")
+	svc.Now = fixedNow
+
+	dto, err := svc.Movers(context.Background(), []string{"AAPL"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dto.Gainers) == 0 {
+		t.Fatalf("gainers empty, want AAPL")
+	}
+	if dto.Gainers[0].Volume != 0 {
+		t.Fatalf("volume = %d, want 0 (must not backfill from the unrelated daily quote volume 99999)", dto.Gainers[0].Volume)
+	}
+}
+
+// TestSessionOpenAndVolumeAcceptsIBZoneSuffixedNYOpenBar is the cross-layer
+// regression test for the #191 review finding: internal/broker/ibkr's
+// parseIBDate parses IB's "YYYYMMDD HH:MM:SS US/Eastern" bar dates (see
+// TestParseIBDateHandlesTrailingZoneToken in
+// internal/broker/ibkr/client_test.go) in the zone the suffix names, so a
+// bar timestamped "09:30:00 US/Eastern" lands as NY wall-clock 09:30 — the
+// production convention this fixture documents by constructing the
+// Timestamp directly in intelshared.NY() rather than UTC.
+//
+// Before the fix, parseIBDate mislabeled that same wall-clock text as UTC,
+// which is 4-5h early in NY terms; sessionOpenAndVolume's
+// `barNY.Hour() < sessionOpenHour` filter then rejected the true 09:30 ET
+// bar outright, so the reported open price came from a much later bar and
+// session volume undercounted the missing 09:30-onward bars.
+func TestSessionOpenAndVolumeAcceptsIBZoneSuffixedNYOpenBar(t *testing.T) {
+	ny := intelshared.NY()
+	openBar := model.OHLCV{
+		Timestamp: time.Date(2026, 8, 7, 9, 30, 0, 0, ny),
+		Open:      100, High: 101, Low: 99, Close: 100.5, Volume: 500,
+	}
+	laterBar := model.OHLCV{
+		Timestamp: time.Date(2026, 8, 7, 10, 0, 0, 0, ny),
+		Open:      100.5, High: 102, Low: 100, Close: 101, Volume: 300,
+	}
+	asOf := time.Date(2026, 8, 7, 10, 30, 0, 0, ny)
+
+	open, volume, found := sessionOpenAndVolume([]model.OHLCV{openBar, laterBar}, asOf)
+	if !found {
+		t.Fatal("sessionOpenAndVolume did not find a session-open bar for a 09:30 ET timestamp")
+	}
+	if open != 100 {
+		t.Fatalf("open = %v, want 100 (the true 09:30 ET open bar, not a later one)", open)
+	}
+	if volume != 800 {
+		t.Fatalf("volume = %d, want 800 (both in-session bars counted)", volume)
+	}
+}
+
+// TestLoadMarketDataReusesSnapshotWithinTTL is the #191 finding-5 regression
+// test: Movers and SectorHeatmap are separate HTTP endpoints, but within one
+// poll cycle they should share a single loaded snapshot instead of each
+// opening its own broker session.
+func TestLoadMarketDataReusesSnapshotWithinTTL(t *testing.T) {
+	src := &fakeSnapshotSource{fakeSource: fakeSource{
+		quotes: map[string]Quote{"AAPL": {Symbol: "AAPL", Last: 110, AsOf: fixedNow()}},
+		bars: map[string][]model.OHLCV{
+			"AAPL": {bar("2026-06-25T13:30:00Z", 100, 101, 1000)},
+		},
+	}}
+	svc := NewService(src, testSectors(), "<test>")
+	clock := fixedNow()
+	svc.Now = func() time.Time { return clock }
+	svc.SnapshotTTL = 25 * time.Second
+
+	if _, err := svc.Movers(context.Background(), []string{"AAPL"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SectorHeatmap(context.Background(), []string{"AAPL"}); err != nil {
+		t.Fatal(err)
+	}
+	if src.snapshots != 1 {
+		t.Fatalf("snapshots = %d, want 1 (Movers and SectorHeatmap should share the cached snapshot)", src.snapshots)
+	}
+}
+
+// TestLoadMarketDataRefreshesSnapshotAfterTTL locks the other half: the
+// cache must not go stale forever — once the injectable clock advances past
+// SnapshotTTL, the next call re-fetches.
+func TestLoadMarketDataRefreshesSnapshotAfterTTL(t *testing.T) {
+	src := &fakeSnapshotSource{fakeSource: fakeSource{
+		quotes: map[string]Quote{"AAPL": {Symbol: "AAPL", Last: 110, AsOf: fixedNow()}},
+		bars: map[string][]model.OHLCV{
+			"AAPL": {bar("2026-06-25T13:30:00Z", 100, 101, 1000)},
+		},
+	}}
+	svc := NewService(src, testSectors(), "<test>")
+	clock := fixedNow()
+	svc.Now = func() time.Time { return clock }
+	svc.SnapshotTTL = 25 * time.Second
+
+	if _, err := svc.Movers(context.Background(), []string{"AAPL"}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(26 * time.Second)
+	if _, err := svc.Movers(context.Background(), []string{"AAPL"}); err != nil {
+		t.Fatal(err)
+	}
+	if src.snapshots != 2 {
+		t.Fatalf("snapshots = %d, want 2 (cache must refresh once TTL elapses)", src.snapshots)
 	}
 }
 

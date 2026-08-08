@@ -12,6 +12,39 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`optix server` could truncate its own graceful shutdown on SIGTERM/SIGINT**
+  (#196, found during the #195 review). The root command's global signal
+  handler (installed for every command via `PersistentPreRunE`) and `optix
+  server`'s own `signal.NotifyContext`-driven shutdown (HTTP drain + broker
+  pool close) both listened for the same signals — Go delivers a signal to
+  every registered listener, so on SIGTERM both fired concurrently. The root
+  handler ran its cleanup registry (closing the SQLite store immediately) and
+  called `os.Exit` within its 5s watchdog window regardless of whether the
+  server's own HTTP drain / pool close had finished, racing and potentially
+  cutting it short. `optix server` now calls a new `cli.SuppressSignalExit()`
+  at the top of its `RunE`, before any signal can arrive, so the root
+  handler's next SIGTERM/SIGINT becomes a no-op and the server's own
+  `signal.NotifyContext` flow is the sole driver of both shutdown ordering and
+  process exit (store close and broker-pool close were already sequenced
+  correctly in `internal/webui/server.go`'s `Start` and `internal/cli/server.go`'s
+  `RunE`, so no shutdown-sequence changes were needed there).
+- 14 docs-drift items across `README.md`, `CLAUDE.md`,
+  `skills/commands/optix/SKILL.md`, and `docs/user_manual.md` (#194):
+  missing `option-quote` / `portfolio concentration|greeks|stress` CLI rows,
+  missing `/api/intel/intraday/*` and ticker-zone (`/api/quotes`,
+  `/api/quote/{symbol}`, `/api/freshness`) routes, missing
+  `internal/intraday/`, `internal/intelshared/`, `internal/journal/`,
+  `internal/portfolio/`, `internal/watchlist/`, and `internal/scanjournal/`
+  in the architecture docs, a stale "`intel/` is zero-IBKR" claim (it wires
+  in the IBKR-preferred `intraday`/`shockintel` planes), a stale "M3–M7
+  slots" SKILL.md description predating the real intraday cards (#184), a
+  factually wrong watchlist route (`POST /watchlist` and
+  `POST /watchlist/{symbol}/remove`, not `/api/watchlist/add|remove`), and an
+  outdated "no real-time option prices" limitations note superseded by
+  `optix option-quote` (#187).
+
 ## [0.15.3] - 2026-08-08
 
 Patch release for hybrid IBKR handshake retry budgeting (#192).

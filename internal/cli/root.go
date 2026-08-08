@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -79,23 +80,68 @@ func runCleanup() {
 	cleanupItems = nil
 }
 
+// osExit is os.Exit through an indirection so tests can observe whether (and
+// with what code) the signal handler would have terminated the process,
+// without actually killing the test binary.
+var osExit = os.Exit
+
+// signalExitSuppressed is set by SuppressSignalExit when a command installs
+// its own SIGINT/SIGTERM-driven graceful-shutdown flow (currently: `optix
+// server` via signal.NotifyContext in server.go) that must exclusively own
+// the shutdown decision. See handleSignal for why this matters (#196).
+var signalExitSuppressed atomic.Bool
+
+// SuppressSignalExit tells the root SIGINT/SIGTERM handler installed by
+// initSignalHandler to stand down: on the next signal it will neither run
+// the cleanup registry nor call os.Exit, leaving the calling command's own
+// signal-driven shutdown (e.g. signal.NotifyContext) as the sole driver of
+// both cleanup and process exit.
+//
+// Why this is needed (#196): initSignalHandler runs for every command via
+// PersistentPreRunE, so `optix server` had TWO independent SIGTERM listeners
+// — this one and its own NotifyContext-based graceful shutdown (draining
+// HTTP connections, closing the broker pool). Go delivers a signal to every
+// channel registered via signal.Notify, so both fired concurrently: the root
+// handler ran cleanup (closing the SQLite store immediately) and called
+// os.Exit within ~5s regardless of whether the server's own HTTP drain /
+// pool close had finished, truncating it. Call this once, early, before the
+// server starts accepting a shutdown signal — the store close and broker
+// pool close still happen, just exclusively via the server's own deferred
+// shutdown sequence (see cli/server.go) instead of racing this handler.
+func SuppressSignalExit() {
+	signalExitSuppressed.Store(true)
+}
+
 func initSignalHandler() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		sig := <-ch
-		done := make(chan struct{})
-		go func() {
-			runCleanup()
-			close(done)
-		}()
-		// ibapi Disconnect 可能在 gateway 假死时阻塞;5s 看门狗保证进程一定退出。
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-		}
-		os.Exit(signalExitCode(sig))
+		handleSignal(<-ch)
 	}()
+}
+
+// handleSignal runs the root package's default signal response: flush
+// registered cleanup (store, broker connections) and exit with a signal-
+// appropriate code, bounded by a 5s watchdog in case cleanup blocks (e.g.
+// ibapi Disconnect during a Gateway hang).
+//
+// When signalExitSuppressed is set, this is a deliberate no-op — see
+// SuppressSignalExit for why.
+func handleSignal(sig os.Signal) {
+	if signalExitSuppressed.Load() {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		runCleanup()
+		close(done)
+	}()
+	// ibapi Disconnect 可能在 gateway 假死时阻塞;5s 看门狗保证进程一定退出。
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
+	osExit(signalExitCode(sig))
 }
 
 func signalExitCode(sig os.Signal) int {

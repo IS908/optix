@@ -99,6 +99,18 @@ Examples:
   optix server --web-addr=0.0.0.0:8080
   optix server --analysis-addr=localhost:50052 --capital=100000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// `optix server` owns its own SIGINT/SIGTERM-driven graceful
+			// shutdown below (signal.NotifyContext, step 6) — draining HTTP
+			// connections and closing the broker pool before the store is
+			// closed. The root package's PersistentPreRunE also installs a
+			// global signal handler (initSignalHandler in root.go) that, by
+			// default, runs cleanup and os.Exit's on the same signals. Left
+			// unsuppressed, the two race: the root handler could os.Exit
+			// mid-drain and truncate this shutdown sequence (#196). Suppress
+			// it now, before any signal can arrive, so this function's own
+			// flow is the sole driver of both cleanup and process exit.
+			SuppressSignalExit()
+
 			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			// 1. Open SQLite store
 			store, err := sqlite.New(dbPath)

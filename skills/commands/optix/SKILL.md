@@ -1,6 +1,6 @@
 ---
 name: optix
-description: "Use when the user asks about US stock quotes, option chains, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, risk exposure, market pulse, premarket/postclose/event-day/shock views, FOMC/CPI event analysis, macro-event sensitivity, regime triggers, shock fingerprints, or market liquidity state. Also use for Chinese requests about 美股行情、期权分析、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、收盘后复盘、FOMC/CPI 事件日、突发冲击、流动性状态、隔夜行情。"
+description: "Use when the user asks about US stock quotes, option chains, single-contract option quote validation, options strategies, Max Pain, watchlists, Optix dashboard summaries, IBKR positions, executions, trade journal review, portfolio concentration, Greeks, stress tests, risk exposure, market pulse, premarket/postclose/event-day/shock views, FOMC/CPI event analysis, macro-event sensitivity, regime triggers, shock fingerprints, or market liquidity state. Also use for Chinese requests about 美股行情、期权分析、单合约期权报价校验、自选股、持仓、成交记录、复盘、风险敞口、市场快照、盘前看盘、收盘后复盘、FOMC/CPI 事件日、突发冲击、流动性状态、隔夜行情。"
 ---
 
 # Optix — 美股期权分析 / US Stock & Options Analysis
@@ -213,8 +213,10 @@ assets appear in `missing[]` without failing the command. Exit codes: 0 success
 
 The same phase clock + pulse contract powers the embedded Market Intel cockpit:
 launch `optix-server` and open `http://127.0.0.1:8080/intel/` in a browser for
-the Pulse bar + phase-following view skeleton (M3–M7 slots). It ships inside the
-server binary — no separate build needed.
+the Pulse bar + phase-following view: the intraday movers/sector-heatmap cards
+are real IBKR-preferred data (#184), not a placeholder, alongside the M4–M7
+premarket/postclose/event/shock cards. It ships inside the server binary — no
+separate build needed.
 
 ### Premarket View (盘前四卡 / M4)
 
@@ -397,7 +399,7 @@ Scenario P&L using the same Greeks snapshot as `portfolio greeks`. Default scena
 - Python gRPC analysis engine auto-starts/stops on port 50053.
 - Prefer `--format json` or `--json -` when another agent/tool needs to parse the result. Diagnostic messages are written to stderr in JSON mode.
 - IBKR TWS/Gateway is **optional** for quote / analyze / dashboard / chain — they fall back to Yahoo Finance delayed data if IBKR is unreachable
-- **`positions` and `trades` REQUIRE IBKR** — account data has no Yahoo Finance fallback; the commands print a clear error and exit non-zero when TWS/Gateway is not running
+- **`positions`, `trades`, and `option-quote` REQUIRE IBKR** — account data and single-contract quotes have no Yahoo Finance fallback; the commands print a clear error and exit non-zero when TWS/Gateway is not running
 - Override the IBKR connection with `OPTIX_IB_HOST` and `OPTIX_IB_PORT` (for example `OPTIX_IB_PORT=4002` for paper Gateway, `7497` for paper TWS, `4001` for live Gateway, or `7496` for live TWS)
 - `trades` only covers the last ~7 days (IBKR's `ReqExecutions` window); `--since` older than 7 days is clamped with a warning
 - `positions` option mark prices require an OPRA market-data subscription; without it the option Mark / MktValue / UnrealPnL columns degrade to `—` (identity + cost columns still render)

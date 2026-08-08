@@ -99,6 +99,18 @@ Examples:
   optix server --web-addr=0.0.0.0:8080
   optix server --analysis-addr=localhost:50052 --capital=100000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// `optix server` owns its own SIGINT/SIGTERM-driven graceful
+			// shutdown below (signal.NotifyContext, step 6) — draining HTTP
+			// connections and closing the broker pool before the store is
+			// closed. The root package's PersistentPreRunE also installs a
+			// global signal handler (initSignalHandler in root.go) that, by
+			// default, runs cleanup and os.Exit's on the same signals. Left
+			// unsuppressed, the two race: the root handler could os.Exit
+			// mid-drain and truncate this shutdown sequence (#196). Suppress
+			// it now, before any signal can arrive, so this function's own
+			// flow is the sole driver of both cleanup and process exit.
+			SuppressSignalExit()
+
 			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			// 1. Open SQLite store
 			store, err := sqlite.New(dbPath)
@@ -186,6 +198,20 @@ Examples:
 			// 6. Listen for OS signals → cancel context for graceful shutdown
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+
+			// 6a. Arm the force-exit watchdog (#196 follow-up): a second
+			// SIGINT/SIGTERM, or shutdownWatchdogTimeout elapsing after the
+			// first, forces an immediate exit. Needed because (a)
+			// signal.NotifyContext only relays the FIRST signal to ctx, and
+			// (b) with SuppressSignalExit() above, nothing else bounds how
+			// long this function's own graceful shutdown (HTTP drain +
+			// broker pool close, below) is allowed to run. See
+			// armForceExitWatchdog's doc comment for the full rationale.
+			// Must be stopped once shutdown actually completes so it never
+			// fires after the fact — deferred immediately, before any
+			// error-return path can skip it.
+			stopWatchdog := armForceExitWatchdog(ctx, shutdownWatchdogTimeout)
+			defer stopWatchdog()
 
 			// Start scheduler in the background
 			if err := sched.Start(ctx); err != nil {

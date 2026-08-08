@@ -3,6 +3,9 @@
 > 美股期权卖方策略分析系统
 > 版本：Phase 6 (2026-03-21)
 > 数据源：Interactive Brokers TWS / IB Gateway
+>
+> **时效提示：** 本手册聚焦使用流程与原理讲解，更新节奏慢于代码；CLI 命令表、Web
+> 路由表与目录结构的最新权威来源请以仓库根目录 [README.md](../README.md) 为准。
 
 ---
 
@@ -207,14 +210,18 @@ Dashboard 是系统的核心操作界面，提供：
 | 实时刷新 | `?refresh=true` | 慢 | IB Gateway/TWS → Python 分析 → SQLite |
 | 后台调度 | 自动（服务器启动后） | 异步 | IB Gateway/TWS → Python 分析 → SQLite → 前端轮询 |
 
-### 3.6 JSON API
+### 3.6 JSON API 与表单端点
+
+以下前四个是 JSON API；后两个是 `/watchlist` 页面自身的表单提交端点（非 JSON），单列于此便于查找。
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/dashboard` | GET | Dashboard 全量数据（含快照 + 新鲜度） |
 | `/api/freshness` | GET | 所有标的的数据新鲜度时间戳 |
-| `/api/watchlist/add` | POST | 添加自选股（JSON body: `{"symbols": [...]}`) |
-| `/api/watchlist/remove` | POST | 删除自选股（JSON body: `{"symbol": "..."}`) |
+| `/api/quotes` | GET | 所有自选股的轻量报价（10s TTL 缓存） |
+| `/api/quote/{symbol}` | GET | 单个标的的轻量报价（10s TTL 缓存） |
+| `/watchlist` | POST | 添加自选股 — 表单提交（form body: `symbols=AAPL TSLA ...`，空格分隔），成功后重定向回 `/watchlist` |
+| `/watchlist/{symbol}/remove` | POST | 删除单个自选股 — 同样是表单提交，无需 body |
 
 ---
 
@@ -520,6 +527,28 @@ JSON 输出包含 `max_pain_offset_pct = (max_pain - spot) / spot × 100`，agen
 | 3 | SQLite 数据库错误 |
 
 > **注意：** `max-pain` 同样是只读的 — 不会下单。
+
+### 4.8 `optix option-quote` — 单份期权合约实时报价（IBKR-only）
+
+获取**单个**期权合约（一个到期日 + 一个行权价 + 一个 C/P 方向）的实时报价，直接向 IBKR 发 `reqMktData`，与批量拉取的期权链（4.3 节 `analyze --with-oi` / `chain`）是两条不同路径——链视图不含逐笔买卖价，本命令专门补上这一块，典型用法是对筛选出的候选合约做最终验价。**无 Yahoo Finance 回退**，TWS/Gateway 未连接时直接报错退出。
+
+```bash
+optix option-quote AAPL --expiry 2026-07-17 --right P --strike 290
+optix option-quote AAPL --expiry 2026-07-17 --right P --strike 290 --format json
+optix option-quote AAPL --expiry 2026-07-17 --right C --strike 300 --timeout 20s
+```
+
+**参数：**
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `--expiry` | 是 | 到期日 `YYYY-MM-DD` |
+| `--right` | 是 | `C`/`call` 或 `P`/`put` |
+| `--strike` | 是 | 行权价（必须为正数） |
+| `--format` | 否 | `text`（默认）或 `json` |
+| `--timeout` | 否 | 命令整体超时（如 `20s`），用于脚本/扫描器场景的硬预算 |
+
+**输出字段：** bid / ask / mid / mark / last / volume / open_interest / implied_volatility / Greeks（IBKR 提供时）/ source / timestamp / market_data_type / warnings。若 IBKR 未返回可用价格数据，命令仍会输出结构化 JSON 警告并以非零状态退出。
 
 ---
 
@@ -1342,7 +1371,7 @@ optix analyze COIN --weeks=2 --capital=10000 --risk=moderate
 
 | 局限 | 描述 | 影响 |
 |------|------|------|
-| **无实时期权价格** | IB 结构化期权链不含买卖价（需额外订阅） | BS 估算价 vs 实际市价有差异 |
+| **结构化期权链无逐笔买卖价** | `chain`/`analyze` 拉取的整条期权链只含行权价与（可选）OI，不含逐笔 bid/ask；链上展示的仍是 BS 估算价 | 如需单个合约的真实 bid/ask/mid/mark/IV/Greeks，用 `optix option-quote`（IBKR 实时逐合约报价，见 4.8 节）——不再是无解局限，只是链级视图和单合约校验是两条不同路径 |
 | **IV 估算误差** | 用 HV20 × 0.75 代替实际 IV | 典型误差 ±5%~10%（校正后接近实际） |
 | **历史数据量** | 约 252 个交易日（1年），HV 计算需要至少 20 根K线 | IV Rank 基于1年历史 |
 | **无实时成交量** | IB 期权链暂无逐笔成交量数据 | PCR（成交量）= PCR（OI）作为替代 |

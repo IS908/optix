@@ -41,6 +41,35 @@ const (
 	dwellWindow = 2 * healthCheckInterval
 )
 
+// disconnectTimeout bounds each slot's Disconnect() call during close().
+// ibapi's Disconnect has no internal timeout of its own and can block
+// indefinitely against a wedged/unresponsive IB Gateway (the same risk
+// internal/cli/root.go's handleSignal watchdog exists to bound on the CLI
+// side). Without a per-slot bound, one stuck slot would hang close() forever
+// — and by extension `optix server`'s entire graceful shutdown, since
+// close() runs synchronously in webui.Server.Start's shutdown path. #196
+// follow-up. A var (not a const) so tests can shrink it instead of waiting
+// out the production value.
+var disconnectTimeout = 3 * time.Second
+
+// closeTimeout bounds close() as a whole, independent of disconnectTimeout.
+// A slot's conn.mu can be held for up to reconnectTimeout (15s) by an
+// in-flight reconnect() — e.g. release()'s async post-request reconnect,
+// which is decoupled from any HTTP request's own lifecycle and can still be
+// running when the server is asked to shut down — and that lock is acquired
+// BEFORE a slot's own disconnectTimeout race even starts (see close()'s doc
+// comment for the full history: #196 Round 3). Without this bound, one
+// slot's held lock would make close() itself block for up to
+// reconnectTimeout, which exceeds cli.shutdownWatchdogTimeout (10s) and
+// would spuriously force-kill an otherwise-healthy shutdown — the exact
+// failure mode #196 exists to fix. Set comfortably above disconnectTimeout
+// (so slots not stuck on a lock still get their full disconnect race) and
+// comfortably below shutdownWatchdogTimeout minus the HTTP-drain budget (5s)
+// used ahead of close() in webui.Server.Start, leaving headroom for
+// scheduler/store shutdown after close() returns. A var so tests can shrink
+// it.
+var closeTimeout = 4 * time.Second
+
 // fallbackReporter is implemented by brokers that can report whether they are
 // currently serving the degraded (yfinance) fallback source. *broker.FallbackBroker
 // satisfies it; the pool uses it to decide when to attempt an IBKR switchback.
@@ -312,15 +341,73 @@ func (p *brokerPool) reconnect(ctx context.Context, conn *pooledConn) error {
 
 // close stops the background health-checker and disconnects all connections.
 // Call this when the server shuts down.
+//
+// Each slot is handled entirely inside its own goroutine, INCLUDING
+// acquiring conn.mu — not just the Disconnect call. #196 Round 2
+// parallelized only the Disconnect calls; the c.mu.Lock()/snapshot/nil-out
+// still ran sequentially in the outer loop, one slot at a time, before any
+// goroutine was spawned. That still let one slot stall the whole function:
+// reconnect() (above) holds conn.mu for up to reconnectTimeout (15s) while
+// dialing, and that lock can be held by an in-flight reconnect at shutdown
+// time — e.g. release()'s async post-request reconnect goroutine, which
+// runs decoupled from any HTTP request's own lifecycle and can still be
+// mid-dial when the server is asked to shut down. A slot in that state
+// blocked close() on its mutex for up to reconnectTimeout — well past
+// disconnectTimeout AND past cli.shutdownWatchdogTimeout (10s) — before the
+// per-slot disconnect race even started for that slot, let alone any slot
+// after it. That's precisely the "healthy shutdown force-killed" failure
+// #196 exists to prevent, just moved one step earlier. #196 Round 3.
+//
+// Snapshot semantics: whatever conn.b is at the moment this goroutine
+// finally acquires the lock is what gets disconnected. If reconnect()
+// finished and installed a new broker before the lock was acquired, that
+// new broker is what gets disconnected — correct, since it's a live
+// connection that still needs closing on shutdown. There is no
+// double-Disconnect risk either way: reconnect() itself already
+// disconnects whatever broker existed before it runs, so the broker this
+// goroutine sees (old or newly-installed) has not been disconnected yet.
+//
+// Overall close() is additionally bounded by closeTimeout so that a slot
+// whose lock is held for the full reconnectTimeout cannot make close()
+// itself block past that bound — close() returns with that slot's
+// disconnect left to finish on its own in an abandoned goroutine (same
+// abandon-on-timeout shape as the per-slot disconnectTimeout race below).
 func (p *brokerPool) close() {
 	p.cancel()
+	var wg sync.WaitGroup
 	for _, c := range p.conns {
-		c.mu.Lock()
-		if c.b != nil {
-			_ = c.b.Disconnect()
+		wg.Add(1)
+		go func(c *pooledConn) {
+			defer wg.Done()
+			c.mu.Lock()
+			b := c.b
 			c.b = nil
-		}
-		c.mu.Unlock()
+			c.mu.Unlock()
+			if b == nil {
+				return
+			}
+			done := make(chan struct{})
+			go func() {
+				_ = b.Disconnect()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(disconnectTimeout):
+				log.Printf("broker pool: clientID %d Disconnect exceeded %s, abandoning", c.id, disconnectTimeout)
+			}
+		}(c)
+	}
+
+	allDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(allDone)
+	}()
+	select {
+	case <-allDone:
+	case <-time.After(closeTimeout):
+		log.Printf("broker pool: close() exceeded %s (a slot's mutex was likely held by an in-flight reconnect), returning without waiting further", closeTimeout)
 	}
 }
 

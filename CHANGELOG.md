@@ -12,6 +12,58 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`optix server` could truncate its own graceful shutdown on SIGTERM/SIGINT,
+  and then (across two further review passes) had no reliable bound on that
+  shutdown at all** (#196, found during the #195 review; two further
+  findings from adversarial re-review of each prior fix in turn). The root
+  command's global signal handler (installed for every command via
+  `PersistentPreRunE`) and `optix server`'s own `signal.NotifyContext`-driven
+  shutdown (HTTP drain + broker pool close) both listened for the same
+  signals — Go delivers a signal to every registered listener, so on SIGTERM
+  both fired concurrently, and the root handler's cleanup+`os.Exit` could
+  race and truncate the server's own shutdown. `optix server` now calls a
+  new `cli.SuppressSignalExit()` at the top of its `RunE` so the root
+  handler's next SIGTERM/SIGINT becomes a no-op and the server's
+  `signal.NotifyContext` flow is the sole driver of shutdown. That fix
+  removed the root handler's 5s watchdog+`os.Exit` from the picture, which
+  had accidentally been bounding total shutdown time as a side effect of the
+  very race it lost — leaving two gaps: (1) `signal.NotifyContext`'s internal
+  relay goroutine only forwards the *first* signal, so a second
+  SIGINT/SIGTERM sent during a hung shutdown went nowhere; (2)
+  `brokerPool.close()` (`internal/webui/broker_pool.go`) disconnected all
+  slots serially with no per-connection timeout, and ibapi's `Disconnect` can
+  block indefinitely against a wedged IB Gateway — one stuck slot could hang
+  shutdown forever. A first pass at (2) parallelized the `Disconnect` calls
+  themselves (each raced against a 3s `disconnectTimeout`) but left the
+  per-slot mutex acquisition sequential in the outer loop — and `reconnect()`
+  can hold that same mutex for up to 15s while dialing (e.g. an async
+  post-request reconnect still in flight at shutdown time), so a slot in
+  that state blocked `close()` on the lock *before* any disconnect race even
+  started, long past the watchdog deadline below. Fixed by moving the lock
+  acquisition into each slot's own goroutine (so a held lock only stalls its
+  own slot) and adding an overall `closeTimeout` bound around the whole
+  `close()` call, so a stuck lock can no longer make shutdown block past it
+  either. Restored the lost force-kill semantics with a new
+  `armForceExitWatchdog` in `internal/cli/server.go`, armed once the
+  shutdown context is canceled: it forces an immediate exit on either a
+  second SIGINT/SIGTERM or a 10s absolute deadline, whichever comes first.
+- 14 docs-drift items across `README.md`, `CLAUDE.md`,
+  `skills/commands/optix/SKILL.md`, and `docs/user_manual.md` (#194):
+  missing `option-quote` / `portfolio concentration|greeks|stress` CLI rows,
+  missing `/api/intel/intraday/*` and ticker-zone (`/api/quotes`,
+  `/api/quote/{symbol}`, `/api/freshness`) routes, missing
+  `internal/intraday/`, `internal/intelshared/`, `internal/journal/`,
+  `internal/portfolio/`, `internal/watchlist/`, and `internal/scanjournal/`
+  in the architecture docs, a stale "`intel/` is zero-IBKR" claim (it wires
+  in the IBKR-preferred `intraday`/`shockintel` planes), a stale "M3–M7
+  slots" SKILL.md description predating the real intraday cards (#184), a
+  factually wrong watchlist route (`POST /watchlist` and
+  `POST /watchlist/{symbol}/remove`, not `/api/watchlist/add|remove`), and an
+  outdated "no real-time option prices" limitations note superseded by
+  `optix option-quote` (#187).
+
 ## [0.15.3] - 2026-08-08
 
 Patch release for hybrid IBKR handshake retry budgeting (#192).

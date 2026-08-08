@@ -116,11 +116,20 @@ make clean  # Removes bin/ and data/optix.db
 - `PulseService` with 60s in-memory TTL + SQLite `market_pulse_bars` two-tier cache (migration 005, 2-day rolling prune)
 - `earnings.go`, `option_chain.go`, `raw_bars.go`: yfinance subprocess helpers for Market Intel views (earnings dates, Put/Call ratios, raw-ticker pre/post bars)
 
-**`intel/`**: Market Intel scheduling plane (pure functions, zero IBKR/LLM)
+**`intel/`**: Market Intel scheduling plane (pure functions, zero LLM; zero-IBKR itself, but `handlers.go` wires in the IBKR-preferred `intraday` and `shockintel` planes below — so the *handlers* package as a whole is not IBKR-free, only its own phase/journal logic is)
 - `phase.go`: four-phase market clock `PhaseAt`/`NextTransition`/`ViewFor` (premarket/intraday/postclose/closed)
 - `calendar.go`: built-in NYSE 2026-2027 holiday/early-close calendar
 - `checkpoints.go`/`journal.go`/`scorer.go`: judgment-journal domain — daily checkpoint schedule (剧本/首验/定调/对账), `IntelJournal` service (narrative + falsifiable-judgment writes via CLI, price capture, reconciliation, hit-rate), append-only over migration 006 tables
-- `handlers.go`: `GET /api/intel/state` (phase + next transition), `/api/intel/pulse` (same **schema** as `optix pulse --format json`, but auto-view inference is **asymmetric**: HTTP auto-promotes to `event`/`shock` via `resolveAutoView` on FOMC/CPI days and shock regimes; the CLI never returns `event`/`shock` from `view_inferred=true` and requires `--view event|shock` to reach those views. So a snapshot's `view` field is not portable across the two surfaces when `view_inferred=true`. See `internal/intel/view_resolver.go` and cross-referenced comments in `cli/pulse.go` / `intel/handlers.go` `handlePulse`.), `/api/intel/journal` (read-only journal snapshot for the SPA narrative panel), `/api/intel/premarket/{overnight,gaps,movers,sentiment}` (M4 premarket cards), `/api/intel/postclose/{earnings,timeline,read-across,movers}` (M5 postclose cards), `/api/intel/event/{rates,diff,patterns,sensitivity}` (M6 event cards), and `/api/intel/shock/{regime,fingerprint,analogs,liquidity}` (M7 shock cards)
+- `handlers.go`: `GET /api/intel/state` (phase + next transition), `/api/intel/pulse` (same **schema** as `optix pulse --format json`, but auto-view inference is **asymmetric**: HTTP auto-promotes to `event`/`shock` via `resolveAutoView` on FOMC/CPI days and shock regimes; the CLI never returns `event`/`shock` from `view_inferred=true` and requires `--view event|shock` to reach those views. So a snapshot's `view` field is not portable across the two surfaces when `view_inferred=true`. See `internal/intel/view_resolver.go` and cross-referenced comments in `cli/pulse.go` / `intel/handlers.go` `handlePulse`.), `/api/intel/journal` (read-only journal snapshot for the SPA narrative panel), `/api/intel/intraday/{movers,sector-heatmap}` (IBKR-preferred intraday cards — see `intraday/` below), `/api/intel/premarket/{overnight,gaps,movers,sentiment}` (M4 premarket cards), `/api/intel/postclose/{earnings,timeline,read-across,movers}` (M5 postclose cards), `/api/intel/event/{rates,diff,patterns,sensitivity}` (M6 event cards), and `/api/intel/shock/{regime,fingerprint,analogs,liquidity}` (M7 shock cards)
+
+**`intraday/`**: Market Intel intraday analysis plane (pure compute over a broker-sourced snapshot; **IBKR-preferred**, not zero-IBKR — `NewIBKRPreferredSource` connects to IBKR when reachable and falls back to yfinance otherwise)
+- `adapter.go`: `BrokerSource`/`BrokerConnector` — connects per-call, normalizes source name and bar-volume units
+- `service.go`: `Service.Movers`/`SectorHeatmap` — per-symbol pct-from-open + volume ranking, sector aggregation; both cards share one (quotes, bars) snapshot cached for `SnapshotTTL` (25s default, added v0.15.1) so the two independently-polled SPA cards reuse a single broker round trip instead of two
+- `dto.go`: `MoversDTO`/`SectorHeatmapDTO` wire types
+- `universe.go`: watchlist ∪ curated liquid symbol universe
+
+**`intelshared/`**: Small helpers shared across the Market Intel planes (`intel`, `intraday`, `premarket`, `postclose`, `eventintel`, `shockintel`)
+- `helpers.go`: `NY()` America/New_York `*time.Location`, `NormalizeSymbol()` ticker canonicalization
 
 **`premarket/`**: Market Intel premarket analysis plane (pure compute, zero IBKR/gRPC)
 - `overnight.go`: descriptive overnight transmission chain (N225→TSMC→SX5E→ES)
@@ -150,6 +159,12 @@ make clean  # Removes bin/ and data/optix.db
 - `liquidity.go`: ETF spread/depth liquidity state for SPY/QQQ/IWM/TLT/HYG/LQD
 - `source.go`/`service.go`: broker-backed top-of-book quote adapter overlays IBKR/Yahoo ETF bid/ask data on yfinance macro sensors; IBKR SMART depth and broker/yfinance option-chain stress metrics populate where available, with explicit warnings when sources degrade
 
+**`scanjournal/`**: Sell-put scan journal — falsifiable scan → outcome closed loop (v0.15.0), backing `optix scan-journal register|reconcile|stats`
+- `register.go`: atomic batch registration of scan candidates, deterministic `candidate_id` (`{date}:{symbol}:{expiry}:{strike}`)
+- `reconcile.go`: settles expired candidates (hit = expiry close > strike, P&L = bid − max(0, strike − close)); 7-calendar-day grace window before a still-unpriceable candidate is voided
+- `stats.go`: score-tercile/rank/DTE banded hit-rate statistics
+- Write path is CLI-only (M3 guardrail — see `docs/superpowers/specs/2026-07-29-sellput-scan-journal-design.md`); schema is migration 008 (`scan_candidates`/`scan_reconciliations`, append-only)
+
 **`datastore/sqlite/`**: SQLite persistence layer
 - Caches stock quotes, option chains, analysis results, watchlists
 - Schema in `migrations/001_initial.sql`
@@ -173,7 +188,7 @@ make clean  # Removes bin/ and data/optix.db
 **`cli/`**: Cobra command definitions
 - `root.go`: Shared flags (`--db`, `--ib-host`, `--ib-port`)
 - `server.go`: Web UI launch command (also wires the `/api/intel/*` handlers + `/intel/` SPA)
-- `quote.go`, `chain.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `maxpain.go`, `portfolio.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`, `shock.go`: CLI subcommands
+- `quote.go`, `chain.go`, `option_quote.go`, `analyze.go`, `dashboard.go`, `watch.go`, `positions.go`, `trades.go`, `journal.go`, `scan_journal.go`, `maxpain.go`, `portfolio.go`, `greeks.go`, `stress.go`, `stress_beta.go`, `pulse.go`, `intel.go`, `premarket.go`, `postclose.go`, `event.go`, `shock.go`: CLI subcommands
 
 ### Python Structure (`python/src/optix_engine/`)
 

@@ -124,8 +124,14 @@ optix/
 │   ├── analysis/           # gRPC client to Python engine
 │   ├── cli/                # Cobra command definitions
 │   ├── datastore/sqlite/   # SQLite persistence & caching
+│   ├── journal/            # FIFO round-trip matching (pure function)
+│   ├── portfolio/          # Account-level concentration/Greeks/stress views
+│   ├── watchlist/          # Watchlist persistence manager
+│   ├── scanjournal/        # Sell-put scan journal: register/reconcile/stats
 │   ├── marketdata/         # Multi-asset pulse, yfinance helpers, source/basis labels
 │   ├── intel/              # Market Intel phase clock, API handlers, judgment journal
+│   ├── intraday/           # Intraday movers/sector-heatmap cards (IBKR-preferred)
+│   ├── intelshared/        # Shared Market Intel helpers (NY clock, symbol normalization)
 │   ├── premarket/          # M4 premarket cards
 │   ├── postclose/          # M5 postclose cards
 │   ├── eventintel/         # M6 event-day cards
@@ -154,9 +160,13 @@ optix/
 | `./bin/optix analyze <SYMBOL>` | Deep analysis: technicals + options + strategies |
 | `./bin/optix analyze <SYMBOL> --with-oi [--expiry YYYY-MM-DD]` | Same, plus per-contract Open Interest for Max Pain (needs OPRA subscription); `--expiry` picks a specific option expiration (default: nearest) |
 | `./bin/optix chain <SYMBOL> [--expiry YYYY-MM-DD]` | Option chain table via IBKR or delayed Yahoo Finance fallback |
+| `./bin/optix option-quote <SYMBOL> --expiry YYYY-MM-DD --right C\|P --strike <N> [--format json]` | Single option contract real-time quote via IBKR (bid/ask/mid/mark/last/OI/IV/Greeks); IBKR-only, for final-candidate validation after chain screening |
 | `./bin/optix max-pain <SYMBOL> [--expiry] [--source ibkr\|yfinance\|auto]` | Standalone Max Pain query for one option expiration |
 | `./bin/optix quote <SYMBOL>` | Real-time stock quote |
 | `./bin/optix positions [--type stk\|opt]` | IBKR account holdings with mark-to-market P&L (requires IBKR; option marks need OPRA) |
+| `./bin/optix portfolio concentration [--net-liq-usd]` | Account-level concentration: per-name/per-sector weights vs NLV, threshold flags |
+| `./bin/optix portfolio greeks` | Aggregated position-level Δ/Γ/Vega/Θ across all IBKR holdings |
+| `./bin/optix portfolio stress [--net-liq-usd]` | Scenario P&L stress test using the Greeks snapshot |
 | `./bin/optix trades [--symbol] [--side] [--since]` | IBKR execution history (last 7 days; `--since` older than 7d is clamped) |
 | `./bin/optix journal status` | Trade journal sync state and size — **offline-safe**, no IBKR required |
 | `./bin/optix journal sync` | Pull recent executions from IBKR into the local journal (idempotent) |
@@ -190,12 +200,17 @@ Start with `./bin/optix-server` (default: `http://127.0.0.1:8080`).
 | `/help` | Field reference documentation |
 | `/api/dashboard` | JSON API for dashboard data |
 | `/api/analyze/{symbol}` | JSON API for analysis data |
+| `/api/freshness` | JSON: data freshness timestamps for all watchlist symbols |
+| `/api/quotes` | JSON: lightweight ticker-zone quotes for all watchlist symbols (10s TTL cache) |
+| `/api/quote/{symbol}` | JSON: lightweight single-symbol quote (10s TTL cache) |
 | `/api/journal` | JSON: filtered executions list |
 | `/api/journal/trips` | JSON: FIFO-matched round trips |
 | `/api/journal/review` | JSON: aggregate stats |
 | `POST /api/journal/sync` | Trigger sync from IBKR (502 + `ibkr_ok:false` on broker failure) |
 | `/api/intel/state` | JSON: Market Intel phase, resolved view, and override reason |
 | `/api/intel/pulse` | JSON: multi-asset pulse — same DTO schema as `optix pulse --format json`; auto-inferred view differs (HTTP auto-promotes to event/shock on FOMC/CPI days and shock regimes, the CLI does not) |
+| `/api/intel/journal` | JSON: read-only judgment journal snapshot for the SPA narrative panel |
+| `/api/intel/intraday/{movers,sector-heatmap}` | JSON: intraday movers and sector heatmap (IBKR-preferred) |
 | `/api/intel/premarket/{overnight,gaps,movers,sentiment}` | JSON: M4 premarket cards |
 | `/api/intel/postclose/{earnings,timeline,read-across,movers}` | JSON: M5 postclose cards |
 | `/api/intel/event/{rates,diff,patterns,sensitivity}` | JSON: M6 event-day cards |

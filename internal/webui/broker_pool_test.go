@@ -747,3 +747,108 @@ func TestPoolCloseBoundedByDisconnectTimeoutOnHungSlot(t *testing.T) {
 		t.Errorf("fast slot disconnCalls = %d, want 1 — a hung slot must not block other slots from being disconnected", n)
 	}
 }
+
+// TestPoolCloseBoundedWhenSlotMutexHeldByInFlightReconnect is the #196
+// Round 3 regression test. reconnect() (above) holds conn.mu for up to
+// reconnectTimeout (15s) while dialing, and that lock can legitimately be
+// held at shutdown time by an in-flight reconnect — e.g. release()'s async
+// post-request reconnect goroutine, which runs decoupled from any HTTP
+// request's own lifecycle and can still be mid-dial when the server is
+// asked to shut down.
+//
+// Pre-Round-3, close()'s snapshot-and-clear (c.mu.Lock/read/nil-out/Unlock)
+// ran in the OUTER loop, sequentially, one slot at a time, before any
+// per-slot goroutine was spawned — so a slot whose mutex was held at
+// shutdown time blocked close() ENTIRELY on that lock, before the per-slot
+// disconnectTimeout race for ANY slot (not just the stuck one) even began.
+// That reintroduced exactly the "healthy shutdown gets force-killed"
+// failure #196 targets, just moved one step earlier than Round 2's fix
+// addressed.
+//
+// This test holds one slot's mutex directly (simulating an in-flight
+// reconnect) for the whole test and asserts close() still (a) returns
+// within closeTimeout despite the held lock, and (b) still disconnects the
+// OTHER, unlocked slot in the meantime — proving the stuck slot doesn't
+// block the rest of the pool, not just that close() eventually gives up.
+//
+// On Round 2 code (locking in the outer loop, no overall closeTimeout) this
+// test fails: close() blocks on the held mutex for as long as the test
+// keeps it locked, well past the 2s assertion deadline below.
+//
+// Deliberately does NOT shrink/restore disconnectTimeout (unlike
+// TestPoolCloseBoundedByDisconnectTimeoutOnHungSlot above) and deliberately
+// NEVER unlocks c1.mu. Both choices trace back to the same hazard, caught by
+// -race during development of this test: once c1.mu is released, close()'s
+// abandoned per-slot goroutine for c1 resumes and reads the package-level
+// disconnectTimeout var to build its own timeout race — and there is no
+// happens-before edge available to safely sequence that read against a
+// var-restore in this test's own cleanup (whether via disconnCalls polling,
+// a fixed sleep, or cleanup ordering: none of those establish a real
+// happens-before relationship, they just make the race very unlikely to be
+// *observed*, which is exactly what bit this test the first time). The
+// simplest correct fix is to never unlock c1.mu at all — its per-slot
+// goroutine (and the trivial mutex + mock broker it references) is
+// permanently parked on c1.mu.Lock() for the remaining lifetime of the test
+// binary, which is harmless (no CPU spin, touches no other test's state)
+// and faithfully mirrors the real-world worst case this test guards against
+// (a reconnect() that never returns because the gateway is genuinely
+// wedged). closeTimeout is the only var this test touches, and its read
+// happens strictly inside pool.close() before that call returns, which this
+// test always awaits (via the done channel below) before reaching its own
+// cleanup — so restoring closeTimeout there is race-free by construction.
+func TestPoolCloseBoundedWhenSlotMutexHeldByInFlightReconnect(t *testing.T) {
+	savedClose := closeTimeout
+	closeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { closeTimeout = savedClose })
+
+	brokerA := &mockBroker{connected: true} // slot to be "stuck" (mutex held)
+	brokerB := &mockBroker{connected: true} // slot that must still get disconnected
+	var calls int32
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return brokerA, nil
+		}
+		return brokerB, nil
+	}
+
+	pool := newBrokerPool(2, factory)
+	ctx := context.Background()
+	c1, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire 1: %v", err)
+	}
+	c2, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire 2: %v", err)
+	}
+	pool.release(c1, true)
+	pool.release(c2, true)
+
+	// Simulate slot c1 being mid-reconnect: hold its mutex directly, the way
+	// reconnect() does for up to reconnectTimeout while dialing. Never
+	// unlocked — see the doc comment above for why.
+	c1.mu.Lock()
+
+	start := time.Now()
+	done := make(chan struct{})
+	go func() {
+		pool.close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pool.close() did not return within 2s despite an unrelated slot's mutex being held — should be bounded by closeTimeout, not the held lock")
+	}
+
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("pool.close() took %s, want roughly closeTimeout (%s) — a slot's held mutex must not block close() itself", elapsed, closeTimeout)
+	}
+	if n := atomic.LoadInt32(&brokerB.disconnCalls); n != 1 {
+		t.Errorf("unlocked slot disconnCalls = %d, want 1 — a slot whose mutex is held elsewhere must not block other slots from being disconnected during close()", n)
+	}
+	if n := atomic.LoadInt32(&brokerA.disconnCalls); n != 0 {
+		t.Errorf("locked slot disconnCalls = %d, want 0 — its goroutine must still be waiting on the held mutex, not somehow past it", n)
+	}
+}

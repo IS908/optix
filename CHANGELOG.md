@@ -12,6 +12,8 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-08-08
+
 ### Added
 
 - **组合感知扫描第一期**（spec 2026-08-08）：sell-put 扫描起扫时拉取一次
@@ -1918,7 +1920,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.4...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.5...HEAD
+[0.15.5]: https://github.com/IS908/optix/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/IS908/optix/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/IS908/optix/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/IS908/optix/compare/v0.15.1...v0.15.2

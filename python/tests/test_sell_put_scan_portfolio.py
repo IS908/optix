@@ -116,3 +116,78 @@ def test_fetch_positions_missing_list_degrades(monkeypatch):
                         lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout='{"source": "IBKR"}'))
     rows, err = scan.fetch_portfolio_positions()
     assert rows is None and "positions" in err
+
+
+def _cand(**kw):
+    base = dict(symbol="NVDA", spot=170.0, expiry="2026-08-14", dte=6, strike=160.0,
+                bid=1.20, ask=1.40, mid=1.30, iv=0.45, oi=500, volume=200,
+                cushion_pct=5.9, premium_yield_pct=0.8, annualized_yield_pct=44.0,
+                delta=-0.22, score=0.61)
+    base.update(kw)
+    return scan.Candidate(**base)
+
+
+def _holding(stock_qty=0.0, puts=()):
+    return scan.Holding(stock_qty=stock_qty, short_puts=list(puts))
+
+
+def test_classify_no_overlap():
+    labels, penalty = scan.classify_candidate(_cand(), {})
+    assert labels == "" and penalty == 0.0
+
+
+def test_classify_stock_long():
+    idx = {"NVDA": _holding(stock_qty=100)}
+    labels, penalty = scan.classify_candidate(_cand(), idx)
+    assert labels == "正股" and penalty == scan.PORTFOLIO_PENALTY_STOCK
+
+
+def test_classify_stock_short_annotate_only():
+    idx = {"NVDA": _holding(stock_qty=-100)}
+    labels, penalty = scan.classify_candidate(_cand(), idx)
+    assert labels == "空股" and penalty == 0.0
+
+
+def test_classify_short_put_other_expiry():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-08-21", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SHORT_PUT
+    assert labels == "sp 150@08-21"
+
+
+def test_classify_same_expiry_any_strike_is_clash():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-08-14", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14", strike=160.0), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    assert labels.startswith("撞期!") and "sp 150@08-14" in labels
+
+
+def test_classify_multi_puts_nearest_and_count():
+    idx = {"NVDA": _holding(puts=[scan.ShortPut(150.0, "2026-09-18", -1.0),
+                                  scan.ShortPut(155.0, "2026-08-21", -2.0)])}
+    labels, _ = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert "sp 155@08-21×2" in labels  # 取最近到期一笔,总条数 ×N
+
+
+def test_classify_combined_takes_max_penalty_and_all_labels():
+    idx = {"NVDA": _holding(stock_qty=100,
+                            puts=[scan.ShortPut(150.0, "2026-08-14", -1.0)])}
+    labels, penalty = scan.classify_candidate(_cand(expiry="2026-08-14"), idx)
+    assert penalty == scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    assert "撞期!" in labels and "正股" in labels
+
+
+def test_apply_awareness_mutates_and_summarizes():
+    cands = [_cand(symbol="NVDA"), _cand(symbol="AAPL", expiry="2026-08-21")]
+    idx = {"NVDA": _holding(stock_qty=100)}
+    line = scan.apply_portfolio_awareness(cands, idx, "09:50 ET")
+    assert cands[0].portfolio_labels == "正股"
+    assert cands[0].portfolio_penalty == scan.PORTFOLIO_PENALTY_STOCK
+    assert cands[1].portfolio_labels == "" and cands[1].portfolio_penalty == 0.0
+    assert line == "组合感知: 持仓 1 标的，1 项降权（positions@09:50 ET）"
+
+
+def test_apply_awareness_no_overlap_line():
+    cands = [_cand(symbol="AMD")]
+    line = scan.apply_portfolio_awareness(cands, {"NVDA": _holding(stock_qty=1)}, "09:50 ET")
+    assert line == "组合感知: 与当前持仓无重叠"

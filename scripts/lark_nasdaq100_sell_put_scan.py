@@ -131,6 +131,8 @@ class Candidate:
     ibkr_option_error: Optional[str] = None
     ibkr_premium_yield_pct: Optional[float] = None
     ibkr_annualized_yield_pct: Optional[float] = None
+    portfolio_labels: str = ""      # 组合感知标注(空串=无重叠);只进 Lark 显示,不进 journal
+    portfolio_penalty: float = 0.0  # 组合感知扣分;只影响显示排序,不改 score
 
 
 @dataclass
@@ -219,6 +221,54 @@ def fetch_portfolio_positions() -> Tuple[Optional[List[dict]], Optional[str]]:
     if not isinstance(rows, list):
         return None, "positions JSON 缺 positions 列表"
     return rows, None
+
+
+PORTFOLIO_PENALTY_STOCK = 0.10        # 仅持正股 —— 接货会叠加既有仓位
+PORTFOLIO_PENALTY_SHORT_PUT = 0.25    # 已有同名 short put(不同到期)
+PORTFOLIO_PENALTY_SAME_EXPIRY = 0.40  # 同名同到期撞车(strike 不论);score 典型
+                                      # 量级 0.4-0.9,0.40 压到表尾但不消失
+
+
+def classify_candidate(cand: Candidate, index: Dict[str, Holding]) -> Tuple[str, float]:
+    """候选 vs 持仓索引 → (标注串, penalty)。多情形并存取最大 penalty、标注全显。"""
+    holding = index.get(normalize_portfolio_symbol(cand.symbol))
+    if holding is None:
+        return "", 0.0
+    labels: List[str] = []
+    penalty = 0.0
+    if holding.short_puts:
+        if any(p.expiry == cand.expiry for p in holding.short_puts):
+            labels.append("撞期!")
+            penalty = max(penalty, PORTFOLIO_PENALTY_SAME_EXPIRY)
+        else:
+            penalty = max(penalty, PORTFOLIO_PENALTY_SHORT_PUT)
+        nearest = min(holding.short_puts, key=lambda p: p.expiry)
+        detail = f"sp {nearest.strike:g}@{nearest.expiry[5:]}"
+        if len(holding.short_puts) > 1:
+            detail += f"×{len(holding.short_puts)}"
+        labels.append(detail)
+    if holding.stock_qty > 0:
+        labels.append("正股")
+        penalty = max(penalty, PORTFOLIO_PENALTY_STOCK)
+    elif holding.stock_qty < 0:
+        labels.append("空股")  # 卖 put 对空头实为对冲方向 —— 仅标注,不扣分
+    return " ".join(labels), penalty
+
+
+def apply_portfolio_awareness(
+    candidates: List[Candidate], index: Dict[str, Holding], fetched_at: str
+) -> str:
+    """就地写入每个候选的 portfolio_labels/portfolio_penalty,返回摘要行。"""
+    flagged = penalized = 0
+    for cand in candidates:
+        labels, penalty = classify_candidate(cand, index)
+        cand.portfolio_labels = labels
+        cand.portfolio_penalty = penalty
+        flagged += 1 if labels else 0
+        penalized += 1 if penalty > 0 else 0
+    if flagged == 0:
+        return "组合感知: 与当前持仓无重叠"
+    return f"组合感知: 持仓 {len(index)} 标的，{penalized} 项降权（positions@{fetched_at}）"
 
 
 def nth_weekday(year: int, month: int, weekday: int, nth: int) -> dt.date:

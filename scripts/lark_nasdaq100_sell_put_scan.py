@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.request
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -141,6 +141,58 @@ class ScanResult:
     ibkr_errors: List[str]
     ibkr_attempted: int
     data_quality_error: Optional[str] = None
+
+
+# ── 组合感知（spec 2026-08-08）────────────────────────────────────────────
+# 契约:只改「读表顺序」,不改「进表资格」——top-N 与 journal 全维持市场面
+# score 口径,penalty 只作用于 Lark 显示排序。
+
+
+def normalize_portfolio_symbol(symbol: str) -> str:
+    # IBKR 类股符号带空格(如 "BRK B"),yfinance 用连字符;NDX 成分股当前
+    # 无点分类股,upper+空格转连字符已覆盖 —— 已知简化,写在 spec §3。
+    return symbol.strip().upper().replace(" ", "-")
+
+
+@dataclass
+class ShortPut:
+    strike: float
+    expiry: str  # YYYY-MM-DD(由 positions 的 YYYYMMDD 转换)
+    qty: float   # 负数为空头
+
+
+@dataclass
+class Holding:
+    stock_qty: float = 0.0
+    short_puts: List[ShortPut] = field(default_factory=list)
+
+
+def build_holdings_index(rows: List[dict]) -> Dict[str, Holding]:
+    """positions --format json 的记录列表 → {规范化 symbol: Holding}。
+    单条畸形记录跳过(宽进);正股数量跨账户求和;只收 short put 期权腿。"""
+    index: Dict[str, Holding] = {}
+    for row in rows:
+        try:
+            symbol = normalize_portfolio_symbol(str(row["symbol"]))
+            sec_type = str(row.get("sec_type", "")).upper()
+            qty = float(row["quantity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not symbol or symbol == "NONE" or qty == 0:
+            continue
+        if sec_type == "STK":
+            index.setdefault(symbol, Holding()).stock_qty += qty
+        elif sec_type == "OPT" and str(row.get("right", "")).upper() == "P" and qty < 0:
+            expiration = str(row.get("expiration", ""))
+            try:
+                strike = float(row.get("strike", 0))
+            except (TypeError, ValueError):
+                continue
+            if len(expiration) == 8 and expiration.isdigit() and strike > 0:
+                expiry = f"{expiration[:4]}-{expiration[4:6]}-{expiration[6:]}"
+                index.setdefault(symbol, Holding()).short_puts.append(
+                    ShortPut(strike=strike, expiry=expiry, qty=qty))
+    return index
 
 
 def nth_weekday(year: int, month: int, weekday: int, nth: int) -> dt.date:

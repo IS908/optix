@@ -209,3 +209,35 @@ def test_journal_payload_immune_to_display_reorder():
     assert [c.symbol for c in display] == ["AAPL", "NVDA"]  # 显示序确实变了
     after = _json.dumps(scan.build_journal_payload(market_order, "src"), sort_keys=True)
     assert before == after  # 字节级不变:payload 不含 penalty/labels,顺序不受显示影响
+
+
+def _result(cands):
+    return scan.ScanResult(candidates=cands, stats={}, errors=[],
+                           ibkr_errors=[], ibkr_attempted=0)
+
+
+def test_render_has_portfolio_column_and_reorders():
+    a = _cand(symbol="NVDA", score=0.9)
+    b = _cand(symbol="AAPL", score=0.8, expiry="2026-08-21")
+    a.portfolio_labels, a.portfolio_penalty = "撞期! sp 150@08-14", scan.PORTFOLIO_PENALTY_SAME_EXPIRY
+    out = scan.render(_result([a, b]), 100, portfolio_line="组合感知: 持仓 1 标的，1 项降权（positions@09:50 ET）")
+    assert "| 持仓 |" in out.splitlines()[6]  # 表头行含新列
+    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    assert "AAPL" in rows[0] and "NVDA" in rows[1]      # 0.8 > 0.9-0.40 → AAPL 升到第 1
+    assert "撞期! sp 150@08-14" in rows[1] and "| - |" in rows[0]
+    assert "组合感知: 持仓 1 标的，1 项降权" in out
+
+
+def test_render_stable_order_without_penalty():
+    a = _cand(symbol="NVDA", score=0.9)
+    b = _cand(symbol="AAPL", score=0.9, expiry="2026-08-21")  # 同分
+    out = scan.render(_result([a, b]), 100)
+    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    assert "NVDA" in rows[0] and "AAPL" in rows[1]  # 稳定:保持市场序
+    assert "组合感知" not in out                     # portfolio_line=None → 无摘要行
+
+
+def test_render_zero_candidates_carries_degrade_line():
+    out = scan.render(_result([]), 100,
+                      portfolio_line="⚠️ 组合感知不可用（连接失败），本次未降权")
+    assert "组合感知不可用" in out

@@ -906,9 +906,10 @@ def run_journal_flow(
     return review_lines, journal_notes
 
 
-def render(result: ScanResult, symbols_count: int) -> str:
+def render(result: ScanResult, symbols_count: int, portfolio_line: Optional[str] = None) -> str:
     now_ny = dt.datetime.now(tz=NY).strftime("%Y-%m-%d %H:%M ET")
-    candidates = result.candidates
+    candidates = sorted(result.candidates,
+                        key=lambda c: c.score - c.portfolio_penalty, reverse=True)
     stats = result.stats
     stats_line = (
         f"过滤统计：候选 {stats.get('candidate', 0)} / 标的 {stats.get('symbols', symbols_count)}；"
@@ -941,6 +942,8 @@ def render(result: ScanResult, symbols_count: int) -> str:
             stats_line,
             f"成分股来源：{SYMBOL_SOURCE}。",
         ]
+        if portfolio_line:
+            lines.append(portfolio_line)
         if SYMBOL_WARNING:
             lines.append(f"成分股提醒：{SYMBOL_WARNING}")
         if result.errors:
@@ -955,12 +958,12 @@ def render(result: ScanResult, symbols_count: int) -> str:
         f"成分股来源：{SYMBOL_SOURCE}。{stats_line}",
         f"数据源：Yahoo/yfinance 做全市场初筛；Top {result.ibkr_attempted} 候选串行调用 Optix/IBKR `option-quote` 做单合约盘口复核，失败时保留 yfinance 初筛值作为 fallback。",
         "",
-        "| # | 标的 | YF现价 | IBKR正股 last(bid/ask) | 到期 | Put | YF期权bid/ask | IBKR期权bid/ask mid | YF/IBKR OTM | YF年化 | IBKR年化 | YF/IBKR IV | YF/IBKR Δ | YF OI/Vol | IBKR OI/Vol |",
-        "|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| # | 标的 | 持仓 | YF现价 | IBKR正股 last(bid/ask) | 到期 | Put | YF期权bid/ask | IBKR期权bid/ask mid | YF/IBKR OTM | YF年化 | IBKR年化 | YF/IBKR IV | YF/IBKR Δ | YF OI/Vol | IBKR OI/Vol |",
+        "|---|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for i, c in enumerate(candidates, 1):
         lines.append(
-            f"| {i} | {c.symbol} | {c.spot:.2f} | {fmt_ibkr_quote(c)} | {c.expiry} ({c.dte}d) | "
+            f"| {i} | {c.symbol} | {c.portfolio_labels or '-'} | {c.spot:.2f} | {fmt_ibkr_quote(c)} | {c.expiry} ({c.dte}d) | "
             f"{c.strike:.2f} | {c.bid:.2f}/{c.ask:.2f} | {fmt_ibkr_option_quote(c)} | "
             f"{c.cushion_pct:.1f}%/{fmt_pct(c.ibkr_cushion_pct)} | "
             f"{c.annualized_yield_pct:.1f}% | {fmt_pct(c.ibkr_annualized_yield_pct)} | "
@@ -968,6 +971,8 @@ def render(result: ScanResult, symbols_count: int) -> str:
             f"{fmt_delta(c.delta)}/{fmt_delta(c.ibkr_option_delta)} | {c.oi}/{c.volume} | "
             f"{fmt_int_pair(c.ibkr_option_oi, c.ibkr_option_volume)} |"
         )
+    if portfolio_line:
+        lines.extend(["", portfolio_line])
     lines.extend([
         "",
         "提示：这只是候选池，不是下单指令；优先复核财报日、真实期权盘口、组合集中度和可接受接货价。",

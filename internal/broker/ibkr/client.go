@@ -32,10 +32,45 @@ const (
 
 	ibHandshakeTimeout = 10 * time.Second
 
+	// maxTimeoutRetries bounds how many handshake-TIMEOUT failures (as
+	// opposed to error 326, clientID-in-use) runClientIDAttempts will retry
+	// within a single Connect() call (#192 round 2 — hybrid retry policy).
+	// #188/#189's actual wedge symptom is a zombie-held PRIMARY clientID
+	// manifesting as a TIMEOUT, not error 326, and a fresh clientID can
+	// succeed immediately against it (#189's documented live evidence) — so
+	// exactly one timeout-retry, onto the next fallback candidate, is worth
+	// taking. A SECOND timeout means the gateway is wedged for any clientID
+	// (not just one zombie-held ID), and further ID-hopping won't help.
+	maxTimeoutRetries = 1
+
 	clientIDFallbackBase   int64 = 100000
 	clientIDPIDModulo      int64 = 10000
 	clientIDPrimaryModulo  int64 = 100000
 	clientIDFallbackStride int64 = clientIDPrimaryModulo * 2
+)
+
+// fallbackHandshakeReserve and minHandshakeWindow parameterize
+// perAttemptHandshakeWindow's budget math (#192 round 2). They default to
+// the production values described in the #192 hybrid-retry spec (1s / 2s)
+// but are `var`, not `const`, so tests can scale them down (proportionally,
+// preserving the same formula) to exercise realistic multi-second ctx-budget
+// walkthroughs — e.g. the pool path's 15s reconnectTimeout — in milliseconds
+// instead of real wall-clock seconds. Production code never mutates these.
+var (
+	// fallbackHandshakeReserve is subtracted from the ctx's remaining budget
+	// before sizing a handshake attempt window. Keeping this slice of ctx
+	// budget untouched by our own connect attempts means the caller's ctx is
+	// still alive (ctx.Err() == nil) after Connect() gives up, so
+	// FallbackBroker.Connect's #41 guardrail (fallback.go) lets its no-op
+	// yfinance Connect proceed instead of returning ctx.Err() outright.
+	fallbackHandshakeReserve = 1 * time.Second
+
+	// minHandshakeWindow is the smallest window worth actually dialing IB
+	// for. Below this, an attempt would almost certainly time out before
+	// accomplishing anything, so Connect() skips it entirely and preserves
+	// fallbackHandshakeReserve for the caller instead of burning it on a
+	// doomed attempt.
+	minHandshakeWindow = 2 * time.Second
 )
 
 var errIBKRHandshakeTimeout = errors.New("timeout waiting for NextValidID (TCP connected but handshake did not complete)")
@@ -43,7 +78,14 @@ var errIBKRHandshakeTimeout = errors.New("timeout waiting for NextValidID (TCP c
 type ibConnectError struct {
 	clientID  int64
 	retryable bool
-	err       error
+	// timeout is true when this failure came from awaitHandshakeLocked's
+	// timer.C branch (NextValidID never arrived) rather than a genuine IB
+	// API error like 326 (clientID-in-use). runClientIDAttempts caps how
+	// many timeout-shaped retries it takes (maxTimeoutRetries) independently
+	// of the ordinary candidates-list bound that governs 326 (#192 round 2
+	// — see runClientIDAttempts and isTimeoutConnectError).
+	timeout bool
+	err     error
 }
 
 type clientIDAttemptHooks struct {
@@ -87,10 +129,12 @@ type Client struct {
 
 	// handshakeTimeout bounds how long a single connect attempt waits for
 	// NextValidID once the TCP/IB-protocol handshake in connectOnceLocked
-	// has returned. Defaults to ibHandshakeTimeout; Connect() may shrink it
-	// per attempt via perAttemptHandshakeTimeout when the caller's ctx
-	// carries a deadline (#192 fix (a)). Tests override this field directly
-	// to keep wedge/timeout scenarios fast.
+	// has returned. Defaults to ibHandshakeTimeout; Connect() derives each
+	// attempt's actual wait via perAttemptHandshakeWindow, which shrinks
+	// this default only when the caller's ctx carries a deadline — the
+	// window is min(handshakeTimeout, remaining ctx budget minus
+	// fallbackHandshakeReserve) (#192 round 2). Tests override this field
+	// directly to keep wedge/timeout scenarios fast.
 	handshakeTimeout time.Duration
 
 	mu            sync.RWMutex
@@ -141,20 +185,33 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	primaryClientID := c.cfg.ClientID
 	candidates := clientIDCandidates(primaryClientID, os.Getpid())
-	attempt := 0
 	result, err := runClientIDAttempts(ctx, candidates, clientIDAttemptHooks{
 		reset: c.resetAPIClientLocked,
 		connect: func(ctx context.Context, clientID int64) error {
 			c.cfg.ClientID = clientID
-			// #192 fix (a): derive this attempt's handshake wait from the
-			// ctx's remaining deadline (if any), split across the attempts
-			// that could still run. Only matters on the retry path (326
-			// clientID-in-use, see fix (b) below) — the last attempt always
-			// gets whatever budget remains.
-			remaining := len(candidates) - attempt
-			attempt++
-			timeout := perAttemptHandshakeTimeout(ctx, remaining, c.handshakeTimeout)
-			return c.connectOnceLocked(ctx, clientID, timeout)
+			// #192 round 2 (hybrid retry): size this attempt's handshake
+			// wait from the caller's remaining ctx budget alone — see
+			// perAttemptHandshakeWindow. Unlike the divide-by-candidate-count
+			// split this replaces, the primary attempt on a bounded ctx
+			// (e.g. the web UI broker pool's reconnectTimeout=15s) gets the
+			// FULL handshakeTimeout default (10s), not a preemptively
+			// shrunk share (the old split double-punished the primary
+			// attempt — 5s instead of 10s — before any retry had even
+			// happened).
+			window, ok := perAttemptHandshakeWindow(ctx, c.handshakeTimeout)
+			if !ok {
+				// Not enough ctx budget remains for a window worth
+				// attempting. Stop without dialing IB at all, preserving
+				// fallbackHandshakeReserve so the caller's ctx stays alive
+				// for FallbackBroker's #41 guardrail to still let yfinance
+				// run. The accumulated errors from prior attempts (if any)
+				// are what Connect() reports back via connectAttemptsError.
+				return &ibConnectError{
+					clientID: clientID,
+					err:      fmt.Errorf("insufficient ctx budget for a handshake attempt (need >= %s, reserving %s for fallback)", minHandshakeWindow, fallbackHandshakeReserve),
+				}
+			}
+			return c.connectOnceLocked(ctx, clientID, window)
 		},
 		wait: waitBeforeConnectRetry,
 	})
@@ -215,17 +272,20 @@ func (c *Client) awaitHandshakeLocked(ctx context.Context, clientID int64, hands
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", clientID, dErr)
 		}
-		// #192 fix (b): a handshake timeout means TCP connected but
-		// NextValidID never arrived — the classic wedged-gateway symptom
-		// (#188/#189). Retrying just repeats the same wedge and burns
-		// another full handshake window; NOT retryable keeps one Connect()
-		// call to ~one handshake window so callers with a bounded ctx (the
-		// web UI's broker pool, reconnectTimeout=15s) still have budget left
-		// for FallbackBroker's #41 guardrail to see ctx.Err()==nil and fall
-		// through to yfinance. Only error 326 (clientID already in use,
-		// isRetryableConnectCause below) is worth retrying — it resolves
-		// near-instantly against a fresh candidate ID.
-		return &ibConnectError{clientID: clientID, retryable: false, err: errIBKRHandshakeTimeout}
+		// #192 round 2 (hybrid retry): a handshake timeout means TCP
+		// connected but NextValidID never arrived — the classic
+		// zombie-held-clientID symptom, and #188/#189's actual live wedge
+		// shape is exactly this: a TIMEOUT on the PRIMARY clientID, not
+		// error 326. Marked retryable here because a retry moves to a
+		// DIFFERENT clientID (the next fallback candidate) — it does NOT
+		// repeat the same wedge. #189's documented live evidence is that a
+		// fresh clientID succeeds immediately against a zombie-held primary.
+		// runClientIDAttempts caps how many of these timeout-retries it will
+		// actually take (maxTimeoutRetries=1): a SECOND timeout means even a
+		// fresh clientID wedged, i.e. the gateway itself is down/wedged for
+		// any ID, and no further ID-hopping will help — see
+		// runClientIDAttempts and isTimeoutConnectError.
+		return &ibConnectError{clientID: clientID, retryable: true, timeout: true, err: errIBKRHandshakeTimeout}
 	case <-ctx.Done():
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", clientID, dErr)
@@ -234,32 +294,39 @@ func (c *Client) awaitHandshakeLocked(ctx context.Context, clientID int64, hands
 	}
 }
 
-// perAttemptHandshakeTimeout derives the handshake wait for a single connect
-// attempt (#192 fix (a)). When ctx carries a deadline, the remaining budget
-// is split evenly across the attempts that could still run — this attempt
-// plus attemptsRemaining-1 further retries — so a chain of retryable
-// failures (error 326, clientID already in use) can't let one attempt eat
-// the whole budget and starve the rest. The result is also capped at def so
-// a distant deadline never grants a single attempt more than the configured
-// default. Contexts without a deadline (e.g. the CLI's context.Background())
-// fall back to def unchanged — this only changes behavior for callers that
-// already impose a bound, like the web UI broker pool's reconnectTimeout.
-func perAttemptHandshakeTimeout(ctx context.Context, attemptsRemaining int, def time.Duration) time.Duration {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return def
+// perAttemptHandshakeWindow derives the handshake wait for a single connect
+// attempt (#192 round 2 hybrid-retry policy, replacing the divide-by-
+// candidate-count perAttemptHandshakeTimeout). When ctx carries a deadline,
+// the window is min(def, remaining ctx budget − fallbackHandshakeReserve):
+// capping at def keeps a distant deadline from granting more than the
+// configured default, and subtracting the reserve — rather than dividing by
+// however many candidates could still run — means the FIRST (primary)
+// attempt on a bounded ctx gets the FULL default window instead of a
+// preemptively shrunk share. The old split double-punished the primary
+// attempt before any retry had even happened (e.g. the web UI broker pool's
+// 15s reconnectTimeout over 3 candidates gave the primary just 5s instead of
+// the full 10s default). The subtracted reserve is deliberately left
+// unspent so the caller's ctx is still alive (ctx.Err() == nil) once we give
+// up, letting FallbackBroker.Connect's #41 guardrail (fallback.go) proceed
+// to its no-op yfinance Connect instead of returning ctx.Err() outright.
+//
+// ok is false when the remaining budget can't support a window of at least
+// minHandshakeWindow — in that case the caller should not attempt a connect
+// at all (window is 0). Contexts without a deadline (e.g. the CLI's
+// context.Background()) always get def, unchanged from before.
+func perAttemptHandshakeWindow(ctx context.Context, def time.Duration) (window time.Duration, ok bool) {
+	deadline, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		return def, true
 	}
-	if attemptsRemaining < 1 {
-		attemptsRemaining = 1
+	window = time.Until(deadline) - fallbackHandshakeReserve
+	if window > def {
+		window = def
 	}
-	budget := time.Until(deadline) / time.Duration(attemptsRemaining)
-	if budget <= 0 {
-		return 0
+	if window < minHandshakeWindow {
+		return 0, false
 	}
-	if budget > def {
-		return def
-	}
-	return budget
+	return window, true
 }
 
 func (c *Client) finishConnectLocked() {
@@ -316,8 +383,21 @@ func clientIDCandidates(primary int64, pid int) []int64 {
 	return candidates
 }
 
+// runClientIDAttempts drives the clientID candidate loop shared by
+// Client.Connect (#192 round 2 hybrid retry policy): reset the API client,
+// attempt a connect, and on a retryable failure advance to the next
+// candidate. Two different failures are retryable, capped independently:
+//   - error 326 (clientID already in use, #189): bounded only by how many
+//     candidates remain — unchanged #189 behavior.
+//   - a handshake timeout (#188/#189's actual zombie-held-primary wedge
+//     symptom): retried at most maxTimeoutRetries (1) times regardless of
+//     how many candidates are left, via the timeoutRetries counter below. A
+//     SECOND timeout means the gateway is wedged for any clientID, not just
+//     one zombie-held ID, so further ID-hopping would just repeat the same
+//     wedge — stop and let the caller (FallbackBroker) degrade to yfinance.
 func runClientIDAttempts(ctx context.Context, candidates []int64, hooks clientIDAttemptHooks) (clientIDAttemptResult, error) {
 	result := clientIDAttemptResult{errors: make([]error, 0, len(candidates))}
+	timeoutRetries := 0
 	for attempt, clientID := range candidates {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -335,6 +415,12 @@ func runClientIDAttempts(ctx context.Context, candidates []int64, hooks clientID
 		if !isRetryableConnectError(err) || attempt == len(candidates)-1 {
 			return result, nil
 		}
+		if isTimeoutConnectError(err) {
+			if timeoutRetries >= maxTimeoutRetries {
+				return result, nil
+			}
+			timeoutRetries++
+		}
 		if err := hooks.wait(ctx, attempt); err != nil {
 			return result, err
 		}
@@ -344,11 +430,11 @@ func runClientIDAttempts(ctx context.Context, candidates []int64, hooks clientID
 
 // isRetryableConnectCause classifies an error delivered via
 // c.wrapper.connectErrors (a genuine IB API error during the handshake wait,
-// as opposed to a local handshake timeout — see #192 fix (b) in
-// awaitHandshakeLocked, which never routes through here). Only error 326
-// (clientID already in use) is worth retrying: it resolves near-instantly
-// against a fresh candidate ID, unlike a wedged gateway where retrying just
-// repeats the same timeout.
+// as opposed to a local handshake timeout — see awaitHandshakeLocked's
+// timer.C branch, which never routes through here and is classified
+// separately as retryable-but-timeout-capped, #192 round 2). Only error 326
+// (clientID already in use) is worth retrying here: it resolves
+// near-instantly against a fresh candidate ID.
 func isRetryableConnectCause(err error) bool {
 	var ibErr *ibAPIError
 	if errors.As(err, &ibErr) {
@@ -360,6 +446,16 @@ func isRetryableConnectCause(err error) bool {
 func isRetryableConnectError(err error) bool {
 	var connectErr *ibConnectError
 	return errors.As(err, &connectErr) && connectErr.retryable
+}
+
+// isTimeoutConnectError reports whether err is a handshake-timeout failure
+// (awaitHandshakeLocked's timer.C branch) as opposed to error 326
+// (clientID-in-use, isRetryableConnectCause). runClientIDAttempts uses this
+// to cap timeout retries at maxTimeoutRetries independently of the 326 retry
+// chain, which is already bounded by the candidates list (#192 round 2).
+func isTimeoutConnectError(err error) bool {
+	var connectErr *ibConnectError
+	return errors.As(err, &connectErr) && connectErr.timeout
 }
 
 func waitBeforeConnectRetry(ctx context.Context, attempt int) error {

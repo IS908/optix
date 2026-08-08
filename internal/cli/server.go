@@ -199,6 +199,20 @@ Examples:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
+			// 6a. Arm the force-exit watchdog (#196 follow-up): a second
+			// SIGINT/SIGTERM, or shutdownWatchdogTimeout elapsing after the
+			// first, forces an immediate exit. Needed because (a)
+			// signal.NotifyContext only relays the FIRST signal to ctx, and
+			// (b) with SuppressSignalExit() above, nothing else bounds how
+			// long this function's own graceful shutdown (HTTP drain +
+			// broker pool close, below) is allowed to run. See
+			// armForceExitWatchdog's doc comment for the full rationale.
+			// Must be stopped once shutdown actually completes so it never
+			// fires after the fact — deferred immediately, before any
+			// error-return path can skip it.
+			stopWatchdog := armForceExitWatchdog(ctx, shutdownWatchdogTimeout)
+			defer stopWatchdog()
+
 			// Start scheduler in the background
 			if err := sched.Start(ctx); err != nil {
 				return fmt.Errorf("start scheduler: %w", err)

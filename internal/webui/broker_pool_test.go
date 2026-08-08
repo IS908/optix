@@ -669,3 +669,81 @@ func TestPoolCapDefaults(t *testing.T) {
 		t.Errorf("size=3: cap=%d, want 3", p3.cap())
 	}
 }
+
+// ─── #196 follow-up: close() must not hang on a wedged Disconnect ─────────
+
+// hangingMock is a connected broker whose Disconnect blocks until release is
+// closed — simulating ibapi's Disconnect hanging against a wedged/unresponsive
+// IB Gateway, the exact risk disconnectTimeout exists to bound.
+type hangingMock struct {
+	mockBroker
+	release chan struct{}
+}
+
+func newHangingMock() *hangingMock {
+	return &hangingMock{
+		mockBroker: mockBroker{connected: true},
+		release:    make(chan struct{}),
+	}
+}
+
+func (m *hangingMock) Disconnect() error {
+	<-m.release
+	return m.mockBroker.Disconnect()
+}
+
+// TestPoolCloseBoundedByDisconnectTimeoutOnHungSlot verifies that close()
+// returns within roughly disconnectTimeout even when one slot's Disconnect
+// hangs indefinitely, and that the hung slot does not block other slots
+// from being disconnected. Pre-#196-followup, close() disconnected slots
+// serially with no timeout, so a single wedged slot would hang close() (and
+// by extension optix server's entire graceful shutdown) forever.
+func TestPoolCloseBoundedByDisconnectTimeoutOnHungSlot(t *testing.T) {
+	saved := disconnectTimeout
+	disconnectTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { disconnectTimeout = saved })
+
+	hung := newHangingMock()
+	fast := &mockBroker{connected: true}
+	var calls int32
+	factory := func(_ context.Context, _ int64) (broker.Broker, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return hung, nil
+		}
+		return fast, nil
+	}
+
+	pool := newBrokerPool(2, factory)
+	ctx := context.Background()
+	c1, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire 1: %v", err)
+	}
+	c2, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire 2: %v", err)
+	}
+	pool.release(c1, true)
+	pool.release(c2, true)
+	t.Cleanup(func() { close(hung.release) }) // unblock the abandoned Disconnect so it doesn't leak past the test
+
+	start := time.Now()
+	done := make(chan struct{})
+	go func() {
+		pool.close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pool.close() did not return within 2s despite a hung Disconnect — should be bounded by disconnectTimeout")
+	}
+
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("pool.close() took %s, want roughly disconnectTimeout (%s) — a hung slot must not serialize behind/ahead of healthy slots without a bound", elapsed, disconnectTimeout)
+	}
+	if n := atomic.LoadInt32(&fast.disconnCalls); n != 1 {
+		t.Errorf("fast slot disconnCalls = %d, want 1 — a hung slot must not block other slots from being disconnected", n)
+	}
+}

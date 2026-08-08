@@ -41,6 +41,17 @@ const (
 	dwellWindow = 2 * healthCheckInterval
 )
 
+// disconnectTimeout bounds each slot's Disconnect() call during close().
+// ibapi's Disconnect has no internal timeout of its own and can block
+// indefinitely against a wedged/unresponsive IB Gateway (the same risk
+// internal/cli/root.go's handleSignal watchdog exists to bound on the CLI
+// side). Without a per-slot bound, one stuck slot would hang close() forever
+// — and by extension `optix server`'s entire graceful shutdown, since
+// close() runs synchronously in webui.Server.Start's shutdown path. #196
+// follow-up. A var (not a const) so tests can shrink it instead of waiting
+// out the production value.
+var disconnectTimeout = 3 * time.Second
+
 // fallbackReporter is implemented by brokers that can report whether they are
 // currently serving the degraded (yfinance) fallback source. *broker.FallbackBroker
 // satisfies it; the pool uses it to decide when to attempt an IBKR switchback.
@@ -312,16 +323,41 @@ func (p *brokerPool) reconnect(ctx context.Context, conn *pooledConn) error {
 
 // close stops the background health-checker and disconnects all connections.
 // Call this when the server shuts down.
+//
+// Slots are disconnected concurrently, each bounded by disconnectTimeout, so
+// close() itself returns within roughly one disconnectTimeout regardless of
+// pool size — not serially (which would let one hung slot block every slot
+// after it) and not unboundedly (a hung Disconnect is abandoned in its own
+// goroutine rather than awaited; the process-level shutdown watchdog in
+// internal/cli/server.go is the final backstop if even that leaks past its
+// own deadline). #196 follow-up.
 func (p *brokerPool) close() {
 	p.cancel()
+	var wg sync.WaitGroup
 	for _, c := range p.conns {
 		c.mu.Lock()
-		if c.b != nil {
-			_ = c.b.Disconnect()
-			c.b = nil
-		}
+		b := c.b
+		c.b = nil
 		c.mu.Unlock()
+		if b == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(id int64, b broker.Broker) {
+			defer wg.Done()
+			done := make(chan struct{})
+			go func() {
+				_ = b.Disconnect()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(disconnectTimeout):
+				log.Printf("broker pool: clientID %d Disconnect exceeded %s, abandoning", id, disconnectTimeout)
+			}
+		}(c.id, b)
 	}
+	wg.Wait()
 }
 
 // cap returns the total pool capacity.

@@ -12,6 +12,64 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Six audited correctness findings in the IBKR-first intraday Movers/Sector
+  Heatmap cards (#191), plus two additional bugs surfaced while verifying
+  the fix live against IB Gateway:
+  - **Bars pipeline returned empty on both real data paths (blocker).** The
+    intraday adapter always called `GetHistoricalBars` with an empty
+    `startDate`, which drove IBKR's duration selection to a blind "1 Y" (IBKR
+    rejects a year of 5-min bars — pacing violation, silently empty) and
+    yfinance's day-count to its 365-day default (yfinance's 5m endpoint caps
+    at ~60 days — also silently empty, no warning). The adapter now derives
+    a real `startDate` from the lookback window (NY calendar date), IBKR's
+    duration mapping is distance-aware (`<2d→"1 D"`, `<8d→"1 W"`,
+    `<32d→"1 M"`, else `"6 M"`; unchanged when no startDate is supplied), and
+    yfinance's day-count now treats an empty `endDate` as "through now"
+    (previously required both dates to compute anything) and floors at 1 day
+    instead of clamping short spans up to 30; `fetcher.py`'s `days→period`
+    mapping gained the missing `days<=1 → "1d"` bucket.
+  - **Live-verification-only, not one of the six audited findings:** fixing
+    the above surfaced that IB Gateway's actual intraday bar dates carry a
+    trailing zone token (`"20260807 09:30:00 US/Eastern"`), which the
+    existing date parser rejected outright — silently zeroing every
+    IBKR-sourced bar's `Timestamp` and defeating the movers/heatmap
+    same-session-day filter even with the bars fix in place. Also: rather
+    than implementing the audit's prescribed IBKR bar-volume ×100
+    lots-to-shares scaling, live verification showed the currently-vendored
+    `github.com/scmhub/ibapi` client (Decimal-typed `Bar.Volume`) already
+    reports bar volume in shares — applying ×100 anyway inflated real
+    session volume by two orders of magnitude (e.g. a single 5-minute AAPL
+    bar read back as ~127M shares). That scaling was **not** applied;
+    IBKR bar volume is left as reported.
+  - 8-second `LoadTimeout` truncation was silent for partial per-symbol
+    failures — only a fully-empty result produced a warning. Per-symbol
+    quote/bar fetch loops now check `ctx.Err()` and stop issuing new calls as
+    soon as the deadline fires, and a partial shortfall now surfaces an
+    explicit "N/M symbols unavailable" warning instead of rendering as a
+    clean, quietly-truncated result.
+  - The card header could claim `basis:"realtime"` next to a
+    `warnings:["...unavailable"]` line with zero data, because the fallback
+    basis label echoed the source's *nominal* basis rather than reflecting
+    whether the load actually succeeded. On total load failure the header
+    now reports the canonical-enum floor `"delayed"` instead. The invalid,
+    unreachable `"degraded"` sentinel is gone, and the top-level basis
+    aggregate no longer returns the non-enum value `"mixed"` when per-row
+    bases disagree — it now picks the dominant real basis (per-row values
+    are unaffected).
+  - Session-bar volume of `0` was silently backfilled from the unrelated
+    daily quote volume, mixing two different measures under one label; it's
+    left at `0` now (existing warnings already surface the gap).
+  - Every intraday endpoint call opened a fresh IBKR connect/disconnect —
+    Movers and Sector Heatmap are separate polling endpoints, so one ~30s
+    poll cycle drove two full broker sessions. A short-TTL (~25s, injectable
+    clock) snapshot cache now lets both cards share one loaded snapshot per
+    poll cycle.
+  - A watchlist load error was silently swallowed
+    (`watchlist, _ := h.Watchlist(ctx)`); the intraday handlers now append an
+    explicit "watchlist unavailable: …" warning instead.
+
 ## [0.15.0] - 2026-08-05
 
 Minor release adding the sell-put scan journal（可证伪扫描复盘闭环）.

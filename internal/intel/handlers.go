@@ -3,6 +3,7 @@ package intel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -212,10 +213,14 @@ func (h *Handlers) handleIntradayMovers(w http.ResponseWriter, r *http.Request) 
 		writeError(w, "intraday service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Intraday.Movers(r.Context(), h.watchlist(r.Context()))
+	watchlist, watchWarning := h.watchlist(r.Context())
+	dto, err := h.Intraday.Movers(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if watchWarning != "" {
+		dto.Warnings = append(dto.Warnings, watchWarning)
 	}
 	writeJSON(w, dto)
 }
@@ -225,10 +230,14 @@ func (h *Handlers) handleIntradaySectorHeatmap(w http.ResponseWriter, r *http.Re
 		writeError(w, "intraday service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Intraday.SectorHeatmap(r.Context(), h.watchlist(r.Context()))
+	watchlist, watchWarning := h.watchlist(r.Context())
+	dto, err := h.Intraday.SectorHeatmap(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if watchWarning != "" {
+		dto.Warnings = append(dto.Warnings, watchWarning)
 	}
 	writeJSON(w, dto)
 }
@@ -238,7 +247,11 @@ func (h *Handlers) handlePCEarnings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Postclose.Earnings(r.Context(), h.watchlist(r.Context()))
+	// #191 finding 6 scoped its fix to the intraday cards (handleIntradayMovers/
+	// handleIntradaySectorHeatmap above); postclose keeps the pre-existing
+	// silent-swallow behavior here rather than expanding scope.
+	watchlist, _ := h.watchlist(r.Context())
+	dto, err := h.Postclose.Earnings(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -251,7 +264,8 @@ func (h *Handlers) handlePCTimeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Postclose.Timeline(r.Context(), h.watchlist(r.Context()))
+	watchlist, _ := h.watchlist(r.Context())
+	dto, err := h.Postclose.Timeline(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -264,7 +278,8 @@ func (h *Handlers) handlePCReadAcross(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Postclose.ReadAcross(r.Context(), h.watchlist(r.Context()))
+	watchlist, _ := h.watchlist(r.Context())
+	dto, err := h.Postclose.ReadAcross(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -277,7 +292,8 @@ func (h *Handlers) handlePCMovers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "postclose service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dto, err := h.Postclose.Movers(r.Context(), h.watchlist(r.Context()))
+	watchlist, _ := h.watchlist(r.Context())
+	dto, err := h.Postclose.Movers(r.Context(), watchlist)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -389,12 +405,19 @@ func (h *Handlers) handleShockLiquidity(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, dto)
 }
 
-func (h *Handlers) watchlist(ctx context.Context) []string {
+// watchlist resolves the caller's watchlist. On load failure it returns nil
+// plus a non-empty warning describing the failure — callers rendering a
+// DataWarnings-capable DTO should append it rather than silently proceeding
+// with an unexplained empty watchlist (#191 finding 6).
+func (h *Handlers) watchlist(ctx context.Context) ([]string, string) {
 	if h.Watchlist == nil {
-		return nil
+		return nil, ""
 	}
-	watchlist, _ := h.Watchlist(ctx)
-	return watchlist
+	watchlist, err := h.Watchlist(ctx)
+	if err != nil {
+		return nil, fmt.Sprintf("watchlist unavailable: %v", err)
+	}
+	return watchlist, ""
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

@@ -195,6 +195,32 @@ def build_holdings_index(rows: List[dict]) -> Dict[str, Holding]:
     return index
 
 
+PORTFOLIO_POSITIONS_TIMEOUT = 30
+
+
+def fetch_portfolio_positions() -> Tuple[Optional[List[dict]], Optional[str]]:
+    """调 `optix positions --format json`。成功 (rows, None);任何故障
+    (None, 紧凑原因) —— 组合感知是增强项,绝不让它失败整个扫描。"""
+    try:
+        completed = run_optix_subprocess(
+            ["bash", optix_script(), "positions", "--format", "json"],
+            timeout=PORTFOLIO_POSITIONS_TIMEOUT,
+        )
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    if completed.returncode != 0:
+        err_lines = (completed.stderr or completed.stdout or "").strip().splitlines()
+        return None, compact_ibkr_error("; ".join(err_lines[-2:]))
+    try:
+        data = json.loads(completed.stdout)
+    except Exception as exc:
+        return None, f"parse positions JSON: {exc}"
+    rows = data.get("positions")
+    if not isinstance(rows, list):
+        return None, "positions JSON 缺 positions 列表"
+    return rows, None
+
+
 def nth_weekday(year: int, month: int, weekday: int, nth: int) -> dt.date:
     first = dt.date(year, month, 1)
     offset = (weekday - first.weekday()) % 7

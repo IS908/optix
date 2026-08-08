@@ -69,3 +69,50 @@ def test_index_skips_malformed_row_keeps_rest():
     ])
     assert list(idx.keys()) == ["MSFT"]
     assert idx["MSFT"].stock_qty == 10.0
+
+
+import subprocess
+
+
+class _FakeCompleted:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def test_fetch_positions_ok(monkeypatch):
+    payload = '{"positions": [{"symbol": "AAPL", "sec_type": "STK", "quantity": 100}], "source": "IBKR"}'
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout=payload))
+    rows, err = scan.fetch_portfolio_positions()
+    assert err is None and rows == [{"symbol": "AAPL", "sec_type": "STK", "quantity": 100}]
+
+
+def test_fetch_positions_nonzero_exit_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(
+                            returncode=2, stderr="连接 IBKR 失败: dial tcp 127.0.0.1:4001: connection refused"))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None
+    assert err is not None and "Traceback" not in err  # 紧凑原因,非裸堆栈
+
+
+def test_fetch_positions_timeout_degrades(monkeypatch):
+    def _boom(cmd, timeout, stdin_text=None):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(scan, "run_optix_subprocess", _boom)
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "TimeoutExpired" in err
+
+
+def test_fetch_positions_bad_json_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout="not json"))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "parse positions JSON" in err
+
+
+def test_fetch_positions_missing_list_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "run_optix_subprocess",
+                        lambda cmd, timeout, stdin_text=None: _FakeCompleted(stdout='{"source": "IBKR"}'))
+    rows, err = scan.fetch_portfolio_positions()
+    assert rows is None and "positions" in err

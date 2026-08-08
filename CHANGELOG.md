@@ -12,6 +12,16 @@ above it.
 
 ## [Unreleased]
 
+### Added
+
+- **组合感知扫描第一期**（spec 2026-08-08）：sell-put 扫描起扫时拉取一次
+  `optix positions --format json`，已持正股（-0.10）/已有同名 short put
+  （不同到期 -0.25，同到期撞车 -0.40，空股仅标注）的候选在 Lark 表格降权
+  并加「持仓」标注列；行序按调整分重排，但 **top-N 资格与 scan-journal
+  口径完全不变**（journal payload 显式接收市场序列表，回归测试钉死字节级
+  不变）。positions 拉取失败全降级为警告行，不影响扫描退出码。新增
+  `--no-portfolio` 关闭。纯 Python 改动，零 Go/migration。
+
 ## [0.15.4] - 2026-08-08
 
 ### Fixed

@@ -241,3 +241,33 @@ def test_render_zero_candidates_carries_degrade_line():
     out = scan.render(_result([]), 100,
                       portfolio_line="⚠️ 组合感知不可用（连接失败），本次未降权")
     assert "组合感知不可用" in out
+
+
+def test_resolve_portfolio_line_disabled():
+    r = _result([_cand()])
+    assert scan.resolve_portfolio_line(r, no_portfolio=True) is None
+
+
+def test_resolve_portfolio_line_skips_when_no_candidates(monkeypatch):
+    called = []
+    monkeypatch.setattr(scan, "fetch_portfolio_positions",
+                        lambda: called.append(1) or (None, "x"))
+    assert scan.resolve_portfolio_line(_result([]), no_portfolio=False) is None
+    assert called == []  # 零候选不浪费 IBKR 往返
+
+
+def test_resolve_portfolio_line_degrades(monkeypatch):
+    monkeypatch.setattr(scan, "fetch_portfolio_positions", lambda: (None, "连接失败"))
+    r = _result([_cand()])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)
+    assert line == "⚠️ 组合感知不可用（连接失败），本次未降权"
+    assert r.candidates[0].portfolio_penalty == 0.0
+
+
+def test_resolve_portfolio_line_applies(monkeypatch):
+    monkeypatch.setattr(scan, "fetch_portfolio_positions",
+                        lambda: ([_pos(symbol="NVDA", quantity=100.0)], None))
+    r = _result([_cand(symbol="NVDA")])
+    line = scan.resolve_portfolio_line(r, no_portfolio=False)
+    assert "1 项降权" in line
+    assert r.candidates[0].portfolio_labels == "正股"

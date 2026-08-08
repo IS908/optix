@@ -271,6 +271,18 @@ def apply_portfolio_awareness(
     return f"组合感知: 持仓 {len(index)} 标的，{penalized} 项降权（positions@{fetched_at}）"
 
 
+def resolve_portfolio_line(result: ScanResult, *, no_portfolio: bool) -> Optional[str]:
+    """组合感知编排:fetch → index → apply。返回 Lark 摘要行(或 None)。
+    --no-portfolio、零候选、扫描熔断时直接跳过(不发 IBKR 请求)。"""
+    if no_portfolio or result.data_quality_error or not result.candidates:
+        return None
+    rows, err = fetch_portfolio_positions()
+    if err:
+        return f"⚠️ 组合感知不可用（{err}），本次未降权"
+    fetched_at = dt.datetime.now(tz=NY).strftime("%H:%M ET")
+    return apply_portfolio_awareness(result.candidates, build_holdings_index(rows), fetched_at)
+
+
 def nth_weekday(year: int, month: int, weekday: int, nth: int) -> dt.date:
     first = dt.date(year, month, 1)
     offset = (weekday - first.weekday()) % 7
@@ -995,6 +1007,8 @@ def main() -> int:
     parser.add_argument("--ibkr-top", type=int, default=DEFAULT_IBKR_TOP_N, help="Number of top candidates to validate through Optix/IBKR")
     parser.add_argument("--no-journal", action="store_true", help="Skip scan-journal register/reconcile")
     parser.add_argument("--with-journal", action="store_true", help="Force journal writes even with --dry-run")
+    parser.add_argument("--no-portfolio", action="store_true",
+                        help="Skip IBKR positions fetch and portfolio-aware ranking")
     args = parser.parse_args()
 
     if not args.dry_run and not is_valid_window():
@@ -1002,9 +1016,10 @@ def main() -> int:
     symbols = nasdaq100_symbols()
     ibkr_top_n = 0 if args.no_ibkr else args.ibkr_top
     result = scan(symbols, ibkr_top_n=ibkr_top_n)
+    portfolio_line = resolve_portfolio_line(result, no_portfolio=args.no_portfolio)
     review_lines, journal_notes = run_journal_flow(
         result, dry_run=args.dry_run, no_journal=args.no_journal, with_journal=args.with_journal)
-    body = render(result, len(symbols))
+    body = render(result, len(symbols), portfolio_line=portfolio_line)
     extra = review_lines + journal_notes
     if extra:
         body = body + "\n" + "\n".join(extra)

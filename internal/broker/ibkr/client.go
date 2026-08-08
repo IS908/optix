@@ -67,10 +67,31 @@ func (e *ibConnectError) Unwrap() error {
 }
 
 // Client wraps the IB Gateway/TWS API connection.
+//
+// Contract: single-connect. A Client instance is meant to run exactly one
+// Connect → use → Disconnect lifecycle. Connect replaces c.wrapper and
+// c.ibClient under c.mu (resetAPIClientLocked, one fresh pair per attempt —
+// see #171/#189), but every request path (GetQuote, Ping, watchDisconnect,
+// ...) reads those two fields without taking c.mu — safe today only because
+// every caller in this codebase (broker_pool's factory, the CLI's ad hoc
+// connects) constructs a brand-new Client per Connect() rather than
+// reconnecting an existing one (#192 finding 3). Reusing a Client across
+// more than one Connect/Disconnect cycle is undefined behavior — a request
+// goroutine racing a concurrent Connect-after-Disconnect on the same
+// instance is a real Go data race on c.wrapper/c.ibClient. If that pattern
+// is ever needed, add locking to the read paths first.
 type Client struct {
 	cfg      Config
 	wrapper  *IbWrapper
 	ibClient *ibapi.EClient
+
+	// handshakeTimeout bounds how long a single connect attempt waits for
+	// NextValidID once the TCP/IB-protocol handshake in connectOnceLocked
+	// has returned. Defaults to ibHandshakeTimeout; Connect() may shrink it
+	// per attempt via perAttemptHandshakeTimeout when the caller's ctx
+	// carries a deadline (#192 fix (a)). Tests override this field directly
+	// to keep wedge/timeout scenarios fast.
+	handshakeTimeout time.Duration
 
 	mu            sync.RWMutex
 	connected     bool
@@ -93,13 +114,18 @@ func New(cfg Config) *Client {
 	wrapper := newIbWrapper()
 	ibClient := ibapi.NewEClient(wrapper)
 	return &Client{
-		cfg:      cfg,
-		wrapper:  wrapper,
-		ibClient: ibClient,
+		cfg:              cfg,
+		wrapper:          wrapper,
+		ibClient:         ibClient,
+		handshakeTimeout: ibHandshakeTimeout,
 	}
 }
 
 // Connect establishes a connection to IB Gateway or TWS.
+//
+// Single-connect: see the Client doc comment. Calling Connect a second time
+// on an instance that already completed a Connect/Disconnect cycle is
+// unsupported — construct a new Client instead.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -115,11 +141,20 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	primaryClientID := c.cfg.ClientID
 	candidates := clientIDCandidates(primaryClientID, os.Getpid())
+	attempt := 0
 	result, err := runClientIDAttempts(ctx, candidates, clientIDAttemptHooks{
 		reset: c.resetAPIClientLocked,
 		connect: func(ctx context.Context, clientID int64) error {
 			c.cfg.ClientID = clientID
-			return c.connectOnceLocked(ctx, clientID)
+			// #192 fix (a): derive this attempt's handshake wait from the
+			// ctx's remaining deadline (if any), split across the attempts
+			// that could still run. Only matters on the retry path (326
+			// clientID-in-use, see fix (b) below) — the last attempt always
+			// gets whatever budget remains.
+			remaining := len(candidates) - attempt
+			attempt++
+			timeout := perAttemptHandshakeTimeout(ctx, remaining, c.handshakeTimeout)
+			return c.connectOnceLocked(ctx, clientID, timeout)
 		},
 		wait: waitBeforeConnectRetry,
 	})
@@ -135,6 +170,11 @@ func (c *Client) Connect(ctx context.Context) error {
 	if result.clientID != primaryClientID {
 		log.Printf("ibkr: connected with fallback clientID %d after primary clientID %d failed", result.clientID, primaryClientID)
 	}
+	// c.cfg.ClientID intentionally stays at result.clientID (the fallback
+	// candidate that actually connected) rather than being restored to
+	// primaryClientID. Per the single-connect contract above, this Client
+	// instance never attempts another Connect(), so the "ID drift" a reused
+	// instance would see on its next round is moot (#192 finding 5).
 	c.finishConnectLocked()
 	return nil
 }
@@ -145,16 +185,23 @@ func (c *Client) resetAPIClientLocked() {
 	c.ibClient = ibapi.NewEClient(wrapper)
 }
 
-func (c *Client) connectOnceLocked(ctx context.Context, clientID int64) error {
+func (c *Client) connectOnceLocked(ctx context.Context, clientID int64, handshakeTimeout time.Duration) error {
 	err := c.ibClient.Connect(c.cfg.Host, c.cfg.Port, clientID)
 	if err != nil {
 		return fmt.Errorf("connect to IB Gateway/TWS at %s:%d with clientID %d: %w", c.cfg.Host, c.cfg.Port, clientID, err)
 	}
+	return c.awaitHandshakeLocked(ctx, clientID, handshakeTimeout)
+}
 
-	timer := time.NewTimer(ibHandshakeTimeout)
+// awaitHandshakeLocked waits for NextValidID (which signals the post-TCP-
+// connect IB API handshake is complete), bounded by handshakeTimeout and
+// ctx. Split out from connectOnceLocked so the retry/timeout classification
+// below is unit-testable directly against wrapper channels, without a real
+// TCP dial to IB Gateway/TWS (#192).
+func (c *Client) awaitHandshakeLocked(ctx context.Context, clientID int64, handshakeTimeout time.Duration) error {
+	timer := time.NewTimer(handshakeTimeout)
 	defer timer.Stop()
 
-	// Wait for NextValidID (signals handshake complete) with a timeout.
 	select {
 	case firstID := <-c.wrapper.nextValidID:
 		atomic.StoreInt64(&c.reqIDCounter, firstID)
@@ -168,13 +215,51 @@ func (c *Client) connectOnceLocked(ctx context.Context, clientID int64) error {
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after handshake timeout (clientID %d): %v", clientID, dErr)
 		}
-		return &ibConnectError{clientID: clientID, retryable: true, err: errIBKRHandshakeTimeout}
+		// #192 fix (b): a handshake timeout means TCP connected but
+		// NextValidID never arrived — the classic wedged-gateway symptom
+		// (#188/#189). Retrying just repeats the same wedge and burns
+		// another full handshake window; NOT retryable keeps one Connect()
+		// call to ~one handshake window so callers with a bounded ctx (the
+		// web UI's broker pool, reconnectTimeout=15s) still have budget left
+		// for FallbackBroker's #41 guardrail to see ctx.Err()==nil and fall
+		// through to yfinance. Only error 326 (clientID already in use,
+		// isRetryableConnectCause below) is worth retrying — it resolves
+		// near-instantly against a fresh candidate ID.
+		return &ibConnectError{clientID: clientID, retryable: false, err: errIBKRHandshakeTimeout}
 	case <-ctx.Done():
 		if dErr := c.ibClient.Disconnect(); dErr != nil {
 			log.Printf("ibkr: disconnect after context cancel (clientID %d): %v", clientID, dErr)
 		}
 		return ctx.Err()
 	}
+}
+
+// perAttemptHandshakeTimeout derives the handshake wait for a single connect
+// attempt (#192 fix (a)). When ctx carries a deadline, the remaining budget
+// is split evenly across the attempts that could still run — this attempt
+// plus attemptsRemaining-1 further retries — so a chain of retryable
+// failures (error 326, clientID already in use) can't let one attempt eat
+// the whole budget and starve the rest. The result is also capped at def so
+// a distant deadline never grants a single attempt more than the configured
+// default. Contexts without a deadline (e.g. the CLI's context.Background())
+// fall back to def unchanged — this only changes behavior for callers that
+// already impose a bound, like the web UI broker pool's reconnectTimeout.
+func perAttemptHandshakeTimeout(ctx context.Context, attemptsRemaining int, def time.Duration) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return def
+	}
+	if attemptsRemaining < 1 {
+		attemptsRemaining = 1
+	}
+	budget := time.Until(deadline) / time.Duration(attemptsRemaining)
+	if budget <= 0 {
+		return 0
+	}
+	if budget > def {
+		return def
+	}
+	return budget
 }
 
 func (c *Client) finishConnectLocked() {
@@ -187,11 +272,14 @@ func (c *Client) finishConnectLocked() {
 	c.connected = true
 	c.disconnecting = false
 
-	// Drain any stale disconnect signal that may linger from a prior session.
-	select {
-	case <-c.wrapper.disconnectCh:
-	default:
-	}
+	// No disconnectCh drain here (#192 finding 2/4): resetAPIClientLocked
+	// gives every connect attempt a fresh wrapper (#189), so anything
+	// sitting in this session's disconnectCh by the time we reach here is a
+	// genuine TCP drop that happened between NextValidID and this call — not
+	// leftover noise from a prior session sharing the same wrapper. Draining
+	// it would leave connected=true on a dead socket until the next 30s Ping
+	// cycle catches it; leaving it in place lets watchDisconnect below
+	// observe it immediately.
 	// Start a goroutine that watches for TCP-drop callbacks from ibapi and
 	// immediately marks the client as disconnected without waiting for the
 	// next health check.
@@ -254,10 +342,14 @@ func runClientIDAttempts(ctx context.Context, candidates []int64, hooks clientID
 	return result, nil
 }
 
+// isRetryableConnectCause classifies an error delivered via
+// c.wrapper.connectErrors (a genuine IB API error during the handshake wait,
+// as opposed to a local handshake timeout — see #192 fix (b) in
+// awaitHandshakeLocked, which never routes through here). Only error 326
+// (clientID already in use) is worth retrying: it resolves near-instantly
+// against a fresh candidate ID, unlike a wedged gateway where retrying just
+// repeats the same timeout.
 func isRetryableConnectCause(err error) bool {
-	if errors.Is(err, errIBKRHandshakeTimeout) {
-		return true
-	}
 	var ibErr *ibAPIError
 	if errors.As(err, &ibErr) {
 		return ibErr.code == ibClientIDInUseCode

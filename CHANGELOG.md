@@ -12,6 +12,35 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Handshake-retry budget could blow past the web UI broker pool's 15s
+  reconnect timeout and defeat the yfinance fallback** (#192, audit
+  follow-up to #189). A wedged gateway (TCP connects, `NextValidID` never
+  arrives) had its handshake timeout marked retryable, so a single
+  `Connect()` could burn up to ~30.35s across three attempts. The pool's
+  `reconnectTimeout` is 15s, so the second attempt reliably died on
+  `ctx.Done()` mid-handshake — and `FallbackBroker.Connect`'s #41 guardrail,
+  seeing `ctx.Err() != nil`, returned without ever trying yfinance. Only
+  error 326 (clientID already in use — the actual #189 target) is now
+  retryable; a handshake timeout stops the attempt loop immediately, so a
+  wedged gateway costs one handshake window (~10s) and falls through to
+  delayed data cleanly, matching pre-#189 behavior. Per-attempt handshake
+  timeouts are also now derived from the caller's remaining `ctx` budget
+  (split across the attempts that could still run) when 326 retries do
+  happen, so a bounded ctx is never exceeded.
+- `finishConnectLocked` no longer drains `IbWrapper.disconnectCh` before
+  starting the disconnect watcher. Each connect attempt gets a fresh wrapper
+  (#189), so any signal already sitting there by that point is a genuine
+  drop between `NextValidID` and finish, not stale state from a prior
+  session — draining it left `connected=true` on a dead socket until the
+  next 30s Ping cycle.
+- Documented `ibkr.Client`'s single-connect contract: `wrapper`/`ibClient`
+  are mutated under `c.mu` on reconnect but read lock-free by every request
+  path, which is only safe because every caller constructs a new `Client`
+  per `Connect()` today. Reusing an instance across more than one
+  Connect/Disconnect cycle is unsupported.
+
 ## [0.15.2] - 2026-08-08
 
 Patch release fixing option-quote quality (#193).

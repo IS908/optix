@@ -12,6 +12,10 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-08-08
+
+Patch release fixing option-quote quality (#193).
+
 ### Fixed
 
 - Six audited correctness findings in the `optix option-quote` chain (#193,
@@ -1801,7 +1805,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/IS908/optix/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/IS908/optix/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/IS908/optix/compare/v0.14.30...v0.15.0
 [0.14.30]: https://github.com/IS908/optix/compare/v0.14.29...v0.14.30

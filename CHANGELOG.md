@@ -12,6 +12,22 @@ above it.
 
 ## [Unreleased]
 
+### Added
+
+- **`optix analyze --format json`** (#204): `optix analyze <SYMBOL>` and
+  `optix analyze --watchlist` now support `--format json`, matching the
+  `quote`/`chain`/`dashboard`/`positions`/`trades` convention. Emits a
+  curated (not protojson) JSON projection of the stock summary, technicals,
+  options/IV environment + Max Pain (with the same expiry annotation and
+  `--with-oi`-degraded `max_pain_available` signal the text report shows),
+  forecast outlook, and strategy recommendations (legs, credit/debit, max
+  profit/loss, breakevens, probability). `--watchlist --format json` returns
+  one stable object with a per-symbol `results` array; a per-symbol
+  fetch/analyze failure becomes a structured `{symbol, error}` entry instead
+  of aborting the batch. Text output is unchanged and remains the default.
+  In JSON mode all progress/diagnostic output (source banner, per-symbol
+  progress) moves to stderr so stdout stays pure JSON.
+
 ## [0.15.5] - 2026-08-08
 
 ### Added

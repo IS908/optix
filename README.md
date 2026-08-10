@@ -157,8 +157,9 @@ optix/
 | Command | Description |
 |---------|-------------|
 | `./bin/optix dashboard` | Watchlist overview with quotes, technicals, recommendations |
-| `./bin/optix analyze <SYMBOL>` | Deep analysis: technicals + options + strategies |
-| `./bin/optix analyze <SYMBOL> --with-oi [--expiry YYYY-MM-DD]` | Same, plus per-contract Open Interest for Max Pain (needs OPRA subscription); `--expiry` picks a specific option expiration (default: nearest) |
+| `./bin/optix analyze <SYMBOL> [--format json]` | Deep analysis: technicals + options + strategies |
+| `./bin/optix analyze <SYMBOL> --with-oi [--expiry YYYY-MM-DD] [--format json]` | Same, plus per-contract Open Interest for Max Pain (needs OPRA subscription); `--expiry` picks a specific option expiration (default: nearest) |
+| `./bin/optix analyze --watchlist [--format json]` | Deep analysis for every watchlist symbol; JSON mode returns one object with a per-symbol `results` array |
 | `./bin/optix chain <SYMBOL> [--expiry YYYY-MM-DD]` | Option chain table via IBKR or delayed Yahoo Finance fallback |
 | `./bin/optix option-quote <SYMBOL> --expiry YYYY-MM-DD --right C\|P --strike <N> [--format json]` | Single option contract real-time quote via IBKR (bid/ask/mid/mark/last/OI/IV/Greeks); IBKR-only, for final-candidate validation after chain screening |
 | `./bin/optix max-pain <SYMBOL> [--expiry] [--source ibkr\|yfinance\|auto]` | Standalone Max Pain query for one option expiration |

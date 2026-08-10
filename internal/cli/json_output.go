@@ -9,6 +9,7 @@ import (
 	"time"
 
 	analysisv1 "github.com/IS908/optix/gen/go/optix/analysis/v1"
+	marketdatav1 "github.com/IS908/optix/gen/go/optix/marketdata/v1"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -382,6 +383,372 @@ type executionOutput struct {
 	Exchange   string    `json:"exchange,omitempty"`
 	OrderID    int64     `json:"order_id"`
 	PermID     int64     `json:"perm_id"`
+}
+
+// ─── Analyze (optix analyze --format json) ────────────────────────────────────
+//
+// analyzeOutput is the agent-stable JSON contract for a single `optix
+// analyze` run, and doubles as the per-symbol payload inside
+// `--watchlist --format json` (see analyzeWatchlistEntry). It is a curated
+// projection of AnalyzeStockResponse — not protojson — so the wire contract
+// stays stable across proto field renames. Every value is sourced directly
+// from the response; the only derived data are the same degraded/zero-value
+// checks printAnalysisReport already performs for its own alternate-text
+// branches (e.g. "Max Pain: N/A ...", "No strategy recommendations
+// available."), re-expressed as stable machine-readable warning codes.
+
+type analyzeOutput struct {
+	Symbol       string    `json:"symbol"`
+	Weeks        int       `json:"weeks"`
+	ForecastDays int32     `json:"forecast_days"`
+	Source       string    `json:"source,omitempty"`
+	GeneratedAt  time.Time `json:"generated_at"`
+
+	Summary    *analyzeSummaryOutput   `json:"summary,omitempty"`
+	Technical  *analyzeTechnicalOutput `json:"technical,omitempty"`
+	Options    *analyzeOptionsOutput   `json:"options,omitempty"`
+	Outlook    *analyzeOutlookOutput   `json:"outlook,omitempty"`
+	Strategies []analyzeStrategyOutput `json:"strategies,omitempty"`
+
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+type analyzeSummaryOutput struct {
+	Price           float64 `json:"price"`
+	Change          float64 `json:"change"`
+	ChangePct       float64 `json:"change_pct"`
+	High52W         float64 `json:"high_52w"`
+	Low52W          float64 `json:"low_52w"`
+	AvgVolume20D    float64 `json:"avg_volume_20d"`
+	TodayVolume     int64   `json:"today_volume"`
+	PreviousClose   float64 `json:"previous_close,omitempty"`
+	IsExtendedHours bool    `json:"is_extended_hours,omitempty"`
+}
+
+type analyzePriceLevelOutput struct {
+	Price    float64 `json:"price"`
+	Source   string  `json:"source"`
+	Strength float64 `json:"strength"`
+}
+
+type analyzeTechnicalOutput struct {
+	Trend            string  `json:"trend"`
+	TrendScore       float64 `json:"trend_score"`
+	TrendDescription string  `json:"trend_description,omitempty"`
+
+	MA20  float64 `json:"ma_20"`
+	MA50  float64 `json:"ma_50"`
+	MA200 float64 `json:"ma_200"`
+
+	RSI14         float64 `json:"rsi_14"`
+	MACD          float64 `json:"macd"`
+	MACDSignal    float64 `json:"macd_signal"`
+	MACDHistogram float64 `json:"macd_histogram"`
+
+	BollingerUpper float64 `json:"bollinger_upper,omitempty"`
+	BollingerMid   float64 `json:"bollinger_mid,omitempty"`
+	BollingerLower float64 `json:"bollinger_lower,omitempty"`
+
+	SupportLevels    []analyzePriceLevelOutput `json:"support_levels,omitempty"`
+	ResistanceLevels []analyzePriceLevelOutput `json:"resistance_levels,omitempty"`
+}
+
+type analyzeOIClusterOutput struct {
+	Strike       float64 `json:"strike"`
+	OptionType   string  `json:"option_type"`
+	OpenInterest int32   `json:"open_interest"`
+	Significance string  `json:"significance"`
+}
+
+type analyzeOptionsOutput struct {
+	IVCurrent     float64 `json:"iv_current"`
+	IVRank        float64 `json:"iv_rank"`
+	IVPercentile  float64 `json:"iv_percentile"`
+	IVEnvironment string  `json:"iv_environment,omitempty"`
+	IVSkew        float64 `json:"iv_skew,omitempty"`
+
+	// MaxPainAvailable mirrors the same `o.MaxPain > 0` check
+	// printAnalysisReport uses to decide between printing the Max Pain price
+	// and "N/A (rerun with --with-oi ...)". MaxPain/MaxPainExpiry are only
+	// populated when true.
+	MaxPainAvailable bool    `json:"max_pain_available"`
+	MaxPain          float64 `json:"max_pain,omitempty"`
+	MaxPainExpiry    string  `json:"max_pain_expiry,omitempty"`
+	ExpiryRequested  bool    `json:"expiry_requested,omitempty"`
+
+	PCRVolume float64 `json:"pcr_volume"`
+	PCROI     float64 `json:"pcr_oi"`
+
+	OIClusters []analyzeOIClusterOutput `json:"oi_clusters,omitempty"`
+
+	EarningsBeforeExpiry bool   `json:"earnings_before_expiry,omitempty"`
+	NextEarningsDate     string `json:"next_earnings_date,omitempty"`
+}
+
+type analyzeOutlookOutput struct {
+	Direction  string  `json:"direction"`
+	Confidence float64 `json:"confidence"`
+	Rationale  string  `json:"rationale,omitempty"`
+
+	RangeLow1S  float64 `json:"range_low_1s"`
+	RangeHigh1S float64 `json:"range_high_1s"`
+	RangeLow2S  float64 `json:"range_low_2s"`
+	RangeHigh2S float64 `json:"range_high_2s"`
+
+	ForecastDays int32    `json:"forecast_days"`
+	RiskEvents   []string `json:"risk_events,omitempty"`
+}
+
+type analyzeStrategyLegOutput struct {
+	Direction  string  `json:"direction"` // "buy" | "sell", derived from the quantity sign (see printStrategy)
+	OptionType string  `json:"option_type"`
+	Strike     float64 `json:"strike"`
+	Expiration string  `json:"expiration"`
+	Quantity   int32   `json:"quantity"`
+	Premium    float64 `json:"premium"`
+}
+
+type analyzeStrategyOutput struct {
+	Rank         int     `json:"rank"`
+	StrategyName string  `json:"strategy_name"`
+	StrategyType string  `json:"strategy_type"`
+	Score        float64 `json:"score"`
+
+	Legs []analyzeStrategyLegOutput `json:"legs,omitempty"`
+
+	NetCredit           float64 `json:"net_credit"`
+	MaxProfit           float64 `json:"max_profit"`
+	MaxLoss             float64 `json:"max_loss"`
+	RiskRewardRatio     float64 `json:"risk_reward_ratio"`
+	ProbabilityOfProfit float64 `json:"probability_of_profit"`
+	BreakevenPrice      float64 `json:"breakeven_price"`
+	MarginRequired      float64 `json:"margin_required"`
+
+	Rationale    string   `json:"rationale,omitempty"`
+	RiskWarnings []string `json:"risk_warnings,omitempty"`
+}
+
+// analyzeWatchlistOutput is the agent-stable JSON contract for `optix
+// analyze --watchlist --format json`: one stable envelope wrapping a
+// per-symbol results array. Results is never null (empty slice when the
+// watchlist itself is empty) so callers can always range over it.
+type analyzeWatchlistOutput struct {
+	Weeks        int                     `json:"weeks"`
+	ForecastDays int32                   `json:"forecast_days"`
+	Source       string                  `json:"source,omitempty"`
+	GeneratedAt  time.Time               `json:"generated_at"`
+	Results      []analyzeWatchlistEntry `json:"results"`
+}
+
+// analyzeWatchlistEntry is a single --watchlist result: either a populated
+// Analysis on success, or an Error on a per-symbol fetch/analyze failure.
+// A per-symbol failure never aborts the batch — see runWatchlistAnalysis.
+type analyzeWatchlistEntry struct {
+	Symbol   string         `json:"symbol"`
+	Error    string         `json:"error,omitempty"`
+	Analysis *analyzeOutput `json:"analysis,omitempty"`
+}
+
+// analyzeOptionTypeLabel mirrors the CALL/PUT labeling printAnalysisReport
+// and printStrategy already compute inline for OI clusters and strategy
+// legs.
+func analyzeOptionTypeLabel(t marketdatav1.OptionType) string {
+	if t == marketdatav1.OptionType_OPTION_TYPE_PUT {
+		return "PUT"
+	}
+	return "CALL"
+}
+
+func analyzePriceLevelsOutput(levels []*analysisv1.PriceLevel) []analyzePriceLevelOutput {
+	if len(levels) == 0 {
+		return nil
+	}
+	out := make([]analyzePriceLevelOutput, 0, len(levels))
+	for _, l := range levels {
+		if l == nil {
+			continue
+		}
+		out = append(out, analyzePriceLevelOutput{Price: l.Price, Source: l.Source, Strength: l.Strength})
+	}
+	return out
+}
+
+func analyzeStrategyLegsOutput(leg *analysisv1.StrategyLeg) analyzeStrategyLegOutput {
+	direction := "buy"
+	if leg.Quantity < 0 {
+		direction = "sell"
+	}
+	return analyzeStrategyLegOutput{
+		Direction:  direction,
+		OptionType: analyzeOptionTypeLabel(leg.OptionType),
+		Strike:     leg.Strike,
+		Expiration: leg.Expiration,
+		Quantity:   leg.Quantity,
+		Premium:    leg.Premium,
+	}
+}
+
+// buildAnalyzeStrategyOutput projects one StrategyRecommendation, matching
+// the numbering printAnalysisReport assigns via printStrategy(i+1, ...).
+func buildAnalyzeStrategyOutput(rank int, strat *analysisv1.StrategyRecommendation) analyzeStrategyOutput {
+	out := analyzeStrategyOutput{
+		Rank:                rank,
+		StrategyName:        strat.StrategyName,
+		StrategyType:        strat.StrategyType,
+		Score:               strat.Score,
+		NetCredit:           strat.NetCredit,
+		MaxProfit:           strat.MaxProfit,
+		MaxLoss:             strat.MaxLoss,
+		RiskRewardRatio:     strat.RiskRewardRatio,
+		ProbabilityOfProfit: strat.ProbabilityOfProfit,
+		BreakevenPrice:      strat.BreakevenPrice,
+		MarginRequired:      strat.MarginRequired,
+		Rationale:           strat.Rationale,
+		RiskWarnings:        strat.RiskWarnings,
+	}
+	if len(strat.Legs) > 0 {
+		out.Legs = make([]analyzeStrategyLegOutput, 0, len(strat.Legs))
+		for _, leg := range strat.Legs {
+			if leg == nil {
+				continue
+			}
+			out.Legs = append(out.Legs, analyzeStrategyLegsOutput(leg))
+		}
+	}
+	return out
+}
+
+// buildAnalyzeOutput projects an AnalyzeStockResponse into the curated JSON
+// contract shared by single-symbol and --watchlist analyze runs. A nil resp
+// mirrors printAnalysisReport's own defensive "No analysis data returned."
+// nil check.
+func buildAnalyzeOutput(resp *analysisv1.AnalyzeStockResponse, symbol string, weeks int, forecastDays int32, source string, userRequestedExpiry bool) *analyzeOutput {
+	out := &analyzeOutput{
+		Symbol:       symbol,
+		Weeks:        weeks,
+		ForecastDays: forecastDays,
+		Source:       source,
+		GeneratedAt:  time.Now().UTC(),
+	}
+	if resp == nil {
+		out.Warnings = append(out.Warnings, "no_analysis_data")
+		return out
+	}
+
+	if s := resp.Summary; s != nil {
+		out.Summary = &analyzeSummaryOutput{
+			Price:           s.Price,
+			Change:          s.Change,
+			ChangePct:       s.ChangePct,
+			High52W:         s.High_52W,
+			Low52W:          s.Low_52W,
+			AvgVolume20D:    s.AvgVolume_20D,
+			TodayVolume:     s.TodayVolume,
+			PreviousClose:   s.PreviousClose,
+			IsExtendedHours: s.IsExtendedHours,
+		}
+	} else {
+		out.Warnings = append(out.Warnings, "summary_unavailable")
+	}
+
+	if t := resp.Technical; t != nil {
+		out.Technical = &analyzeTechnicalOutput{
+			Trend:            t.Trend,
+			TrendScore:       t.TrendScore,
+			TrendDescription: t.TrendDescription,
+			MA20:             t.Ma_20,
+			MA50:             t.Ma_50,
+			MA200:            t.Ma_200,
+			RSI14:            t.Rsi_14,
+			MACD:             t.Macd,
+			MACDSignal:       t.MacdSignal,
+			MACDHistogram:    t.MacdHistogram,
+			BollingerUpper:   t.BollingerUpper,
+			BollingerMid:     t.BollingerMid,
+			BollingerLower:   t.BollingerLower,
+			SupportLevels:    analyzePriceLevelsOutput(t.SupportLevels),
+			ResistanceLevels: analyzePriceLevelsOutput(t.ResistanceLevels),
+		}
+	} else {
+		out.Warnings = append(out.Warnings, "technical_unavailable")
+	}
+
+	if o := resp.Options; o != nil {
+		opts := &analyzeOptionsOutput{
+			IVCurrent:            o.IvCurrent,
+			IVRank:               o.IvRank,
+			IVPercentile:         o.IvPercentile,
+			IVEnvironment:        o.IvEnvironment,
+			IVSkew:               o.IvSkew,
+			PCRVolume:            o.PcrVolume,
+			PCROI:                o.PcrOi,
+			EarningsBeforeExpiry: o.EarningsBeforeExpiry,
+			NextEarningsDate:     o.NextEarningsDate,
+		}
+		if o.MaxPain > 0 {
+			opts.MaxPainAvailable = true
+			opts.MaxPain = o.MaxPain
+			// Unlike the text report's maxPainExpiryAnnotation (which prints
+			// the sentinel "unknown" so the printed line stays grammatical),
+			// the JSON contract omits max_pain_expiry entirely when the
+			// engine didn't return one — a date-parsing consumer would choke
+			// on a non-date sentinel string, and omitempty already gives
+			// callers a clean "absent" signal.
+			if o.MaxPainExpiry != "" {
+				opts.MaxPainExpiry = dashed(o.MaxPainExpiry)
+			}
+			opts.ExpiryRequested = userRequestedExpiry
+		} else {
+			out.Warnings = append(out.Warnings, "max_pain_unavailable")
+		}
+		if len(o.OiClusters) > 0 {
+			opts.OIClusters = make([]analyzeOIClusterOutput, 0, len(o.OiClusters))
+			for _, cl := range o.OiClusters {
+				if cl == nil {
+					continue
+				}
+				opts.OIClusters = append(opts.OIClusters, analyzeOIClusterOutput{
+					Strike:       cl.Strike,
+					OptionType:   analyzeOptionTypeLabel(cl.OptionType),
+					OpenInterest: cl.OpenInterest,
+					Significance: cl.Significance,
+				})
+			}
+		}
+		out.Options = opts
+	} else {
+		out.Warnings = append(out.Warnings, "options_unavailable")
+	}
+
+	if ol := resp.Outlook; ol != nil {
+		out.Outlook = &analyzeOutlookOutput{
+			Direction:    ol.Direction,
+			Confidence:   ol.Confidence,
+			Rationale:    ol.Rationale,
+			RangeLow1S:   ol.RangeLow_1S,
+			RangeHigh1S:  ol.RangeHigh_1S,
+			RangeLow2S:   ol.RangeLow_2S,
+			RangeHigh2S:  ol.RangeHigh_2S,
+			ForecastDays: ol.ForecastDays,
+			RiskEvents:   ol.RiskEvents,
+		}
+	} else {
+		out.Warnings = append(out.Warnings, "outlook_unavailable")
+	}
+
+	if len(resp.Strategies) == 0 {
+		out.Warnings = append(out.Warnings, "no_strategy_recommendations")
+	} else {
+		out.Strategies = make([]analyzeStrategyOutput, 0, len(resp.Strategies))
+		for i, strat := range resp.Strategies {
+			if strat == nil {
+				continue
+			}
+			out.Strategies = append(out.Strategies, buildAnalyzeStrategyOutput(i+1, strat))
+		}
+	}
+
+	return out
 }
 
 func renderTradesJSON(w io.Writer, executions []model.Execution, source string) error {

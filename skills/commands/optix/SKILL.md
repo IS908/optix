@@ -52,6 +52,8 @@ bash bin/optix.sh quote <SYMBOL> --format json
 bash bin/optix.sh analyze <SYMBOL>
 bash bin/optix.sh analyze <SYMBOL> --weeks 4 --capital 100000 --risk conservative
 bash bin/optix.sh analyze --watchlist --capital 100000
+bash bin/optix.sh analyze <SYMBOL> --format json
+bash bin/optix.sh analyze --watchlist --format json
 ```
 
 ### Analyze with per-contract Open Interest (enables Max Pain)

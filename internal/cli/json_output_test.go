@@ -18,6 +18,10 @@ func TestAgentJSONFormatFlags(t *testing.T) {
 			v, _ := newQuoteCmd().Flags().GetString("format")
 			return v
 		},
+		"analyze": func() string {
+			v, _ := newAnalyzeCmd().Flags().GetString("format")
+			return v
+		},
 		"option-quote": func() string {
 			v, _ := newOptionQuoteCmd().Flags().GetString("format")
 			return v

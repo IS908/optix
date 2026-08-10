@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ func newAnalyzeCmd() *cobra.Command {
 	var analysisAddr string
 	var withOI bool
 	var expiry string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "analyze [symbol]",
@@ -37,19 +39,34 @@ Examples:
   optix analyze AAPL
   optix analyze AAPL --weeks=2 --capital=50000
   optix analyze AAPL --risk=conservative
-  optix analyze --watchlist --capital=100000`,
+  optix analyze --watchlist --capital=100000
+  optix analyze AAPL --format json
+  optix analyze --watchlist --format json
+
+--format json emits a single stable JSON document (or, with --watchlist, an
+object with a per-symbol "results" array) instead of the text report.
+Diagnostics and progress messages move to stderr so stdout stays valid JSON.`,
 		// We render our own errors (FormatExpiryError) and don't want cobra
 		// dumping a usage banner or duplicating the "Error:" prefix on every
 		// runtime failure.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutputFormat(format); err != nil {
+				return err
+			}
+			format = strings.ToLower(format)
+			logw := os.Stdout
+			if format == "json" {
+				logw = os.Stderr
+			}
+
 			analysisAddr = resolveAnalysisAddr(cmd, analysisAddr)
 			ctx := context.Background()
 			forecastDays := int32(weeks * 7)
 
 			if useWatchlist {
-				return runWatchlistAnalysis(ctx, forecastDays, capital, risk, analysisAddr)
+				return runWatchlistAnalysis(ctx, forecastDays, capital, risk, analysisAddr, format)
 			}
 
 			if len(args) == 0 {
@@ -66,7 +83,7 @@ Examples:
 				return fmt.Errorf("--expiry requires --with-oi")
 			}
 
-			fmt.Printf("⏳ Connecting to market data source...\n")
+			fmt.Fprintf(logw, "⏳ Connecting to market data source...\n")
 
 			// Open SQLite store for caching
 			store, err := sqlite.New(dbPath)
@@ -87,16 +104,16 @@ Examples:
 			}
 			defer b.Disconnect()
 			RegisterBrokerCleanup(b)
-			fmt.Println(b.SourceBanner())
+			fmt.Fprintln(logw, b.SourceBanner())
 
 			// Create MarketDataService with SQLite caching
 			svc := server.NewMarketDataService(b, store)
 
 			// Fetch all data for this symbol
 			if withOI {
-				fmt.Printf("📊 Fetching data for %s (with per-contract OI — this may take ~10–30s)...\n", symbol)
+				fmt.Fprintf(logw, "📊 Fetching data for %s (with per-contract OI — this may take ~10–30s)...\n", symbol)
 			} else {
-				fmt.Printf("📊 Fetching data for %s...\n", symbol)
+				fmt.Fprintf(logw, "📊 Fetching data for %s...\n", symbol)
 			}
 			stockData, err := server.FetchSymbolDataOpt(ctx, symbol, svc, server.FetchOptions{
 				WithOI: withOI,
@@ -112,7 +129,7 @@ Examples:
 			}
 
 			// Connect to Python analysis engine
-			fmt.Printf("🔬 Running analysis engine at %s...\n", analysisAddr)
+			fmt.Fprintf(logw, "🔬 Running analysis engine at %s...\n", analysisAddr)
 			analysisClient, err := analysis.NewClient(analysisAddr)
 			if err != nil {
 				return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
@@ -136,6 +153,14 @@ Examples:
 				return cliExit(fmt.Errorf("analyze: %w", err), exitGenericErr)
 			}
 
+			if format == "json" {
+				out := buildAnalyzeOutput(resp, symbol, weeks, forecastDays, b.SourceName(), expiryCompact != "")
+				if err := writeJSON(os.Stdout, out); err != nil {
+					return cliExit(fmt.Errorf("write json: %w", err), exitGenericErr)
+				}
+				return nil
+			}
+
 			// Print the report
 			printAnalysisReport(resp, symbol, weeks, expiryCompact != "")
 			return nil
@@ -149,6 +174,7 @@ Examples:
 	cmd.Flags().StringVar(&analysisAddr, "analysis-addr", defaultAnalysisAddr, "Python analysis engine gRPC address")
 	cmd.Flags().BoolVar(&withOI, "with-oi", false, "Fetch per-contract Open Interest for the nearest expiry (requires OI-capable broker; enables Max Pain). Adds ~10–30s.")
 	cmd.Flags().StringVar(&expiry, "expiry", "", "Specific option expiration YYYY-MM-DD (default: nearest); requires --with-oi")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text | json")
 
 	return cmd
 }
@@ -184,8 +210,20 @@ func maxPainExpiryAnnotation(maxPainExpiry string) string {
 	return dashed(maxPainExpiry)
 }
 
-// runWatchlistAnalysis runs full deep analysis sequentially for all watchlist symbols.
-func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float64, risk, analysisAddr string) error {
+// runWatchlistAnalysis runs full deep analysis sequentially for all watchlist
+// symbols. format must already be validated/lowercased by the caller
+// (validateOutputFormat); "json" routes all diagnostics/progress to stderr
+// and emits one stable analyzeWatchlistOutput JSON document to stdout —
+// per-symbol fetch/analyze failures become structured {symbol, error}
+// entries rather than aborting the batch. Exit-code semantics are unchanged
+// from text mode: see watchlistAnalysisExit, called identically regardless
+// of format.
+func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float64, risk, analysisAddr, format string) error {
+	logw := os.Stdout
+	if format == "json" {
+		logw = os.Stderr
+	}
+
 	// Open SQLite store
 	store, err := sqlite.New(dbPath)
 	if err != nil {
@@ -199,14 +237,24 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	if err != nil {
 		return cliExit(fmt.Errorf("get watchlist: %w", err), exitSQLiteErr)
 	}
+
+	weeks := int(forecastDays / 7)
+
 	if len(items) == 0 {
+		if format == "json" {
+			return writeJSON(os.Stdout, analyzeWatchlistOutput{
+				Weeks:        weeks,
+				ForecastDays: forecastDays,
+				GeneratedAt:  time.Now().UTC(),
+				Results:      []analyzeWatchlistEntry{},
+			})
+		}
 		fmt.Println("Watchlist is empty. Use 'optix watch add AAPL TSLA' to add symbols.")
 		return nil
 	}
 
-	weeks := int(forecastDays / 7)
-	fmt.Printf("📋 Watchlist Deep Analysis — %d symbols\n", len(items))
-	fmt.Printf("⏳ Connecting to market data source...\n")
+	fmt.Fprintf(logw, "📋 Watchlist Deep Analysis — %d symbols\n", len(items))
+	fmt.Fprintf(logw, "⏳ Connecting to market data source...\n")
 
 	// Connect to broker (IBKR with yfinance fallback)
 	b := factory.NewWithFallback(ibkr.Config{
@@ -219,12 +267,12 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	}
 	defer b.Disconnect()
 	RegisterBrokerCleanup(b)
-	fmt.Println(b.SourceBanner())
+	fmt.Fprintln(logw, b.SourceBanner())
 
 	svc := server.NewMarketDataService(b, store)
 
 	// Connect to Python analysis engine once
-	fmt.Printf("🔬 Analysis engine at %s\n", analysisAddr)
+	fmt.Fprintf(logw, "🔬 Analysis engine at %s\n", analysisAddr)
 	analysisClient, err := analysis.NewClient(analysisAddr)
 	if err != nil {
 		return cliExit(fmt.Errorf("connect to analysis engine: %w", err), exitGenericErr)
@@ -235,16 +283,18 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 	var successes int
 	var firstFetchErr error
 	var firstAnalyzeErr error
+	entries := make([]analyzeWatchlistEntry, 0, len(items))
 	for i, item := range items {
 		sym := strings.ToUpper(item.Symbol)
-		fmt.Printf("\n[%d/%d] Analyzing %s...\n", i+1, len(items), sym)
+		fmt.Fprintf(logw, "\n[%d/%d] Analyzing %s...\n", i+1, len(items), sym)
 
 		stockData, fetchErr := fetchSymbolData(ctx, sym, svc)
 		if fetchErr != nil {
 			if firstFetchErr == nil {
 				firstFetchErr = fetchErr
 			}
-			fmt.Printf("  ⚠️  %s: fetch error: %v — skipping\n", sym, fetchErr)
+			fmt.Fprintf(logw, "  ⚠️  %s: fetch error: %v — skipping\n", sym, fetchErr)
+			entries = append(entries, analyzeWatchlistEntry{Symbol: sym, Error: fmt.Sprintf("fetch error: %v", fetchErr)})
 			continue
 		}
 
@@ -264,19 +314,39 @@ func runWatchlistAnalysis(ctx context.Context, forecastDays int32, capital float
 			if firstAnalyzeErr == nil {
 				firstAnalyzeErr = analyzeErr
 			}
-			fmt.Printf("  ⚠️  %s: analysis error: %v — skipping\n", sym, analyzeErr)
+			fmt.Fprintf(logw, "  ⚠️  %s: analysis error: %v — skipping\n", sym, analyzeErr)
+			entries = append(entries, analyzeWatchlistEntry{Symbol: sym, Error: fmt.Sprintf("analysis error: %v", analyzeErr)})
 			continue
 		}
 
-		printAnalysisReport(resp, sym, weeks, false)
+		if format == "json" {
+			entries = append(entries, analyzeWatchlistEntry{
+				Symbol:   sym,
+				Analysis: buildAnalyzeOutput(resp, sym, weeks, forecastDays, b.SourceName(), false),
+			})
+		} else {
+			printAnalysisReport(resp, sym, weeks, false)
+		}
 		successes++
+	}
+
+	if format == "json" {
+		if err := writeJSON(os.Stdout, analyzeWatchlistOutput{
+			Weeks:        weeks,
+			ForecastDays: forecastDays,
+			Source:       b.SourceName(),
+			GeneratedAt:  time.Now().UTC(),
+			Results:      entries,
+		}); err != nil {
+			return cliExit(fmt.Errorf("write json: %w", err), exitGenericErr)
+		}
 	}
 
 	if err := watchlistAnalysisExit(successes, firstFetchErr, firstAnalyzeErr); err != nil {
 		return err
 	}
 
-	fmt.Printf("\n✅ Watchlist analysis complete (%d symbols)\n", len(items))
+	fmt.Fprintf(logw, "\n✅ Watchlist analysis complete (%d symbols)\n", len(items))
 	return nil
 }
 

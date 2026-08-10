@@ -310,6 +310,79 @@ func TestBuildAnalyzeOutputMaxPainUnavailable(t *testing.T) {
 	}
 }
 
+// TestBuildAnalyzeOutputMaxPainExpiryOmittedWhenEmpty covers the case where
+// MaxPain > 0 (available) but the engine returned no expiry string. The
+// text report's maxPainExpiryAnnotation prints the sentinel "unknown" so
+// its line stays grammatical, but that sentinel is not a valid date and a
+// date-parsing JSON consumer would choke on it — so the JSON contract must
+// omit max_pain_expiry entirely in that state rather than reuse the
+// sentinel, while still reporting max_pain_available=true and the price.
+func TestBuildAnalyzeOutputMaxPainExpiryOmittedWhenEmpty(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxPainExpiry string
+		wantExpiryKey bool
+		wantExpiryVal string
+	}{
+		{
+			name:          "expiry empty",
+			maxPainExpiry: "",
+			wantExpiryKey: false,
+		},
+		{
+			name:          "expiry present",
+			maxPainExpiry: "2026-06-19",
+			wantExpiryKey: true,
+			wantExpiryVal: "2026-06-19",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &analysisv1.AnalyzeStockResponse{
+				Options: &analysisv1.OptionsAnalysis{
+					MaxPain:       200,
+					MaxPainExpiry: tc.maxPainExpiry,
+				},
+			}
+			out := buildAnalyzeOutput(resp, "AAPL", 2, 14, "ibkr", false)
+
+			if out.Options == nil || !out.Options.MaxPainAvailable {
+				t.Fatalf("expected max_pain_available=true, got %+v", out.Options)
+			}
+			if out.Options.MaxPain != 200 {
+				t.Fatalf("expected max_pain=200 to survive regardless of expiry, got %v", out.Options.MaxPain)
+			}
+			if got := out.Options.MaxPainExpiry; got != tc.wantExpiryVal {
+				t.Fatalf("MaxPainExpiry = %q, want %q", got, tc.wantExpiryVal)
+			}
+
+			var buf bytes.Buffer
+			if err := writeJSON(&buf, out); err != nil {
+				t.Fatalf("writeJSON: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			options, ok := got["options"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected options object, got %v", got["options"])
+			}
+			if options["max_pain"] != float64(200) {
+				t.Fatalf("expected max_pain=200 in JSON, got %v", options["max_pain"])
+			}
+			val, present := options["max_pain_expiry"]
+			if present != tc.wantExpiryKey {
+				t.Fatalf("max_pain_expiry present = %v, want %v (value: %v)", present, tc.wantExpiryKey, val)
+			}
+			if tc.wantExpiryKey && val != tc.wantExpiryVal {
+				t.Fatalf("max_pain_expiry = %v, want %v", val, tc.wantExpiryVal)
+			}
+		})
+	}
+}
+
 // TestAnalyzeWatchlistOutputShape covers the --watchlist --format json
 // container: a stable object with a per-symbol "results" array, where a
 // failed symbol appears as a structured {symbol, error} entry (no nested

@@ -688,7 +688,15 @@ func buildAnalyzeOutput(resp *analysisv1.AnalyzeStockResponse, symbol string, we
 		if o.MaxPain > 0 {
 			opts.MaxPainAvailable = true
 			opts.MaxPain = o.MaxPain
-			opts.MaxPainExpiry = maxPainExpiryAnnotation(o.MaxPainExpiry)
+			// Unlike the text report's maxPainExpiryAnnotation (which prints
+			// the sentinel "unknown" so the printed line stays grammatical),
+			// the JSON contract omits max_pain_expiry entirely when the
+			// engine didn't return one — a date-parsing consumer would choke
+			// on a non-date sentinel string, and omitempty already gives
+			// callers a clean "absent" signal.
+			if o.MaxPainExpiry != "" {
+				opts.MaxPainExpiry = dashed(o.MaxPainExpiry)
+			}
 			opts.ExpiryRequested = userRequestedExpiry
 		} else {
 			out.Warnings = append(out.Warnings, "max_pain_unavailable")

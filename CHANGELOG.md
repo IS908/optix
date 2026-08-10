@@ -12,6 +12,8 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-08-10
+
 ### Added
 
 - **`optix analyze --format json`** (#204): `optix analyze <SYMBOL>` and
@@ -1936,7 +1938,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.5...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.6...HEAD
+[0.15.6]: https://github.com/IS908/optix/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/IS908/optix/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/IS908/optix/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/IS908/optix/compare/v0.15.2...v0.15.3

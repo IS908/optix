@@ -94,7 +94,7 @@ func TestWatchlistReadFailuresUseSQLiteExitCode(t *testing.T) {
 		{
 			name: "analyze watchlist",
 			run: func() error {
-				return runWatchlistAnalysis(context.Background(), 14, 50000, "moderate", "localhost:0")
+				return runWatchlistAnalysis(context.Background(), 14, 50000, "moderate", "localhost:0", "text")
 			},
 		},
 		{

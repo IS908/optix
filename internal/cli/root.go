@@ -193,7 +193,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB Gateway/TWS host")
 	root.PersistentFlags().StringVar(&ibPortRaw, "ib-port", "gateway", "IB port: gateway (4001), tws (7496), or number")
-	root.PersistentFlags().StringVar(&pythonBin, "python", "python3", "Python interpreter for yfinance fallback")
+	root.PersistentFlags().StringVar(&pythonBin, "python", defaultPython(), "Python interpreter for yfinance (defaults to project venv when available)")
 
 	root.AddCommand(newQuoteCmd())
 	root.AddCommand(newOptionQuoteCmd())

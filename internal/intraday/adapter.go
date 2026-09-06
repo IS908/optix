@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -110,7 +111,46 @@ func (s *BrokerSource) Snapshot(ctx context.Context, symbols []string, timeframe
 	defer func() { _ = b.Disconnect() }()
 	source = normalizeSourceName(source)
 	startDate := lookbackStartDate(s.now(), lookback)
-	return quotesFromBroker(ctx, b, source, symbols), barsFromBroker(ctx, b, source, symbols, timeframe, startDate), nil
+	// Interleave independent quote/bar jobs so a slow quote cannot consume
+	// the whole snapshot deadline before any historical request starts.
+	quotes := map[string]Quote{}
+	bars := map[string][]model.OHLCV{}
+	jobs := make(chan func(), len(symbols)*2)
+	var mu sync.Mutex
+	for _, symbol := range symbols {
+		jobs <- func() {
+			got := quotesFromBroker(ctx, b, source, []string{symbol})
+			mu.Lock()
+			defer mu.Unlock()
+			for id, q := range got {
+				quotes[id] = q
+			}
+		}
+		jobs <- func() {
+			got := barsFromBroker(ctx, b, source, []string{symbol}, timeframe, startDate)
+			mu.Lock()
+			defer mu.Unlock()
+			for id, rows := range got {
+				bars[id] = rows
+			}
+		}
+	}
+	close(jobs)
+	var wg sync.WaitGroup
+	for range min(8, len(symbols)*2) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				job()
+			}
+		}()
+	}
+	wg.Wait()
+	return quotes, bars, nil
 }
 
 // lookbackStartDate derives a broker-compatible startDate (YYYYMMDD, NY

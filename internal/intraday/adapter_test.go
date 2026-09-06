@@ -2,6 +2,7 @@ package intraday
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -9,6 +10,42 @@ import (
 	"github.com/IS908/optix/internal/intelshared"
 	"github.com/IS908/optix/pkg/model"
 )
+
+type slowQuoteBroker struct {
+	fakeBroker
+	active atomic.Int32
+	peak   atomic.Int32
+}
+
+func (b *slowQuoteBroker) GetQuote(ctx context.Context, symbol string) (*model.StockQuote, error) {
+	n := b.active.Add(1)
+	defer b.active.Add(-1)
+	for old := b.peak.Load(); n > old && !b.peak.CompareAndSwap(old, n); old = b.peak.Load() {
+	}
+	if symbol == "SLOW" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &model.StockQuote{Symbol: symbol, Last: 100}, nil
+}
+
+func (b *slowQuoteBroker) GetHistoricalBars(context.Context, string, string, string, string) ([]model.OHLCV, error) {
+	return []model.OHLCV{{Open: 99, Close: 100, Volume: 10}}, nil
+}
+
+func TestSnapshotSlowQuoteDoesNotStarveBarsOrOtherSymbols(t *testing.T) {
+	b := &slowQuoteBroker{}
+	src := NewBrokerSource(b, "IBKR", "realtime")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	quotes, bars, err := src.Snapshot(ctx, []string{"SLOW", "FAST"}, "5 mins", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quotes["FAST"].Last != 100 || len(bars["FAST"]) != 1 || len(bars["SLOW"]) != 1 {
+		t.Fatalf("slow quote starved usable snapshot: quotes=%v bars=%v", quotes, bars)
+	}
+}
 
 type fakeBroker struct {
 	source string

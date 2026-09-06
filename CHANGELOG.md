@@ -12,6 +12,31 @@ above it.
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-09-06
+
+### Fixed
+
+- Prefer the installed runtime or source checkout's Python virtual environment
+  for direct CLI/server startup, while preserving explicit `--python` overrides
+  (#206, #214).
+- Exclude unavailable Put/Call data from premarket sentiment scoring; show
+  unavailable when all inputs are missing instead of reporting a bullish signal
+  (#207).
+- Prevent canceled requests from poisoning the shock market-data cache; retain
+  valid cached partial results and let healthy singleflight waiters recover from
+  a canceled automatic-view probe (#208).
+- Fix four Ruff errors in portfolio-aware scanner tests (#209).
+- Fetch intraday quotes and bars with bounded concurrency so slow quotes do not
+  prevent historical requests from starting (#210).
+- Separate base-quote and optional broker-overlay timeouts, retain partial
+  fallback quotes, and reserve time for later option-chain batches (#211, #212).
+
+### Known limitations
+
+- Full trading-session acceptance for intraday cards, IBKR depth and option
+  stress remains tracked in #210–#213. These changes improve request isolation
+  but do not establish complete live-data availability or subscription coverage.
+
 ## [0.15.6] - 2026-08-10
 
 ### Added
@@ -1938,7 +1963,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.6...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.15.7...HEAD
+[0.15.7]: https://github.com/IS908/optix/compare/v0.15.6...v0.15.7
 [0.15.6]: https://github.com/IS908/optix/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/IS908/optix/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/IS908/optix/compare/v0.15.3...v0.15.4

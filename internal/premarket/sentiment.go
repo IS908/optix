@@ -10,11 +10,14 @@ func vixTermPremium(vix, vix3m float64) float64 {
 }
 
 // regimeLabel 粗 regime(固定经验阈值,降级):高 P/C + backwardation=防御,低 P/C + contango=偏多。
-func regimeLabel(pcOI, termPremium float64) string {
+func regimeLabel(pcOI, termPremium float64, pcAvailable bool) string {
+	if !pcAvailable && termPremium <= 0 {
+		return "不可用"
+	}
 	defensive := 0
-	if pcOI >= 1.15 { // 看跌持仓偏多 → 避险
+	if pcAvailable && pcOI >= 1.15 { // 看跌持仓偏多 → 避险
 		defensive++
-	} else if pcOI <= 0.85 {
+	} else if pcAvailable && pcOI <= 0.85 {
 		defensive--
 	}
 	if termPremium > 0 && termPremium < 1.0 { // backwardation → 承压

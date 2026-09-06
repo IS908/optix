@@ -238,7 +238,7 @@ func (s *Service) Sentiment(ctx context.Context) (SentimentDTO, error) {
 		out.PCAvailable = true
 		out.PCOI, out.PCVol = pc.PCOI, pc.PCVol
 	}
-	out.Regime = regimeLabel(out.PCOI, out.VIXTermPremium)
+	out.Regime = regimeLabel(out.PCOI, out.VIXTermPremium, out.PCAvailable)
 	return out, nil
 }
 

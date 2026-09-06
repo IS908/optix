@@ -245,3 +245,29 @@ func TestSentimentWarnsMissingVixLegs(t *testing.T) {
 		t.Fatal("expected missing VIX3M warning")
 	}
 }
+
+func TestSentimentMissingDataDoesNotCreateBullishSignal(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		quotes map[string]marketdata.Quote
+		pc     marketdata.PCRatio
+		pcErr  error
+		want   string
+	}{
+		{"all missing", nil, marketdata.PCRatio{}, errors.New("unavailable"), "不可用"},
+		{"missing PC with backwardation", map[string]marketdata.Quote{"VIX": {Price: 25}, "VIX3M": {Price: 20}}, marketdata.PCRatio{}, errors.New("unavailable"), "防御"},
+		{"missing PC with flat term", map[string]marketdata.Quote{"VIX": {Price: 20}, "VIX3M": {Price: 20}}, marketdata.PCRatio{}, errors.New("unavailable"), "中性"},
+		{"valid zero PC", nil, marketdata.PCRatio{PCOI: 0}, nil, "偏多"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := newSvc(t, &fakeSource{quotes: tc.quotes, pc: tc.pc, pcErr: tc.pcErr}, time.Now())
+			got, err := svc.Sentiment(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Regime != tc.want {
+				t.Fatalf("regime = %q, want %q", got.Regime, tc.want)
+			}
+		})
+	}
+}

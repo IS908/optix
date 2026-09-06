@@ -81,39 +81,6 @@ PY
     chmod +x "$fakebin/python3.14"
 }
 
-write_fake_host_python_with_working_pip() {
-    local fakebin="$1"
-    cat >"$fakebin/python3.14" <<'PY'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ "${1:-}" == "--version" ]]; then
-    echo "Python 3.14.0"
-    exit 0
-fi
-
-if [[ "${1:-}" == "-c" ]]; then
-    case "${2:-}" in
-        *sys.version_info*) exit 0 ;;
-        *numpy*) exit 0 ;;
-        *optix_engine*) test -f "${FAKE_OPTIX_ENGINE_MARKER:?}" ;;
-        *) exit 0 ;;
-    esac
-fi
-
-if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
-    printf '%s\n' "$*" >"${FAKE_OPTIX_ENGINE_PIP_ARGS:?}"
-    case "$*" in
-        *" -e "*) touch "${FAKE_OPTIX_ENGINE_MARKER:?}" ;;
-    esac
-    exit 0
-fi
-
-exit 0
-PY
-    chmod +x "$fakebin/python3.14"
-}
-
 test_build_release_includes_configs() {
     local out="$TMPDIR/dist"
     local version="v0.0.0-test"
@@ -151,10 +118,45 @@ test_release_installer_copies_configs() {
 
     HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null
 
+    test -L "$home/.agents/skills/optix/.runtime" || fail "runtime must be a versioned symlink"
     test -f "$home/.agents/skills/optix/.runtime/configs/portfolio.yaml" ||
         fail "installer did not copy portfolio.yaml into .runtime/configs"
     test -f "$home/.agents/skills/optix/.runtime/configs/sectors.json" ||
         fail "installer did not copy sectors.json into .runtime/configs"
+    local first second external="$home/user-data/optix.db"
+    first="$(cd "$home/.agents/skills/optix/.runtime" && pwd -P)"
+    HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null
+    second="$(cd "$home/.agents/skills/optix/.runtime" && pwd -P)"
+    [[ "$first" != "$second" && -d "$first" ]] || fail "upgrade must retain previous runtime"
+    HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --rollback >/dev/null
+    [[ "$(cd "$home/.agents/skills/optix/.runtime" && pwd -P)" == "$first" ]] || fail "rollback failed"
+    mkdir -p "$first/data" "$(dirname "$external")"
+    printf 'legacy records' > "$first/data/optix.db"
+    if HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null 2>&1; then
+        fail "unmigrated runtime data allowed a layout switch"
+    fi
+    [[ "$(cd "$home/.agents/skills/optix/.runtime" && pwd -P)" == "$first" ]] || fail "failed install switched runtime"
+    cp "$first/data/optix.db" "$external"
+    HOME="$home" OPTIX_DB_PATH="$external" PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null
+    cmp "$external" "$first/data/optix.db" || fail "upgrade changed legacy/user data"
+    grep -qx "$first/data/optix.db" "$home/.agents/skills/optix/.runtime/legacy-databases" || fail "retained legacy location not recorded"
+    rm "$first/STORAGE_LAYOUT_V1"
+    if HOME="$home" OPTIX_DB_PATH="$external" PATH="$fakebin:$PATH" "$bundle/install.sh" --rollback >/dev/null 2>&1; then
+        fail "unsafe legacy rollback accepted"
+    fi
+    mv "$first/data/optix.db" "$first/data/journal.sqlite"
+    mkdir -p "$home/.claude/skills/optix/data"
+    printf 'legacy agent database' > "$home/.claude/skills/optix/data/journal.sqlite"
+    if HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --uninstall --agent claude >/dev/null 2>&1; then
+        fail "uninstall removed real legacy agent directory"
+    fi
+    test -f "$home/.claude/skills/optix/data/journal.sqlite" || fail "legacy agent data lost"
+
+    if HOME="$home" PATH="$fakebin:$PATH" "$bundle/install.sh" --uninstall --purge --agent generic >/dev/null 2>&1; then
+        fail "purge deleted retained legacy data"
+    fi
+    test -f "$external" && test -f "$first/data/journal.sqlite" || fail "purge lost data"
+
 }
 
 test_release_installer_fails_when_optix_engine_install_fails() {
@@ -183,35 +185,56 @@ OPTIX
     fi
 }
 
-test_release_installer_accepts_host_python_when_engine_imports() {
-    local bundle="$TMPDIR/good-host-python-bundle"
-    local fakebin="$TMPDIR/good-host-python-fakebin"
-    local home="$TMPDIR/good-host-python-home"
-    local marker="$TMPDIR/good-host-python-installed"
-    local pip_args="$TMPDIR/good-host-python-pip-args"
+test_source_install_is_independent_and_dev_explicit() {
+    local source="$TMPDIR/source" fakebin="$TMPDIR/source-tools" home="$TMPDIR/source-home"
+    mkdir -p "$source/.git" "$source/bin" "$source/python/.venv/bin" "$source/python/src" "$source/skills/commands/optix" "$source/configs" "$fakebin" "$home"
+    touch "$source/Makefile"
+    cp "$ROOT/skills/commands/optix/"{install.sh,SKILL.md,skill-wrapper.sh,optix.sh} "$source/skills/commands/optix/"
+    cp "$ROOT/python/pyproject.toml" "$source/python/pyproject.toml"
+    printf '#!/bin/sh\necho fixture-version\n' > "$source/bin/optix"
+    chmod +x "$source/bin/optix"
+    write_fake_python "$fakebin"
+    ln -s "$fakebin/python3.14" "$source/python/.venv/bin/python"
+    printf '#!/bin/sh\necho fixture-version\n' > "$fakebin/git"
+    cat > "$fakebin/go" <<'GO'
+#!/bin/bash
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == -o ]]; then cp bin/optix "$2"; exit; fi
+    shift
+done
+exit 1
+GO
+    chmod +x "$fakebin/go" "$fakebin/git"
+    HOME="$home" PATH="$fakebin:$PATH" "$source/skills/commands/optix/install.sh" --agent generic >/dev/null
+    local independent
+    independent="$(readlink "$home/.agents/skills/optix/.runtime")"
+    [[ "$independent" != "$source" ]] || fail "source install silently selected dev mode"
+    mv "$source" "$source-moved"
+    HOME="$home" "$home/.agents/skills/optix/bin/optix.sh" --version | grep -q fixture-version || fail "moving source broke independent install"
+    HOME="$home" PATH="$fakebin:$PATH" "$source-moved/skills/commands/optix/install.sh" --dev --agent generic >/dev/null
+    [[ "$(readlink "$home/.agents/skills/optix/.runtime")" == "$source-moved" ]] || fail "explicit dev mode ignored"
+    HOME="$home" PATH="$fakebin:$PATH" "$source-moved/skills/commands/optix/install.sh" --agent generic >/dev/null
+    [[ "$(readlink "$home/.agents/skills/optix/.runtime")" != "$source-moved" ]] || fail "dev to standalone switch failed"
+}
 
-    mkdir -p "$bundle/bin" "$bundle/python/src" "$bundle/skills/commands/optix" "$bundle/configs" "$fakebin" "$home"
-    cp "$ROOT/skills/commands/optix/install.sh" "$bundle/install.sh"
-    cp "$ROOT/skills/commands/optix/SKILL.md" "$bundle/SKILL.md"
-    cp "$ROOT/skills/commands/optix/skill-wrapper.sh" "$bundle/skill-wrapper.sh"
-    cp "$ROOT/skills/commands/optix/optix.sh" "$bundle/skills/commands/optix/optix.sh"
-    cp "$ROOT/python/pyproject.toml" "$bundle/python/pyproject.toml"
-    cp "$ROOT/configs/portfolio.yaml" "$bundle/configs/portfolio.yaml"
-    cp "$ROOT/configs/sectors.json" "$bundle/configs/sectors.json"
-    cat >"$bundle/bin/optix" <<'OPTIX'
-#!/usr/bin/env bash
-exit 0
-OPTIX
-    chmod +x "$bundle/install.sh" "$bundle/skill-wrapper.sh" "$bundle/skills/commands/optix/optix.sh" "$bundle/bin/optix"
-
-    write_fake_host_python_with_working_pip "$fakebin"
-
-    HOME="$home" PATH="$fakebin:$PATH" FAKE_OPTIX_ENGINE_MARKER="$marker" FAKE_OPTIX_ENGINE_PIP_ARGS="$pip_args" \
-        "$bundle/install.sh" --agent generic >/dev/null
-    test -L "$home/.agents/skills/optix/.runtime/python/.venv/bin/python" ||
-        fail "host-Python path did not create thin shim python symlink"
-    test -f "$marker" || fail "host-Python path did not install optix_engine"
-    grep -q -- "-e" "$pip_args" || fail "host-Python path did not invoke editable optix_engine install"
+test_real_cli_migration_and_fresh_environment() {
+    local runtime="$TMPDIR/real-runtime" home="$TMPDIR/real-home" old="$TMPDIR/old-data.db" target="$TMPDIR/external-data.db"
+    local name="optix-skill-v0.0.0-test-$(go env GOOS)-$(go env GOARCH)"
+    mkdir -p "$runtime/bin" "$home"
+    tar -xzf "$TMPDIR/dist/$name.tar.gz" -C "$TMPDIR" "$name/bin/optix"
+    cp "$TMPDIR/$name/bin/optix" "$runtime/bin/optix"
+    local cli="$runtime/bin/optix"
+    "$cli" --db "$old" watch add AAPL >/dev/null
+    "$cli" data migrate --from "$old" --to "$target" > "$TMPDIR/migration.json"
+    printf '%s\n' "$old" > "$runtime/legacy-databases"
+    HOME="$home" XDG_DATA_HOME="$home/user-data" OPTIX_DB_PATH= "$cli" --config '' data status > "$TMPDIR/status.json"
+    grep -q 'legacy database' "$TMPDIR/status.json" || fail "fresh shell did not report retained database"
+    if HOME="$home" XDG_DATA_HOME="$home/user-data" OPTIX_DB_PATH= "$cli" --config '' watch list >/dev/null 2>&1; then
+        fail "fresh shell silently selected empty database"
+    fi
+    test ! -e "$home/user-data/optix/optix.db" || fail "fresh shell created empty database"
+    HOME="$home" OPTIX_DB_PATH="$target" "$cli" --config '' watch list | grep -q AAPL || fail "explicit migrated DB lost records"
+    if "$cli" data migrate --from "$old" --to "$target" >/dev/null 2>&1; then fail "repeat migration overwrote target"; fi
 }
 
 test_skill_wrapper_adds_analysis_addr_for_python_commands() {
@@ -308,10 +331,11 @@ EOF
     grep -qx -- "premarket" "$argsfile" || fail "premarket command was not forwarded"
 }
 
+test_source_install_is_independent_and_dev_explicit
 test_build_release_includes_configs
+test_real_cli_migration_and_fresh_environment
 test_release_installer_copies_configs
 test_release_installer_fails_when_optix_engine_install_fails
-test_release_installer_accepts_host_python_when_engine_imports
 test_skill_wrapper_adds_analysis_addr_for_python_commands
 test_skill_wrapper_routes_market_intel_ibkr_probe
 

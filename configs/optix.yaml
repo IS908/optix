@@ -18,7 +18,7 @@ grpc:
 
 # SQLite database
 database:
-  path: "./data/optix.db"
+  path: ""  # user data directory; --db > OPTIX_DB_PATH > this setting
 
 # Analysis defaults (reserved; use command flags today)
 analysis:

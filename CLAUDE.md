@@ -259,16 +259,15 @@ All Python commands **must** use `python/.venv/bin/python` or activate the venv.
 
 ### Database Location
 
-Default: `./data/optix.db` (relative to CWD). Override with `--db` flag. The SQLite store auto-creates the directory if missing.
+Database priority: `--db` → `OPTIX_DB_PATH` → YAML `database.path` → platform user data directory (macOS Application Support, Linux/XDG data home). Legacy runtime/CWD databases block silent default selection. Use `optix data status` and explicit `data migrate`; see `docs/storage-and-upgrades.md`. Tests must use isolated `--db` paths.
 
 ### Agent Skill Install Pattern
 
-`skills/commands/optix/install.sh` installs the skill to a single canonical location (`~/.agents/skills/optix/`) and creates per-agent symlinks at `~/.<agent>/skills/optix`. Auto-detects two modes:
-
-- **dev mode** (source checkout, `.git` + `Makefile` present): `.runtime/` becomes a symlink to the source tree. `make build` edits take effect immediately.
-- **release mode** (extracted tarball, future): `.runtime/` is a real directory with bundled binary + on-machine Python venv.
-
-Source tree and `.runtime/` share the same internal layout (`bin/`, `python/`, `data/`, `skills/commands/optix/`), so the wrapper (`skill-wrapper.sh`) has no branching logic — runtime resolution is a single chain: `$OPTIX_HOME` → `<skill>/.runtime` → `command -v optix`.
+`skills/commands/optix/install.sh` installs the canonical skill at `~/.agents/skills/optix/`.
+Default installs prepare independent versioned runtimes under `.runtimes/` and atomically switch `.runtime`.
+Each runtime owns its Python venv. Explicit `--dev` links a built source checkout; `--rollback` selects the previous compatible standalone runtime.
+Persistent databases live outside runtime directories. Old data and incompatible rollback targets are guarded; consult `docs/storage-and-upgrades.md` before changing installation behavior.
+The wrapper resolves `$OPTIX_HOME` → `<skill>/.runtime` → `command -v optix`.
 
 When changing skill behavior, edit `skills/commands/optix/SKILL.md` (descriptor) and `optix.sh` (orchestration: Python server lifecycle, IBKR probe, port resolution). The skill wrapper itself (`skill-wrapper.sh`) should rarely change — it's just a thin redirector.
 

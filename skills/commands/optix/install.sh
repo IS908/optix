@@ -2,29 +2,10 @@
 #
 # install.sh — install the optix skill for one or more agents.
 #
-# Modes (auto-detected):
-#   • dev      — running from a source-tree checkout (.git present + Makefile)
-#                .runtime/ is a symlink to the source tree, so edits + rebuild
-#                take effect immediately. No file copying.
-#
-#   • release  — running from an extracted release tarball
-#                .runtime/ is a real directory: copies bin/python/ into the
-#                canonical skill dir and creates a Python venv on the user's
-#                machine.
-#
-# Layout after install (lark-* convention):
-#
-#   ~/.agents/skills/optix/                  ← canonical, install once
-#   ├── SKILL.md
-#   ├── bin/optix.sh                          ← thin wrapper (skill-wrapper.sh)
-#   └── .runtime                              ← symlink (dev) OR real dir (release)
-#       ├── bin/optix
-#       ├── configs/{portfolio.yaml,sectors.json}
-#       ├── python/{src,pyproject.toml,.venv}
-#       ├── data/optix.db
-#       └── skills/commands/optix/optix.sh    ← orchestration (Python server, IBKR probe)
-#
-#   ~/.<agent>/skills/optix → ../../.agents/skills/optix    ← per-agent symlink
+# Default: independent runtime under .runtimes/, with atomic .runtime pointer.
+# --dev opts into a source symlink. --rollback selects the previous runtime.
+# Persistent data lives outside the skill; legacy runtime databases are guarded.
+# Python environments remain at their original version directory for rollback.
 
 set -euo pipefail
 
@@ -34,6 +15,8 @@ CANONICAL_DIR="$HOME/.agents/skills/optix"
 AGENT=""
 UNINSTALL=false
 PURGE=false
+DEV=false
+ROLLBACK=false
 
 # MODE/PROJECT_ROOT are detected lazily — only required when installing.
 # For --uninstall we operate purely on $CANONICAL_DIR and per-agent symlinks,
@@ -45,7 +28,7 @@ PROJECT_ROOT=""
 
 detect_mode() {
     if [[ -f "$SCRIPT_DIR/../../../Makefile" && -d "$SCRIPT_DIR/../../../.git" ]]; then
-        MODE="dev"
+        MODE="source"
         PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
     elif [[ -f "$SCRIPT_DIR/bin/optix" && -f "$SCRIPT_DIR/SKILL.md" ]]; then
         # Use -f (not -x): tar may strip the executable bit during extraction.
@@ -63,11 +46,13 @@ detect_mode() {
 
 usage() {
     cat <<EOF
-Usage: install.sh [--agent <list>] [--uninstall] [--purge]
+Usage: install.sh [--agent <list>] [--dev | --rollback] [--uninstall] [--purge]
 
 Options:
   --agent <list>   Comma-separated agents (claude, openclaw, hermes, generic).
                    If omitted, auto-detects which agents are configured.
+  --dev            Explicitly link a source checkout (default: independent runtime).
+  --rollback       Swap to the previous installed runtime.
   --uninstall      Remove per-agent symlinks. Keeps canonical skill bundle.
   --purge          With --uninstall: also remove ~/.agents/skills/optix.
 
@@ -85,6 +70,8 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --agent) AGENT="$2"; shift 2 ;;
+        --dev) DEV=true; shift ;;
+        --rollback) ROLLBACK=true; shift ;;
         --uninstall) UNINSTALL=true; shift ;;
         --purge) PURGE=true; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -121,65 +108,103 @@ detect_agents() {
 # In release mode it's a real directory with bin/, python/, data/ copied in,
 # plus a Python venv created on the user's machine.
 # ---------------------------------------------------------------------------
+# Atomic symlink replacement differs between BSD and GNU mv.
+replace_link() {
+    local value="$1" dest="$2" next="${2}.next.$$"
+    ln -s "$value" "$next"
+    if [[ "$(uname -s)" == Darwin ]]; then mv -fh "$next" "$dest"; else mv -fT "$next" "$dest"; fi
+}
+
+check_legacy_data() {
+    local old="${1:-$CANONICAL_DIR/.runtime}"
+    if [[ -e "$old/data/optix.db" || -e "$old/data/optix.db-wal" ]]; then
+        # Do not infer successful migration from the presence of a second DB.
+        # Require the operator to select their migrated, external data path.
+        if [[ -z "${OPTIX_DB_PATH:-}" || ! -f "$OPTIX_DB_PATH" || "$OPTIX_DB_PATH" != /* ]]; then
+            echo "ERROR: legacy runtime data exists. Migrate it first and set absolute OPTIX_DB_PATH to the verified external database." >&2
+            exit 1
+        fi
+        local selected oldreal canonicalreal
+        selected="$(cd "$(dirname "$OPTIX_DB_PATH")" && pwd -P)/$(basename "$OPTIX_DB_PATH")"
+        oldreal="$(cd "$old" && pwd -P)"
+        canonicalreal="$(cd "$CANONICAL_DIR" && pwd -P)"
+        case "$selected" in "$oldreal"/*|"$canonicalreal"/*) echo "ERROR: selected database must be outside the old runtime and skill directory" >&2; exit 1;; esac
+        [[ -L "$OPTIX_DB_PATH" ]] && { echo "ERROR: use the physical migrated database path" >&2; exit 1; }
+    fi
+    return 0
+}
+
+capture_config_database() {
+    local old="$1" target="$2"
+    if [[ -f "$old/configs/optix.yaml" ]]; then
+        # Resolve existing YAML with the new CLI before changing directories.
+        # This records custom database filenames/locations, not just optix.db.
+        (cd "$old" && OPTIX_DB_PATH= "$target/bin/optix" --config "$old/configs/optix.yaml" data status) > "$target/.legacy-status.json"
+        "$target/python/.venv/bin/python" -c 'import json,sys; print(json.load(open(sys.argv[1]))["database"]["path"])' "$target/.legacy-status.json" >> "$target/legacy-databases"
+        rm "$target/.legacy-status.json"
+    fi
+}
+
+activate_runtime() {
+    local target="$1" old=""
+    if [[ -L "$CANONICAL_DIR/.runtime" ]]; then
+        old="$(cd "$CANONICAL_DIR/.runtime" && pwd -P)"
+    elif [[ -d "$CANONICAL_DIR/.runtime" ]]; then
+        # Preserve the complete legacy bundle; never rm -rf user runtime data.
+        old="$CANONICAL_DIR/.runtimes/legacy-$(date +%s)-$$"
+        mv "$CANONICAL_DIR/.runtime" "$old"
+    fi
+    if [[ -n "$old" ]]; then replace_link "$old" "$CANONICAL_DIR/.previous-runtime"; fi
+    if [[ -n "$old" && -f "$target/STORAGE_LAYOUT_V1" ]]; then
+        # Carry old locations forward so a fresh shell cannot silently create
+        # an empty default DB after the install-time environment disappears.
+        capture_config_database "$old" "$target"
+        local records
+        records="$(mktemp "$target/.legacy-XXXXXXXX")"
+        { [[ ! -f "$target/legacy-databases" ]] || cat "$target/legacy-databases"; [[ ! -f "$old/legacy-databases" ]] || cat "$old/legacy-databases"; printf '%s\n' "$old/data/optix.db"; } | sort -u > "$records"
+        mv "$records" "$target/legacy-databases"
+    fi
+    replace_link "$target" "$CANONICAL_DIR/.runtime"
+}
+
 build_runtime() {
-    local target="$CANONICAL_DIR/.runtime"
-
-    case "$MODE" in
-        dev)
-            # Replace whatever's there with a symlink to the source tree.
-            rm -rf "$target"
-            ln -snf "$PROJECT_ROOT" "$target"
-            echo "  ✓ .runtime → $PROJECT_ROOT (dev symlink)"
-
-            # Verify the source tree has been built — we don't try to build it
-            # for the user; that's their dev-loop responsibility.
-            if [[ ! -x "$PROJECT_ROOT/bin/optix" ]]; then
-                echo "  ⚠️  $PROJECT_ROOT/bin/optix not found — run 'make build' before invoking the skill" >&2
-            fi
-            if [[ ! -x "$PROJECT_ROOT/python/.venv/bin/python" ]]; then
-                echo "  ⚠️  $PROJECT_ROOT/python/.venv not found — run 'python3 -m venv python/.venv && python/.venv/bin/pip install -e python/' before invoking the skill" >&2
-            fi
-            ;;
-
-        release)
-            # If a previous install left a symlink here, drop it.
-            [[ -L "$target" ]] && rm -f "$target"
-            mkdir -p "$target"
-
-            echo "  Copying bin/optix..."
-            mkdir -p "$target/bin"
-            cp "$PROJECT_ROOT/bin/optix" "$target/bin/optix"
-            chmod +x "$target/bin/optix"
-
-            echo "  Copying Python engine source..."
-            rm -rf "$target/python/src"
-            mkdir -p "$target/python"
-            cp -r "$PROJECT_ROOT/python/src" "$target/python/src"
-            cp "$PROJECT_ROOT/python/pyproject.toml" "$target/python/pyproject.toml"
-
-            if [[ -d "$PROJECT_ROOT/configs" ]]; then
-                echo "  Copying runtime configs..."
-                rm -rf "$target/configs"
-                mkdir -p "$target/configs"
-                cp -r "$PROJECT_ROOT/configs/." "$target/configs/"
-            fi
-
-            echo "  Copying skill orchestration script..."
-            mkdir -p "$target/skills/commands/optix"
-            cp "$PROJECT_ROOT/skills/commands/optix/optix.sh" "$target/skills/commands/optix/optix.sh"
-            chmod +x "$target/skills/commands/optix/optix.sh"
-
-            echo "  Creating data directory..."
-            mkdir -p "$target/data"
-
-            create_release_venv "$target/python"
-            ;;
-    esac
+    mkdir -p "$CANONICAL_DIR/.runtimes"
+    if [[ "$DEV" == true ]]; then
+        [[ "$MODE" == source ]] || { echo "ERROR: --dev requires a source checkout" >&2; exit 1; }
+        [[ -x "$PROJECT_ROOT/bin/optix" && -x "$PROJECT_ROOT/python/.venv/bin/python" ]] || { echo "ERROR: build source CLI and Python venv first" >&2; exit 1; }
+        "$PROJECT_ROOT/bin/optix" data status >/dev/null
+        READY_RUNTIME="$PROJECT_ROOT"
+        return
+    fi
+    # Allocate the final path before creating the venv: venv entrypoints contain
+    # absolute paths and must never be renamed after installation.
+    READY_RUNTIME="$(mktemp -d "$CANONICAL_DIR/.runtimes/runtime-XXXXXXXX")"
+    local target="$READY_RUNTIME"
+    mkdir -p "$target/bin" "$target/python" "$target/configs" "$target/skills/commands/optix"
+    if [[ "$MODE" == source ]]; then
+        local version
+        version="$(git -C "$PROJECT_ROOT" describe --tags --always --dirty)"
+        (cd "$PROJECT_ROOT" && go build -trimpath -ldflags="-X main.version=$version" -o "$target/bin/optix" ./cmd/optix-cli)
+    else
+        cp "$PROJECT_ROOT/bin/optix" "$target/bin/optix"
+    fi
+    chmod +x "$target/bin/optix"
+    cp -r "$PROJECT_ROOT/python/src" "$target/python/src"
+    cp "$PROJECT_ROOT/python/pyproject.toml" "$target/python/pyproject.toml"
+    for config in portfolio.yaml sectors.json; do
+        [[ ! -f "$PROJECT_ROOT/configs/$config" ]] || cp "$PROJECT_ROOT/configs/$config" "$target/configs/$config"
+    done
+    cp "$PROJECT_ROOT/skills/commands/optix/optix.sh" "$target/skills/commands/optix/optix.sh"
+    chmod +x "$target/skills/commands/optix/optix.sh"
+    create_release_venv "$target/python"
+    "$target/bin/optix" --version > "$target/VERSION"
+    "$target/bin/optix" data status >/dev/null
+    (cd "$target" && pwd -P) > "$target/STORAGE_LAYOUT_V1"
+    if [[ "$MODE" == source ]]; then capture_config_database "$PROJECT_ROOT" "$target"; printf '%s\n' "$PROJECT_ROOT/data/optix.db" >> "$target/legacy-databases"; fi
 }
 
 # ---------------------------------------------------------------------------
-# Build the Python venv inside the release bundle. Tries host Python first
-# and only creates a real venv if dependencies are missing.
+# Build an isolated Python venv inside each immutable runtime directory.
 # ---------------------------------------------------------------------------
 create_release_venv() {
     local PY_TARGET="$1"
@@ -192,31 +217,10 @@ create_release_venv() {
     fi
     echo "  Using Python: $("$PYTHON_BIN" --version 2>&1)"
 
-    # Check whether the host Python already has every runtime dep we need.
-    local HOST_OK=true
-    "$PYTHON_BIN" -c "import numpy, scipy.stats, scipy.optimize, pandas, grpc, google.protobuf, yfinance" 2>/dev/null || HOST_OK=false
-
-    if [[ "$HOST_OK" == true ]]; then
-        echo "  Host Python has all deps — installing optix_engine into a thin shim venv"
-        if ! "$PYTHON_BIN" -m pip install --quiet --no-deps --user -e "$PY_TARGET" 2>/dev/null && \
-           ! "$PYTHON_BIN" -m pip install --quiet --no-deps -e "$PY_TARGET" 2>/dev/null; then
-            echo "  ERROR: failed to install optix_engine into host Python" >&2
-            return 1
-        fi
-        mkdir -p "$PY_TARGET/.venv/bin"
-        ln -sf "$(command -v "$PYTHON_BIN")" "$PY_TARGET/.venv/bin/python"
-    else
-        echo "  Creating standalone venv (this may take a minute)..."
-        "$PYTHON_BIN" -m venv "$PY_TARGET/.venv"
-        "$PY_TARGET/.venv/bin/pip" install --quiet \
-            "numpy>=1.26" "scipy>=1.12" "pandas>=2.2" "grpcio>=1.60" "protobuf>=4.25" "yfinance>=0.2"
-        "$PY_TARGET/.venv/bin/pip" install --quiet --no-deps -e "$PY_TARGET"
-
-        # Slim a bit
-        "$PY_TARGET/.venv/bin/pip" uninstall --quiet -y pip setuptools 2>/dev/null || true
-        find "$PY_TARGET/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-        find "$PY_TARGET/.venv" -name "*.pyc" -delete 2>/dev/null || true
-    fi
+    # A runtime owns its engine and dependencies. Installing into host Python
+    # would make a later upgrade silently change an older runtime on rollback.
+    "$PYTHON_BIN" -m venv "$PY_TARGET/.venv"
+    "$PY_TARGET/.venv/bin/pip" install --quiet "$PY_TARGET"
 
     if ! "$PY_TARGET/.venv/bin/python" -c "import optix_engine" 2>/dev/null; then
         echo "  ERROR: Python runtime cannot import optix_engine" >&2
@@ -245,7 +249,7 @@ install_canonical() {
     chmod +x "$CANONICAL_DIR/install.sh"
     echo "  ✓ install.sh (kept for later uninstall)"
 
-    build_runtime
+    activate_runtime "$READY_RUNTIME"
 }
 
 # ---------------------------------------------------------------------------
@@ -334,7 +338,11 @@ PY
     esac
 
     if [[ -n "$agent_dir" && (-L "$agent_dir" || -e "$agent_dir") ]]; then
-        rm -rf "$agent_dir"
+        if [[ ! -L "$agent_dir" ]]; then
+            echo "ERROR: refusing to remove legacy agent directory $agent_dir; archive it explicitly" >&2
+            return 1
+        fi
+        rm -f "$agent_dir"
         echo "  ✓ Removed $agent_dir"
     fi
 }
@@ -354,6 +362,16 @@ fi
 # ---------------------------------------------------------------------------
 # UNINSTALL
 # ---------------------------------------------------------------------------
+mkdir -p "$CANONICAL_DIR"
+LOCK_DIR="$CANONICAL_DIR/.install-lock"
+mkdir "$LOCK_DIR" 2>/dev/null || { echo "ERROR: installation already in progress (or stale .install-lock)" >&2; exit 1; }
+READY_RUNTIME=""
+ACTIVATED=false
+cleanup_install() {
+    if [[ "$ACTIVATED" == false && "$READY_RUNTIME" == "$CANONICAL_DIR/.runtimes/"* ]]; then rm -rf "$READY_RUNTIME"; fi
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup_install EXIT
 if [[ "$UNINSTALL" == true ]]; then
     for target in "${INSTALL_TARGETS[@]}"; do
         echo ""
@@ -363,6 +381,16 @@ if [[ "$UNINSTALL" == true ]]; then
     if [[ "$PURGE" == true ]]; then
         echo ""
         echo "--- Purging canonical install ---"
+        # Explicit --db accepts arbitrary filenames. Inspect the SQLite header
+        # as well as common suffixes; never trust only the default filename.
+        while IFS= read -r -d '' candidate; do
+            case "$candidate" in *.db|*.sqlite|*.sqlite3|*-wal|*-journal)
+                echo "ERROR: refusing purge: potential user database $candidate" >&2; exit 1;; esac
+            header="$(od -An -tx1 -N16 "$candidate" | tr -d ' \n')"
+            if [[ "$header" == 53514c69746520666f726d6174203300 ]]; then
+                echo "ERROR: refusing purge: SQLite database $candidate" >&2; exit 1
+            fi
+        done < <(find "$CANONICAL_DIR" -type f -print0)
         rm -rf "$CANONICAL_DIR"
         echo "  ✓ Removed $CANONICAL_DIR"
     fi
@@ -374,21 +402,21 @@ fi
 # ---------------------------------------------------------------------------
 # INSTALL
 # ---------------------------------------------------------------------------
-detect_mode
-
-echo "Mode: $MODE"
-echo "Project root: $PROJECT_ROOT"
-echo ""
-
-# Dev-mode prereq: ensure source is buildable (we don't try to build for the user).
-if [[ "$MODE" == "dev" ]]; then
-    if [[ ! -x "$PROJECT_ROOT/bin/optix" ]]; then
-        echo "Building optix CLI..."
-        make -C "$PROJECT_ROOT" build
-    fi
+check_legacy_data
+if [[ "$ROLLBACK" == true ]]; then
+    previous="$(readlink "$CANONICAL_DIR/.previous-runtime")"
+    [[ -x "$previous/bin/optix" ]] || { echo "ERROR: no runnable previous runtime" >&2; exit 1; }
+    [[ -f "$previous/STORAGE_LAYOUT_V1" && "$(cat "$previous/STORAGE_LAYOUT_V1")" == "$(cd "$previous" && pwd -P)" ]] || { echo "ERROR: previous runtime predates safe storage layout (or is dev mode); reinstall a compatible version explicitly" >&2; exit 1; }
+    activate_runtime "$previous"
+    ACTIVATED=true
+    "$CANONICAL_DIR/bin/optix.sh" --version
+    exit 0
 fi
-
+detect_mode
+if [[ "$MODE" == source && "$DEV" == false ]]; then check_legacy_data "$PROJECT_ROOT"; fi
+build_runtime
 install_canonical
+ACTIVATED=true
 
 for target in "${INSTALL_TARGETS[@]}"; do
     echo ""
@@ -415,11 +443,11 @@ done
 # ---------------------------------------------------------------------------
 echo ""
 echo "Verifying installation..."
-if "$CANONICAL_DIR/bin/optix.sh" watch list >/dev/null 2>&1; then
+if "$CANONICAL_DIR/bin/optix.sh" data status >/dev/null 2>&1; then
     echo "✓ Verification passed."
 else
     echo "✗ Verification failed — re-running with errors visible:" >&2
-    "$CANONICAL_DIR/bin/optix.sh" watch list || true
+    "$CANONICAL_DIR/bin/optix.sh" data status || true
 fi
 
 echo ""
@@ -430,4 +458,4 @@ echo "  Runtime:   $CANONICAL_DIR/.runtime"
 # Without it, `set -e` propagates the failed `[[ ... ]]` test as the script's
 # final exit status — install was successful but `$?` would be 1, which is
 # misleading to callers (and breaks chained shell commands).
-[[ "$MODE" == "dev" ]] && echo "  (dev mode: edits to $PROJECT_ROOT take effect immediately)" || true
+[[ "$DEV" == true ]] && echo "  (dev mode: edits to $PROJECT_ROOT take effect immediately)" || true

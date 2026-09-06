@@ -36,6 +36,16 @@ Use this skill when the user asks about (当用户提到以下内容时触发):
 Replace `<SYMBOL>` with the stock ticker the user mentions.
 
 All commands invoke `bin/optix.sh`, a thin entry-point bundled with the skill.
+Storage and installation (v0.16+): default installs use independent versioned runtimes;
+source linking requires `install.sh --dev`. Persistent data is separate from the runtime.
+Database priority is `--db` > `OPTIX_DB_PATH` > YAML `database.path` > platform user data directory.
+Use absolute overrides for agents/schedulers. Run `bin/optix.sh data status` to diagnose
+version, mode, runtime, database path and retained legacy data. If legacy data is detected,
+stop writers and explicitly run `data migrate --from /old.db --to /new.db`; verify records
+before selecting the new path. Migration never changes configuration or removes the old DB.
+Never work around a legacy-data warning by deleting the database. Upgrades/rollback retain
+external data; `install.sh --rollback` only supports compatible standalone runtimes.
+
 The wrapper resolves the runtime (Go binary + Python engine) in this order:
 1. `$OPTIX_HOME` environment variable (developer override; points to a source checkout)
 2. `<skill_dir>/.runtime/` (release-mode install; populated by install.sh)

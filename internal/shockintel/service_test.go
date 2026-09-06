@@ -396,6 +396,7 @@ func TestBrokerQuoteAdapterCapsFallbackQuotesWhenBrokerOverlayCanRecover(t *test
 		blockingFallbackSource{},
 	)
 	adapter.overlayTimeout = 10 * time.Millisecond
+	adapter.fallbackTimeout = 10 * time.Millisecond
 
 	start := time.Now()
 	quotes, err := adapter.Quotes(context.Background(), []string{"SPY"})

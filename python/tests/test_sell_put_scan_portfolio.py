@@ -1,6 +1,8 @@
 """Portfolio-aware scan pure functions (#spec 2026-08-08)."""
 import importlib.util
+import json as _json
 import os
+import subprocess
 from pathlib import Path
 
 os.environ["OPTIX_SCAN_RUNTIME_CHECKED"] = "1"
@@ -69,9 +71,6 @@ def test_index_skips_malformed_row_keeps_rest():
     ])
     assert list(idx.keys()) == ["MSFT"]
     assert idx["MSFT"].stock_qty == 10.0
-
-
-import subprocess
 
 
 class _FakeCompleted:
@@ -205,9 +204,6 @@ def test_apply_awareness_no_overlap_line():
     assert line == "组合感知: 与当前持仓无重叠"
 
 
-import json as _json
-
-
 def test_journal_payload_immune_to_display_reorder():
     """spec §6 关键回归:组合感知重排显示不得影响 journal payload。"""
     market_order = [_cand(symbol="NVDA", score=0.9),
@@ -234,7 +230,7 @@ def test_render_has_portfolio_column_and_reorders():
     a.portfolio_labels, a.portfolio_penalty = "撞期! sp 150@08-14", scan.PORTFOLIO_PENALTY_SAME_EXPIRY
     out = scan.render(_result([a, b]), 100, portfolio_line="组合感知: 持仓 1 标的，1 项降权（positions@09:50 ET）")
     assert "| 持仓 |" in out.splitlines()[6]  # 表头行含新列
-    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    rows = [line for line in out.splitlines() if line.startswith("| 1 |") or line.startswith("| 2 |")]
     assert "AAPL" in rows[0] and "NVDA" in rows[1]      # 0.8 > 0.9-0.40 → AAPL 升到第 1
     assert "撞期! sp 150@08-14" in rows[1] and "| - |" in rows[0]
     assert "组合感知: 持仓 1 标的，1 项降权" in out
@@ -244,7 +240,7 @@ def test_render_stable_order_without_penalty():
     a = _cand(symbol="NVDA", score=0.9)
     b = _cand(symbol="AAPL", score=0.9, expiry="2026-08-21")  # 同分
     out = scan.render(_result([a, b]), 100)
-    rows = [l for l in out.splitlines() if l.startswith("| 1 |") or l.startswith("| 2 |")]
+    rows = [line for line in out.splitlines() if line.startswith("| 1 |") or line.startswith("| 2 |")]
     assert "NVDA" in rows[0] and "AAPL" in rows[1]  # 稳定:保持市场序
     # portfolio_line=None → 无摘要行(注意:口径footnote 固定提到「组合感知降权」
     # 这个概念,不含冒号;真正的摘要行/警示行才带冒号或「不可用」,专门校验这两种)

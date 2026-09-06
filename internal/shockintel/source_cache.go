@@ -2,6 +2,8 @@ package shockintel
 
 import (
 	"context"
+	"errors"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,12 +45,18 @@ func (c *ttlMarketCache) Quotes(ctx context.Context, ids []string) (map[string]S
 	now := time.Now()
 	missing := c.missingTTLQuoteIDs(ids, now)
 	if len(missing) > 0 {
-		v, err, _ := c.sf.Do("quotes:"+strings.Join(missing, ","), func() (any, error) {
-			return c.inner.Quotes(ctx, missing)
+		v, err := c.fetch(ctx, "quotes:"+strings.Join(missing, ","), func() (any, error) {
+			quotes, err := c.inner.Quotes(ctx, missing)
+			return quotes, errors.Join(err, ctx.Err())
 		})
 		var quotes map[string]ShockQuote
 		if v != nil {
 			quotes = v.(map[string]ShockQuote)
+		}
+		if requestInterrupted(err) {
+			cached, _ := c.cachedTTLQuotes(ids, now)
+			maps.Copy(cached, quotes)
+			return cached, err
 		}
 		c.storeTTLQuotes(missing, quotes, err, now)
 	}
@@ -64,12 +72,18 @@ func (c *ttlMarketCache) Depth(ctx context.Context, ids []string, levels int) (m
 	now := time.Now()
 	missing := c.missingTTLDepthIDs(ids, levels, now)
 	if len(missing) > 0 {
-		v, err, _ := c.sf.Do(depthSFKey(missing, levels), func() (any, error) {
-			return c.inner.Depth(ctx, missing, levels)
+		v, err := c.fetch(ctx, depthSFKey(missing, levels), func() (any, error) {
+			depth, err := c.inner.Depth(ctx, missing, levels)
+			return depth, errors.Join(err, ctx.Err())
 		})
 		var depth map[string]DepthSnapshot
 		if v != nil {
 			depth = v.(map[string]DepthSnapshot)
+		}
+		if requestInterrupted(err) {
+			cached, _ := c.cachedTTLDepth(ids, levels, now)
+			maps.Copy(cached, depth)
+			return cached, err
 		}
 		c.storeTTLDepth(missing, levels, depth, err, now)
 	}
@@ -81,16 +95,48 @@ func (c *ttlMarketCache) OptionMetrics(ctx context.Context, underlyings []string
 	now := time.Now()
 	missing := c.missingTTLOptions(underlyings, now)
 	if len(missing) > 0 {
-		v, err, _ := c.sf.Do("options:"+strings.Join(missing, ","), func() (any, error) {
-			return c.inner.OptionMetrics(ctx, missing)
+		v, err := c.fetch(ctx, "options:"+strings.Join(missing, ","), func() (any, error) {
+			options, err := c.inner.OptionMetrics(ctx, missing)
+			return options, errors.Join(err, ctx.Err())
 		})
 		var options map[string]OptionStress
 		if v != nil {
 			options = v.(map[string]OptionStress)
 		}
+		if requestInterrupted(err) {
+			cached, _ := c.cachedTTLOptions(underlyings, now)
+			maps.Copy(cached, options)
+			return cached, err
+		}
 		c.storeTTLOptions(missing, options, err, now)
 	}
 	return c.cachedTTLOptions(underlyings, now)
+}
+
+// A short-lived caller (such as the automatic view probe) must not cache
+// its cancellation as missing market data for subsequent full requests.
+func requestInterrupted(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// A full request may join the short automatic-view probe. Retry that
+// canceled shared flight once with this caller's context, and let each
+// waiter stop waiting as soon as its own context is canceled.
+func (c *ttlMarketCache) fetch(ctx context.Context, key string, fn func() (any, error)) (any, error) {
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case result := <-c.sf.DoChan(key, fn):
+			if attempt == 0 && result.Shared && requestInterrupted(result.Err) && ctx.Err() == nil {
+				continue
+			}
+			return result.Val, result.Err
+		}
+	}
 }
 
 func (c *ttlMarketCache) missingTTLQuoteIDs(ids []string, now time.Time) []string {

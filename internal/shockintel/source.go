@@ -2,6 +2,7 @@ package shockintel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -26,9 +27,10 @@ type MarketSource interface {
 type BrokerConnector func(ctx context.Context) (broker.Broker, string, error)
 
 type BrokerQuoteAdapter struct {
-	connect        BrokerConnector
-	fallback       MarketSource
-	overlayTimeout time.Duration
+	connect         BrokerConnector
+	fallback        MarketSource
+	overlayTimeout  time.Duration
+	fallbackTimeout time.Duration
 }
 
 type YFinanceAdapter struct {
@@ -55,7 +57,7 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerQuot
 }
 
 func NewBrokerQuoteAdapter(connect BrokerConnector, fallback MarketSource) *BrokerQuoteAdapter {
-	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond}
+	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond, fallbackTimeout: 8 * time.Second}
 }
 
 func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
@@ -68,8 +70,8 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	if a.fallback != nil {
 		fallbackCtx := ctx
 		var cancelFallback context.CancelFunc
-		if a.overlayTimeout > 0 {
-			fallbackCtx, cancelFallback = context.WithTimeout(ctx, a.overlayTimeout)
+		if a.fallbackTimeout > 0 {
+			fallbackCtx, cancelFallback = context.WithTimeout(ctx, a.fallbackTimeout)
 		}
 		fallbackQuotes, err := a.fallback.Quotes(fallbackCtx, ids)
 		if cancelFallback != nil {
@@ -77,17 +79,16 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 		}
 		if err != nil {
 			fallbackErr = fmt.Errorf("fallback quotes degraded: %w", err)
-		} else {
-			for id, q := range fallbackQuotes {
-				out[id] = q
-			}
+		}
+		for id, q := range fallbackQuotes {
+			out[id] = q
 		}
 	}
 
 	brokerIDs := brokerQuoteIDs(ids)
 	if len(brokerIDs) == 0 || a.connect == nil {
 		if len(out) > 0 {
-			return out, nil
+			return out, fallbackErr
 		}
 		if fallbackErr != nil {
 			return nil, fallbackErr
@@ -224,7 +225,12 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 
 func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []string) (map[string]OptionStress, error) {
 	out := map[string]OptionStress{}
-	if len(underlyings) == 0 {
+	ids := make([]string, 0, len(underlyings))
+	for _, id := range underlyings {
+		ids = append(ids, strings.ToUpper(strings.TrimSpace(id)))
+	}
+	ids = uniqueStrings(ids)
+	if len(ids) == 0 {
 		return out, nil
 	}
 	if a.connect == nil {
@@ -249,18 +255,49 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 	if source != "ibkr" {
 		warnParts = append(warnParts, fmt.Sprintf("broker option stress degraded: using %s fallback for option chain", source))
 	}
-	for _, underlying := range uniqueStrings(underlyings) {
-		chain, err := optionStressChain(optionCtx, b, underlying)
-		if err != nil {
-			warnParts = append(warnParts, fmt.Sprintf("%s: %v", underlying, err))
-			continue
+	// At most two full chains at a time (each IBKR chain has its own
+	// bounded OI pool). Reserve a share of the deadline for later waves.
+	perSymbol := 6 * time.Second
+	if deadline, ok := optionCtx.Deadline(); ok {
+		perSymbol = time.Until(deadline)
+	}
+	perSymbol /= time.Duration((len(ids) + 1) / 2)
+	type result struct {
+		row OptionStress
+		ok  bool
+		err error
+	}
+	results := make([]result, len(ids))
+	jobs := make(chan int, len(ids))
+	for i := range ids {
+		jobs <- i
+	}
+	close(jobs)
+	var wg sync.WaitGroup
+	for range min(2, len(ids)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				itemCtx, cancel := context.WithTimeout(optionCtx, perSymbol)
+				chain, err := optionStressChain(itemCtx, b, ids[i])
+				err = errors.Join(err, itemCtx.Err())
+				cancel()
+				row, ok := summarizeOptionStress(ids[i], chain, source, time.Now().UTC())
+				results[i] = result{row: row, ok: ok, err: err}
+			}
+		}()
+	}
+	wg.Wait()
+	for i, r := range results {
+		if r.err != nil {
+			warnParts = append(warnParts, fmt.Sprintf("%s: %v", ids[i], r.err))
 		}
-		row, ok := summarizeOptionStress(underlying, chain, source, time.Now().UTC())
-		if !ok {
-			warnParts = append(warnParts, fmt.Sprintf("%s: option chain missing IV/OI/volume", underlying))
-			continue
+		if r.ok {
+			out[ids[i]] = r.row
+		} else if r.err == nil {
+			warnParts = append(warnParts, fmt.Sprintf("%s: option chain missing IV/OI/volume", ids[i]))
 		}
-		out[underlying] = row
 	}
 	if len(warnParts) > 0 {
 		err := fmt.Errorf("option stress partial: %s", strings.Join(warnParts, "; "))

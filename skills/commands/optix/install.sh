@@ -153,8 +153,8 @@ activate_runtime() {
         # Preserve the complete legacy bundle; never rm -rf user runtime data.
         old="$CANONICAL_DIR/.runtimes/legacy-$(date +%s)-$$"
         mv "$CANONICAL_DIR/.runtime" "$old"
+        MOVED_LEGACY="$old"
     fi
-    if [[ -n "$old" ]]; then replace_link "$old" "$CANONICAL_DIR/.previous-runtime"; fi
     if [[ -n "$old" && -f "$target/STORAGE_LAYOUT_V1" ]]; then
         # Carry old locations forward so a fresh shell cannot silently create
         # an empty default DB after the install-time environment disappears.
@@ -164,7 +164,9 @@ activate_runtime() {
         { [[ ! -f "$target/legacy-databases" ]] || cat "$target/legacy-databases"; [[ ! -f "$old/legacy-databases" ]] || cat "$old/legacy-databases"; printf '%s\n' "$old/data/optix.db"; } | sort -u > "$records"
         mv "$records" "$target/legacy-databases"
     fi
+    if [[ -n "$old" ]]; then replace_link "$old" "$CANONICAL_DIR/.previous-runtime"; fi
     replace_link "$target" "$CANONICAL_DIR/.runtime"
+    ACTIVATED=true
 }
 
 build_runtime() {
@@ -367,7 +369,11 @@ LOCK_DIR="$CANONICAL_DIR/.install-lock"
 mkdir "$LOCK_DIR" 2>/dev/null || { echo "ERROR: installation already in progress (or stale .install-lock)" >&2; exit 1; }
 READY_RUNTIME=""
 ACTIVATED=false
+MOVED_LEGACY=""
 cleanup_install() {
+    if [[ "$ACTIVATED" == false && -n "$MOVED_LEGACY" && ! -e "$CANONICAL_DIR/.runtime" && ! -L "$CANONICAL_DIR/.runtime" ]]; then
+        mv "$MOVED_LEGACY" "$CANONICAL_DIR/.runtime" || echo "ERROR: restore legacy runtime manually from $MOVED_LEGACY" >&2
+    fi
     if [[ "$ACTIVATED" == false && "$READY_RUNTIME" == "$CANONICAL_DIR/.runtimes/"* ]]; then rm -rf "$READY_RUNTIME"; fi
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }

@@ -237,6 +237,23 @@ test_real_cli_migration_and_fresh_environment() {
     if "$cli" data migrate --from "$old" --to "$target" >/dev/null 2>&1; then fail "repeat migration overwrote target"; fi
 }
 
+test_malformed_legacy_config_restores_active_runtime() {
+    local bundle="$TMPDIR/malformed-bundle" home="$TMPDIR/malformed-home" fakebin="$TMPDIR/fakebin"
+    cp -R "$TMPDIR/bundle" "$bundle"
+    cp "$TMPDIR/real-runtime/bin/optix" "$bundle/bin/optix"
+    local legacy="$home/.agents/skills/optix/.runtime"
+    mkdir -p "$legacy/configs" "$legacy/bin"
+    printf 'database: [invalid yaml' > "$legacy/configs/optix.yaml"
+    printf '#!/bin/sh\necho old-version\n' > "$legacy/bin/optix"
+    chmod +x "$legacy/bin/optix"
+    if HOME="$home" OPTIX_DB_PATH= PATH="$fakebin:$PATH" "$bundle/install.sh" --agent generic >/dev/null 2>&1; then
+        fail "malformed legacy YAML accepted"
+    fi
+    [[ -d "$legacy" && ! -L "$legacy" ]] || fail "failed legacy upgrade did not restore runtime directory"
+    "$legacy/bin/optix" --version | grep -q old-version || fail "old runtime no longer runnable"
+    grep -q 'invalid yaml' "$legacy/configs/optix.yaml" || fail "failed install modified legacy config"
+}
+
 test_skill_wrapper_adds_analysis_addr_for_python_commands() {
     local runtime="$TMPDIR/runtime"
     local fakebin="$TMPDIR/fake-nc"
@@ -335,6 +352,7 @@ test_source_install_is_independent_and_dev_explicit
 test_build_release_includes_configs
 test_real_cli_migration_and_fresh_environment
 test_release_installer_copies_configs
+test_malformed_legacy_config_restores_active_runtime
 test_release_installer_fails_when_optix_engine_install_fails
 test_skill_wrapper_adds_analysis_addr_for_python_commands
 test_skill_wrapper_routes_market_intel_ibkr_probe

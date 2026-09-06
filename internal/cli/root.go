@@ -190,11 +190,12 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&cfgFile, "config", "configs/optix.yaml", "root config file; missing file uses built-in defaults")
-	root.PersistentFlags().StringVar(&dbPath, "db", "./data/optix.db", "SQLite database path")
+	root.PersistentFlags().StringVar(&dbPath, "db", "", "SQLite database path (flag > OPTIX_DB_PATH > YAML > user data directory)")
 	root.PersistentFlags().StringVar(&ibHost, "ib-host", "127.0.0.1", "IB Gateway/TWS host")
 	root.PersistentFlags().StringVar(&ibPortRaw, "ib-port", "gateway", "IB port: gateway (4001), tws (7496), or number")
 	root.PersistentFlags().StringVar(&pythonBin, "python", defaultPython(), "Python interpreter for yfinance (defaults to project venv when available)")
 
+	root.AddCommand(newDataCmd())
 	root.AddCommand(newQuoteCmd())
 	root.AddCommand(newOptionQuoteCmd())
 	root.AddCommand(newWatchCmd())
@@ -260,9 +261,11 @@ func applyRootConfig(changed map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	if !changed["db"] && cfg.DBPath != "" {
-		dbPath = cfg.DBPath
+	resolved, err := resolveDatabase(changed, cfg.DBPath, true)
+	if err != nil {
+		return err
 	}
+	dbPath = resolved.Path
 	if !changed["ib-host"] && cfg.IBHost != "" {
 		ibHost = cfg.IBHost
 	}

@@ -85,10 +85,12 @@ func (s *Service) Liquidity(ctx context.Context) (LiquidityDTO, error) {
 	depth := map[string]DepthSnapshot{}
 	if s.src == nil {
 		warnings = append(warnings, "depth: shock source unavailable")
-	} else if got, err := s.src.Depth(ctx, liquidityIDs(), 5); err != nil {
-		warnings = append(warnings, "depth: "+err.Error())
 	} else {
+		got, err := s.src.Depth(ctx, liquidityIDs(), 5)
 		depth = got
+		if err != nil {
+			warnings = append(warnings, "depth: "+err.Error())
+		}
 	}
 	out := BuildLiquidityState(quotes, depth, now)
 	out.Warnings = append(warnings, out.Warnings...)

@@ -30,6 +30,7 @@ type BrokerQuoteAdapter struct {
 	connect         BrokerConnector
 	fallback        MarketSource
 	overlayTimeout  time.Duration
+	connectTimeout  time.Duration
 	fallbackTimeout time.Duration
 }
 
@@ -57,7 +58,7 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerQuot
 }
 
 func NewBrokerQuoteAdapter(connect BrokerConnector, fallback MarketSource) *BrokerQuoteAdapter {
-	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond, fallbackTimeout: 8 * time.Second}
+	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond, connectTimeout: 4 * time.Second, fallbackTimeout: 8 * time.Second}
 }
 
 func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
@@ -96,14 +97,7 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 		return out, nil
 	}
 
-	overlayCtx := ctx
-	var cancelOverlay context.CancelFunc
-	if (len(out) > 0 || fallbackErr != nil) && a.overlayTimeout > 0 {
-		overlayCtx, cancelOverlay = context.WithTimeout(ctx, a.overlayTimeout)
-		defer cancelOverlay()
-	}
-
-	b, source, err := a.connect(overlayCtx)
+	b, source, err := a.connectBroker(ctx)
 	if err != nil {
 		if len(out) > 0 {
 			if fallbackErr != nil {
@@ -118,6 +112,15 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	}
 	source = normalizeSourceName(source)
 	defer b.Disconnect()
+
+	// Give data collection its own short window after a successful handshake.
+	// Connect needs >= 3s available for the IBKR client's window + reserve.
+	overlayCtx := ctx
+	if a.overlayTimeout > 0 {
+		var cancel context.CancelFunc
+		overlayCtx, cancel = context.WithTimeout(ctx, a.overlayTimeout)
+		defer cancel()
+	}
 
 	var warnParts []string
 	if fallbackErr != nil {
@@ -148,6 +151,17 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	return out, nil
 }
 
+// connectBroker bounds the handshake separately from optional quote/depth
+// collection. A short parent (e.g. auto-view probing) remains authoritative.
+func (a *BrokerQuoteAdapter) connectBroker(ctx context.Context) (broker.Broker, string, error) {
+	if a.connectTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, a.connectTimeout)
+		defer cancel()
+	}
+	return a.connect(ctx)
+}
+
 func (a *BrokerQuoteAdapter) Bars(ctx context.Context, ids []string, interval string, lookback time.Duration) (map[string][]model.OHLCV, error) {
 	if a.fallback == nil {
 		return map[string][]model.OHLCV{}, fmt.Errorf("bars unavailable: no fallback source")
@@ -165,16 +179,15 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 		levels = 5
 	}
 
-	depthCtx := ctx
-	var cancelDepth context.CancelFunc
-	if a.overlayTimeout > 0 {
-		depthCtx, cancelDepth = context.WithTimeout(ctx, a.overlayTimeout)
-		defer cancelDepth()
-	}
-
-	b, source, err := a.connect(depthCtx)
+	b, source, err := a.connectBroker(ctx)
 	if err != nil {
 		return out, fmt.Errorf("broker depth degraded: %w", err)
+	}
+	depthCtx := ctx
+	if a.overlayTimeout > 0 {
+		var cancel context.CancelFunc
+		depthCtx, cancel = context.WithTimeout(ctx, a.overlayTimeout)
+		defer cancel()
 	}
 	source = normalizeSourceName(source)
 	defer b.Disconnect()
@@ -261,6 +274,10 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 	if deadline, ok := optionCtx.Deadline(); ok {
 		perSymbol = time.Until(deadline)
 	}
+	// The service/TTL caller has the same overall deadline. Leave a bounded
+	// slice for collecting completed rows and returning them before that
+	// caller stops waiting; otherwise one slow job discards every fast result.
+	perSymbol -= min(100*time.Millisecond, perSymbol/10)
 	perSymbol /= time.Duration((len(ids) + 1) / 2)
 	type result struct {
 		row OptionStress

@@ -368,6 +368,7 @@ func TestServiceCapsBrokerOverlayWhenFallbackQuotesExist(t *testing.T) {
 		}},
 	)
 	adapter.overlayTimeout = 10 * time.Millisecond
+	adapter.connectTimeout = 10 * time.Millisecond
 	svc := NewService(adapter)
 	svc.Now = fixedShockNow
 
@@ -611,4 +612,21 @@ func (b testBroker) GetMarketDepth(_ context.Context, symbol string, _ int) (*mo
 		return d, nil
 	}
 	return nil, errors.New("missing depth")
+}
+
+type partialDepthSource struct{ fakeShockSource }
+
+func (s partialDepthSource) Depth(ctx context.Context, ids []string, levels int) (map[string]DepthSnapshot, error) {
+	rows, _ := s.fakeShockSource.Depth(ctx, ids, levels)
+	return rows, errors.New("QQQ: depth unavailable")
+}
+
+func TestServicePreservesPartialDepth(t *testing.T) {
+	dto, err := NewService(&partialDepthSource{}).Liquidity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dto.Rows[0].DepthAvailable || dto.Rows[0].Top5BidDepth != 1000 || !warningsContain(dto.Warnings, "QQQ: depth unavailable") {
+		t.Fatalf("partial depth lost: %+v", dto)
+	}
 }

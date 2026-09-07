@@ -12,6 +12,47 @@ above it.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-07
+
+### Added
+
+- Add `optix data status` and explicit `optix data migrate` with consistent
+  SQLite snapshots, integrity validation, recovery backups and no-overwrite
+  destination publication (#218).
+- Install independent, versioned Skill runtimes with their own Python virtual
+  environments, atomic activation and rollback between compatible versions.
+  Source-linked development installs now require explicit `--dev` (#218).
+
+### Changed
+
+- Store persistent databases outside runtime directories by default. Resolution
+  follows `--db`, `OPTIX_DB_PATH`, YAML configuration, then the platform user-data
+  directory. Existing runtime-local databases require deliberate selection or
+  migration instead of silently opening an empty database (#218).
+
+### Fixed
+
+- Give IBKR handshakes a separate bounded window before quote/depth collection;
+  preserve shorter parent deadlines and fallback quotes (#219).
+- Preserve completed option results when another symbol times out, and retain
+  successful depth rows alongside per-symbol errors (#219).
+
+### Upgrade notes
+
+- Read [storage and upgrades](docs/storage-and-upgrades.md) before moving a
+  legacy runtime-local database. Stop writers for final migration, verify the
+  copied business records, and persist the chosen absolute database override.
+  Migration never switches configuration automatically or deletes the source.
+- Rollback is limited to compatible standalone runtimes; legacy and dev targets
+  are rejected. Installation and uninstall guards preserve possible user data.
+
+### Known limitations
+
+- Full live-data acceptance remains open in #210–#213. Gateway connectivity,
+  historical bars and option-chain structure passed, but quote/depth permissions
+  and trading-session validation remain incomplete. Option volume collection and
+  missing-metric display also remain tracked in #212.
+
 ## [0.15.7] - 2026-09-06
 
 ### Fixed
@@ -1963,7 +2004,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.15.7...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/IS908/optix/compare/v0.15.7...v0.16.0
 [0.15.7]: https://github.com/IS908/optix/compare/v0.15.6...v0.15.7
 [0.15.6]: https://github.com/IS908/optix/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/IS908/optix/compare/v0.15.4...v0.15.5

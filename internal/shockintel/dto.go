@@ -34,14 +34,15 @@ type DepthSnapshot struct {
 }
 
 type OptionStress struct {
-	Underlying string    `json:"underlying"`
-	Source     string    `json:"source"`
-	Basis      string    `json:"basis"`
-	AsOf       time.Time `json:"as_of"`
-	IVSkew     float64   `json:"iv_skew"`
-	Volume     int64     `json:"volume"`
-	OpenInt    int64     `json:"open_interest"`
-	Note       string    `json:"note,omitempty"`
+	MissingMetrics []string  `json:"missing_metrics"`
+	Underlying     string    `json:"underlying"`
+	Source         string    `json:"source"`
+	Basis          string    `json:"basis"`
+	AsOf           time.Time `json:"as_of"`
+	IVSkew         float64   `json:"iv_skew"`
+	Volume         int64     `json:"volume"`
+	OpenInt        int64     `json:"open_interest"`
+	Note           string    `json:"note,omitempty"`
 }
 
 type RegimeConfirmation struct {

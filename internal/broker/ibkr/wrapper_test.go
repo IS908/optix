@@ -631,7 +631,7 @@ func TestQuoteChangeSupportsNegativeAndMidpoint(t *testing.T) {
 func TestWrapperOITickAccumulatorConcurrentSnapshotRace(t *testing.T) {
 	w := newIbWrapper()
 	reqID := int64(1002)
-	po := w.registerOI(reqID)
+	po := w.registerOI(reqID, "C")
 	defer w.unregister(reqID)
 
 	var wg sync.WaitGroup
@@ -742,5 +742,32 @@ func TestWrapperEndAfterErrorNoDoubleClose(t *testing.T) {
 			//    Post-fix: sync.Once swallows the second close.
 			tc.fireEnd(w, reqID)
 		})
+	}
+}
+
+func TestOIAccumulatorContractVolumeAndSide(t *testing.T) {
+	for _, right := range []string{"C", "P"} {
+		w := newIbWrapper()
+		po := w.registerOI(1003, right)
+		own, other := ibapi.OPTION_CALL_OPEN_INTEREST, ibapi.OPTION_PUT_OPEN_INTEREST
+		if right == "P" {
+			own, other = other, own
+		}
+		w.TickSize(1003, other, ibapi.StringToDecimal("999"))
+		if po.snapshot().openInterest != 0 {
+			t.Fatal("opposite side OI accepted")
+		}
+		w.TickSize(1003, ibapi.VOLUME, ibapi.StringToDecimal("12"))
+		w.TickSize(1003, ibapi.OPTION_CALL_VOLUME, ibapi.StringToDecimal("9999"))
+		w.TickSize(1003, ibapi.OPTION_PUT_VOLUME, ibapi.StringToDecimal("8888"))
+		w.TickSize(1003, own, ibapi.StringToDecimal("45"))
+		if got := po.snapshot(); got.volume != 12 || got.openInterest != 45 {
+			t.Fatalf("contract metrics: %+v", got)
+		}
+		w.TickSize(1003, ibapi.DELAYED_VOLUME, ibapi.StringToDecimal("20"))
+		w.TickSize(1003, ibapi.VOLUME, ibapi.StringToDecimal("-1"))
+		if got := po.snapshot().volume; got != 20 {
+			t.Fatalf("delayed/invalid volume: %d", got)
+		}
 	}
 }

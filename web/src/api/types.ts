@@ -404,6 +404,7 @@ export interface ShockFingerprintRow {
 }
 
 export interface ShockOptionStress {
+  missing_metrics?: string[]
   underlying: string
   source: string
   basis: string

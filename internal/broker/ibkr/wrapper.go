@@ -2,6 +2,7 @@ package ibkr
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 
@@ -234,6 +235,9 @@ func (pq *pendingQuote) snapshot() quoteSnapshot {
 // We close `done` as soon as ANY OI tick arrives so the caller can cancel the
 // streaming subscription quickly.
 type pendingOI struct {
+	dataNotice   error
+	right        string
+	volume       int64
 	mu           sync.Mutex
 	openInterest int32
 	iv           float64
@@ -242,6 +246,7 @@ type pendingOI struct {
 }
 
 type oiSnapshot struct {
+	volume       int64
 	openInterest int32
 	iv           float64
 }
@@ -258,7 +263,7 @@ func (po *pendingOI) setOpenInterest(openInterest int32) {
 }
 
 func (po *pendingOI) setIV(iv float64) {
-	if iv <= 0 {
+	if iv <= 0 || math.IsNaN(iv) || math.IsInf(iv, 0) {
 		return
 	}
 
@@ -269,13 +274,25 @@ func (po *pendingOI) setIV(iv float64) {
 	po.mu.Unlock()
 }
 
+func (po *pendingOI) setNotice(err error) { po.mu.Lock(); po.dataNotice = err; po.mu.Unlock() }
+func (po *pendingOI) notice() error       { po.mu.Lock(); defer po.mu.Unlock(); return po.dataNotice }
+
+func (po *pendingOI) setVolume(volume float64) {
+	if volume < 0 || math.IsNaN(volume) || math.IsInf(volume, 0) || volume >= math.MaxInt64 {
+		return
+	}
+	po.mu.Lock()
+	po.volume = int64(volume)
+	po.mu.Unlock()
+}
+
 func (po *pendingOI) snapshot() oiSnapshot {
 	po.mu.Lock()
 	defer po.mu.Unlock()
 
 	return oiSnapshot{
-		openInterest: po.openInterest,
-		iv:           po.iv,
+		volume: po.volume, openInterest: po.openInterest,
+		iv: po.iv,
 	}
 }
 
@@ -530,8 +547,8 @@ func (w *IbWrapper) registerContractDetails(reqID int64) *pendingContractDetails
 	return pcd
 }
 
-func (w *IbWrapper) registerOI(reqID int64) *pendingOI {
-	po := &pendingOI{done: make(chan struct{})}
+func (w *IbWrapper) registerOI(reqID int64, right string) *pendingOI {
+	po := &pendingOI{right: right, done: make(chan struct{})}
 	w.mu.Lock()
 	w.oi[reqID] = po
 	w.mu.Unlock()
@@ -666,10 +683,8 @@ func (w *IbWrapper) TickPrice(reqID ibapi.TickerID, tickType ibapi.TickType, pri
 // TickSize is called for VOLUME, OPEN_INTEREST and other size-based ticks.
 //
 // For stock-quote requests (registered via registerQuote), only VOLUME is captured.
-// For option-OI requests (registered via registerOI), tick types 27 (call OI), 28
-// (put OI), and 86 (generic OPEN_INTEREST for the specific contract) are all
-// treated as the contract's open interest. Whichever arrives first closes the
-// done channel so the caller can cancel the streaming subscription quickly.
+// Option-chain enrichment captures standard volume and matching-side OI;
+// the first positive OI signals completion, with a short grace period for IV.
 //
 // OPTION_CALL_VOLUME/OPEN_INTEREST and OPTION_PUT_VOLUME/OPEN_INTEREST are
 // per-underlying aggregates split by side — IB will happily deliver BOTH to
@@ -716,12 +731,21 @@ func (w *IbWrapper) TickSize(reqID ibapi.TickerID, tickType ibapi.TickType, size
 	}
 
 	if oiOK {
-		// Option contract OI ticks. IB sends tick type 86 (OPEN_INTEREST) for
-		// individual option contracts when generic-tick 101 is requested. Some
-		// servers also send 27/28 on the option contract itself. Accept any.
-		if tickType == 86 || tickType == 27 || tickType == 28 {
-			oi := int32(size.Float())
-			po.setOpenInterest(oi)
+		// Capture the selected contract's standard volume. Generic ticks 29/30
+		// may describe side aggregates and must not be summed across contracts.
+		switch tickType {
+		case ibapi.VOLUME, ibapi.DELAYED_VOLUME:
+			po.setVolume(size.Float())
+		case 86: // Preserve existing server compatibility for contract OI.
+			po.setOpenInterest(int32(size.Float()))
+		case ibapi.OPTION_CALL_OPEN_INTEREST:
+			if po.right == "C" {
+				po.setOpenInterest(int32(size.Float()))
+			}
+		case ibapi.OPTION_PUT_OPEN_INTEREST:
+			if po.right == "P" {
+				po.setOpenInterest(int32(size.Float()))
+			}
 		}
 	}
 }
@@ -976,6 +1000,16 @@ var strictErrorCodes = map[int64]bool{
 // or logs them as informational messages (errCode < 2000 are often warnings).
 func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errString string, _ string) {
 	ibErr := &ibAPIError{code: errCode, message: errString}
+	// Remember subscription notices for option-chain diagnostics without ending
+	// the stream: delayed ticks may still follow these informational messages.
+	if errCode == 354 || errCode == 10167 {
+		w.mu.Lock()
+		po := w.oi[reqID]
+		w.mu.Unlock()
+		if po != nil {
+			po.setNotice(ibErr)
+		}
+	}
 	if errCode == ibClientIDInUseCode {
 		w.sendConnectError(ibErr)
 		return

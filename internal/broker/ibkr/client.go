@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -906,8 +907,15 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 // the stream, wait for the first OPEN_INTEREST tick, then immediately
 // cancelMktData to avoid leaking subscriptions.
 func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
+	started := time.Now()
+	var structureTime, spotTime, metricsTime time.Duration
+	eligible, requested, observedOI, observedIV, observedVolume := 0, 0, 0, 0, 0
+	defer func() {
+		log.Printf("ibkr: option phases symbol=%s structure=%s spot=%s metrics=%s total=%s eligible=%d requested=%d observed_oi=%d observed_iv=%d observed_volume=%d ctx=%v", underlying, structureTime, spotTime, metricsTime, time.Since(started), eligible, requested, observedOI, observedIV, observedVolume, ctx.Err())
+	}()
 	// Reuse the structure-only chain to get strikes/expirations.
 	chain, err := c.GetOptionChain(ctx, underlying, expiration)
+	structureTime = time.Since(started)
 	if err != nil {
 		return nil, err
 	}
@@ -916,7 +924,11 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	}
 
 	// Get spot price to filter ATM strikes (±15% window).
-	quote, qErr := c.GetQuote(ctx, underlying)
+	spotStarted := time.Now()
+	spotCtx, cancelSpot := optionSpotContext(ctx)
+	quote, qErr := c.GetQuote(spotCtx, underlying)
+	cancelSpot()
+	spotTime = time.Since(spotStarted)
 	spot, authoritativeSpot := spotForOIWindow(chain, quote)
 	if spot <= 0 {
 		return chain, nil
@@ -938,20 +950,15 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	}
 
 	// Build the worklist: every (strike, right) pair within the window.
-	type job struct {
-		strike float64
-		right  string // "C" or "P"
-		idx    int    // index in exp.Calls or exp.Puts
-	}
-	var jobs []job
+	var jobs []optionMetricJob
 	for i, c := range exp.Calls {
 		if c.Strike >= low && c.Strike <= high {
-			jobs = append(jobs, job{c.Strike, "C", i})
+			jobs = append(jobs, optionMetricJob{c.Strike, "C", i})
 		}
 	}
 	for i, p := range exp.Puts {
 		if p.Strike >= low && p.Strike <= high {
-			jobs = append(jobs, job{p.Strike, "P", i})
+			jobs = append(jobs, optionMetricJob{p.Strike, "P", i})
 		}
 	}
 	if len(jobs) == 0 {
@@ -961,46 +968,87 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 
 	log.Printf("ibkr: fetching OI for %d contracts (%s exp=%s spot=$%.2f)", len(jobs), underlying, exp.Expiration, spot)
 
+	prioritizeOptionMetricJobs(jobs, spot)
+	eligible = len(jobs)
+	metricsStarted := time.Now()
+
 	// Concurrent OI fetch with bounded worker pool.
-	sem := make(chan struct{}, oiMaxConcurrent)
-	var wg sync.WaitGroup
-	var mu sync.Mutex // guards exp.Calls / exp.Puts mutation
-
+	queue := make(chan optionMetricJob, len(jobs))
 	for _, j := range jobs {
+		queue <- j
+	}
+	close(queue)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for range min(oiMaxConcurrent, len(jobs)) {
 		wg.Add(1)
-		go func(j job) {
+		go func() {
 			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-sem }()
+			for j := range queue {
+				if ctx.Err() != nil {
+					return
+				}
+				mu.Lock()
+				requested++
+				mu.Unlock()
+				metrics := c.fetchOIForContract(ctx, underlying, exp.Expiration, j.right, j.strike)
+				oi, iv := metrics.openInterest, metrics.iv
 
-			oi, iv := c.fetchOIForContract(ctx, underlying, exp.Expiration, j.right, j.strike)
-
-			mu.Lock()
-			defer mu.Unlock()
-			if j.right == "C" {
-				if oi > 0 {
-					exp.Calls[j.idx].OpenInterest = oi
+				mu.Lock()
+				if metrics.openInterest > 0 {
+					observedOI++
 				}
-				if iv > 0 {
-					exp.Calls[j.idx].ImpliedVolatility = iv
+				if metrics.iv > 0 {
+					observedIV++
 				}
-			} else {
-				if oi > 0 {
-					exp.Puts[j.idx].OpenInterest = oi
+				if metrics.volume > 0 {
+					observedVolume++
 				}
-				if iv > 0 {
-					exp.Puts[j.idx].ImpliedVolatility = iv
+				if j.right == "C" {
+					exp.Calls[j.idx].Volume = metrics.volume
+					if oi > 0 {
+						exp.Calls[j.idx].OpenInterest = oi
+					}
+					if iv > 0 {
+						exp.Calls[j.idx].ImpliedVolatility = iv
+					}
+				} else {
+					exp.Puts[j.idx].Volume = metrics.volume
+					if oi > 0 {
+						exp.Puts[j.idx].OpenInterest = oi
+					}
+					if iv > 0 {
+						exp.Puts[j.idx].ImpliedVolatility = iv
+					}
 				}
+				mu.Unlock()
 			}
-		}(j)
+		}()
 	}
 	wg.Wait()
+	metricsTime = time.Since(metricsStarted)
 
 	return chain, nil
+}
+
+type optionMetricJob struct {
+	strike float64
+	right  string
+	idx    int
+}
+
+// Preserve full-window enrichment while requesting the ATM call/put first.
+func prioritizeOptionMetricJobs(jobs []optionMetricJob, spot float64) {
+	sort.SliceStable(jobs, func(i, j int) bool { return math.Abs(jobs[i].strike-spot) < math.Abs(jobs[j].strike-spot) })
+}
+
+// Spot is a filter hint; it must not consume the entire enrichment deadline.
+// Without a quote, the existing median-strike fallback is not an actual spot.
+func optionSpotContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithTimeout(ctx, min(time.Second, time.Until(deadline)/4))
+	}
+	return context.WithCancel(ctx)
 }
 
 func spotForOIWindow(chain *model.OptionChain, quote *model.StockQuote) (float64, bool) {
@@ -1017,10 +1065,10 @@ func spotForOIWindow(chain *model.OptionChain, quote *model.StockQuote) (float64
 
 // fetchOIForContract issues a streaming reqMktData with generic tick 101 (Open
 // Interest), waits for the first OI tick (or timeout), then cancels the stream.
-// Returns (oi, iv). Either may be zero if no data arrived in time.
-func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, right string, strike float64) (int32, float64) {
+// Also captures standard contract volume. Missing ticks remain zero.
+func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, right string, strike float64) oiSnapshot {
 	reqID := c.nextReqID()
-	po := c.wrapper.registerOI(reqID)
+	po := c.wrapper.registerOI(reqID, right)
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
@@ -1031,31 +1079,42 @@ func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, rig
 	c.ibClient.ReqMktData(reqID, contract, "101", false, false, nil)
 	defer c.ibClient.CancelMktData(reqID)
 
+	metrics, err := waitOptionMetrics(ctx, po, errCh)
+	if err != nil {
+		log.Printf("ibkr: option metrics %s %s%.0f exp=%s: %v", symbol, right, strike, expiration, err)
+	}
+	return metrics
+}
+
+// Always snapshot collected ticks, including when cancellation/error wins the
+// select. Volume and IV may arrive before OI or before the collection deadline.
+func waitOptionMetrics(ctx context.Context, po *pendingOI, errCh <-chan error) (oiSnapshot, error) {
 	timer := time.NewTimer(oiPerContractTimeout)
 	defer timer.Stop()
-
+	var err error
 	select {
 	case <-po.done:
-		// OI tick arrived (or error closed it). Read fields after small delay
-		// to allow IV tick to also be captured.
+		grace := time.NewTimer(200 * time.Millisecond)
+		defer grace.Stop()
 		select {
-		case <-time.After(200 * time.Millisecond):
+		case <-grace.C:
 		case <-ctx.Done():
+			err = ctx.Err()
 		}
-		oi := po.snapshot()
-		return oi.openInterest, oi.iv
-	case err := <-errCh:
-		// Per-contract error (e.g., contract not found) — non-fatal.
-		log.Printf("ibkr: OI fetch %s %s%.0f exp=%s: %v", symbol, right, strike, expiration, err)
-		return 0, 0
+	case err = <-errCh:
 	case <-timer.C:
-		// Timeout — likely no live market data subscription for this contract,
-		// or low-volume contract with no OI updates. Move on.
-		oi := po.snapshot()
-		return oi.openInterest, oi.iv
+		err = context.DeadlineExceeded
 	case <-ctx.Done():
-		return 0, 0
+		err = ctx.Err()
 	}
+	// Error() also closes done; retain the cause whichever select arm wins.
+	if err == nil {
+		select {
+		case err = <-errCh:
+		default:
+		}
+	}
+	return po.snapshot(), errors.Join(err, po.notice())
 }
 
 // OI fetch tuning constants.

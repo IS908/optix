@@ -9,6 +9,8 @@ function formatSignedPct(value: number) {
 }
 
 function OptionStressRow({ row }: { row: ShockOptionStress }) {
+  const available = (metric: string, value: number) => Number.isFinite(value) && (row.missing_metrics ? !row.missing_metrics.includes(metric) : value !== 0)
+  const skewAvailable = available('iv_skew', row.iv_skew)
   return (
     <div className="grid grid-cols-[44px_1fr_72px] items-center gap-2 text-xs">
       <div>
@@ -16,11 +18,11 @@ function OptionStressRow({ row }: { row: ShockOptionStress }) {
         <div className="text-[10px] text-zinc-600">{row.basis}</div>
       </div>
       <div className="min-w-0 text-zinc-500">
-        <span className={row.iv_skew >= 0.05 ? 'text-amber-300' : 'text-zinc-500'}>IV skew {formatSignedPct(row.iv_skew)}</span>
+        <span className={skewAvailable && row.iv_skew >= 0.05 ? 'text-amber-300' : 'text-zinc-500'}>IV skew {skewAvailable ? formatSignedPct(row.iv_skew) : '—'}</span>
         <span className="mx-1 text-zinc-700">·</span>
-        <span>Vol {row.volume}</span>
+        <span title={row.note}>Vol {available('volume', row.volume) ? row.volume : '—'}</span>
       </div>
-      <div className="text-right tabular-nums text-zinc-500">OI {row.open_interest}</div>
+      <div className="text-right tabular-nums text-zinc-500">OI {available('open_interest', row.open_interest) ? row.open_interest : '—'}</div>
     </div>
   )
 }

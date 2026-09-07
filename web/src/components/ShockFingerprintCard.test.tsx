@@ -74,3 +74,18 @@ describe('ShockFingerprintCard', () => {
     expect(screen.getByText('OI 12000')).toBeInTheDocument()
   })
 })
+
+it('shows unavailable partial metrics without turning them into zeros', async () => {
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({source:'ibkr',rows:[],option_stress:[{underlying:'SPY',basis:'realtime',iv_skew:0,volume:0,open_interest:25,missing_metrics:['iv_skew','volume']}]})}))
+ render(<ShockFingerprintCard />)
+ await waitFor(()=>expect(screen.getByText('SPY')).toBeInTheDocument())
+ expect(screen.getByText('IV skew —')).toBeInTheDocument()
+ expect(screen.getByText('Vol —')).toBeInTheDocument()
+ expect(screen.getByText('OI 25')).toBeInTheDocument()
+})
+
+it('renders a measured zero skew', async () => {
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({source:'ibkr',rows:[],option_stress:[{underlying:'SPY',basis:'realtime',iv_skew:0,volume:5,open_interest:25,missing_metrics:[]}]})}))
+ render(<ShockFingerprintCard />)
+ await waitFor(()=>expect(screen.getByText('IV skew 0.0%')).toBeInTheDocument())
+})

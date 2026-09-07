@@ -12,6 +12,15 @@ above it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Capture per-contract volume during IBKR option-chain enrichment, preserve
+  partial ticks on cancellation, and show unavailable option-stress metrics
+  explicitly instead of as zeros (#212).
+- Reserve option collection time after spot lookup, prioritize ATM call/put
+  subscriptions within the existing bounded pool, and log stage timings and
+  subscription notices without terminating delayed data collection (#212).
+
 ## [0.16.0] - 2026-09-07
 
 ### Added

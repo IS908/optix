@@ -1,6 +1,9 @@
 package shockintel
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 func BuildShockFingerprint(quotes map[string]ShockQuote, liquidity LiquidityDTO, options []OptionStress, asOf time.Time) FingerprintDTO {
 	rows := []FingerprintRow{
@@ -55,11 +58,18 @@ func scoreLiquidity(q map[string]ShockQuote, liquidity LiquidityDTO, options []O
 	if len(liquidity.Rows) == 0 {
 		row.Missing = append(row.Missing, "liquidity")
 	}
+	if len(options) == 0 {
+		row.Missing = append(row.Missing, "option stress")
+	}
+	skewElevated := false
 	for _, stress := range options {
-		if stress.IVSkew >= 0.05 {
+		for _, metric := range stress.MissingMetrics {
+			row.Missing = append(row.Missing, stress.Underlying+" "+metric)
+		}
+		if !skewElevated && !slices.Contains(stress.MissingMetrics, "iv_skew") && stress.IVSkew >= 0.05 {
 			row.Score += 20
 			row.Evidence = append(row.Evidence, stress.Underlying+" option IV skew elevated")
-			break
+			skewElevated = true
 		}
 	}
 	return row

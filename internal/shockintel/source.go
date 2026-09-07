@@ -312,6 +312,9 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 		}
 		if r.ok {
 			out[ids[i]] = r.row
+			if len(r.row.MissingMetrics) > 0 {
+				warnParts = append(warnParts, fmt.Sprintf("%s: option metrics unavailable: %s", ids[i], strings.Join(r.row.MissingMetrics, ", ")))
+			}
 		} else if r.err == nil {
 			warnParts = append(warnParts, fmt.Sprintf("%s: option chain missing IV/OI/volume", ids[i]))
 		}
@@ -424,7 +427,20 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 		return OptionStress{}, false
 	}
 
-	note := fmt.Sprintf("exp=%s", exp.Expiration)
+	missing := []string{}
+	if callIV <= 0 || putIV <= 0 {
+		missing = append(missing, "iv_skew")
+	}
+	// Source models do not distinguish an absent size from a reported zero.
+	// Only positive totals establish availability; these are observed totals,
+	// not proof of complete chain coverage.
+	if volume <= 0 {
+		missing = append(missing, "volume")
+	}
+	if openInt <= 0 {
+		missing = append(missing, "open_interest")
+	}
+	note := fmt.Sprintf("exp=%s; volume/OI totals cover observed contracts only", exp.Expiration)
 	if atmIV > 0 {
 		note = fmt.Sprintf("%s atm_iv=%.2f", note, atmIV)
 	}
@@ -432,14 +448,15 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 		note = fmt.Sprintf("%s put_call_iv_skew=%.2f", note, ivSkew)
 	}
 	return OptionStress{
-		Underlying: underlying,
-		Source:     source,
-		Basis:      basisForSource(source),
-		AsOf:       asOf.UTC(),
-		IVSkew:     ivSkew,
-		Volume:     volume,
-		OpenInt:    openInt,
-		Note:       note,
+		MissingMetrics: missing,
+		Underlying:     underlying,
+		Source:         source,
+		Basis:          basisForSource(source),
+		AsOf:           asOf.UTC(),
+		IVSkew:         ivSkew,
+		Volume:         volume,
+		OpenInt:        openInt,
+		Note:           note,
 	}, true
 }
 

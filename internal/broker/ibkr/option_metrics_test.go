@@ -85,3 +85,20 @@ func TestOptionSubscriptionNoticeAllowsDelayedTicks(t *testing.T) {
 		t.Fatalf("notice or ticks lost: %+v %v", got, err)
 	}
 }
+
+func TestStressSampleWaitsForIVAfterOI(t *testing.T) {
+	po := &pendingOI{done: make(chan struct{}), waitForMetrics: true}
+	po.setOpenInterest(100)
+	select {
+	case <-po.done:
+		t.Fatal("OI alone ended stress subscription before IV")
+	default:
+	}
+	po.setVolume(20)
+	po.setIV(.25)
+	select {
+	case <-po.done:
+	default:
+		t.Fatal("complete sample did not finish")
+	}
+}

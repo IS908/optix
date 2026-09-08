@@ -2,6 +2,7 @@ package intraday
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/IS908/optix/internal/broker/factory"
 	"github.com/IS908/optix/internal/broker/ibkr"
 	"github.com/IS908/optix/internal/intelshared"
+	"github.com/IS908/optix/internal/marketdata"
 	"github.com/IS908/optix/pkg/model"
 )
 
@@ -22,9 +24,10 @@ type sourceNamer interface {
 type BrokerConnector func(ctx context.Context) (broker.Broker, string, error)
 
 type BrokerSource struct {
-	connect BrokerConnector
-	source  string
-	basis   string
+	connect  BrokerConnector
+	fallback snapshotSource
+	source   string
+	basis    string
 
 	// Now is an injectable clock for lookback→startDate derivation (tests
 	// only; defaults to time.Now).
@@ -61,7 +64,7 @@ func NewBrokerSourceWithConnector(connect BrokerConnector, source, basis string)
 }
 
 func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerSource {
-	return NewBrokerSourceWithConnector(func(ctx context.Context) (broker.Broker, string, error) {
+	s := NewBrokerSourceWithConnector(func(ctx context.Context) (broker.Broker, string, error) {
 		clientID := atomic.AddInt64(&intradayBrokerClientID, 1)
 		b := factory.NewWithFallback(ibkr.Config{Host: host, Port: port, ClientID: clientID}, pythonBin)
 		if err := b.Connect(ctx); err != nil {
@@ -69,6 +72,8 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerSour
 		}
 		return b, normalizeSourceName(b.SourceName()), nil
 	}, "ibkr-preferred", "realtime")
+	s.fallback = &barSnapshotSource{pythonBin: pythonBin}
+	return s
 }
 
 func (s *BrokerSource) SourceName() string { return s.source }
@@ -104,6 +109,43 @@ func (s *BrokerSource) Bars(ctx context.Context, symbols []string, timeframe str
 }
 
 func (s *BrokerSource) Snapshot(ctx context.Context, symbols []string, timeframe string, lookback time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
+	if s.fallback == nil {
+		return s.snapshot(ctx, symbols, timeframe, lookback)
+	}
+	budget := 3500 * time.Millisecond
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = min(budget, time.Until(deadline)/2)
+	}
+	primaryCtx, cancel := context.WithTimeout(ctx, budget)
+	quotes, bars, err := s.snapshot(primaryCtx, symbols, timeframe, lookback)
+	cancel()
+	if quotes == nil {
+		quotes = map[string]Quote{}
+	}
+	if bars == nil {
+		bars = map[string][]model.OHLCV{}
+	}
+	missing := []string{}
+	for _, symbol := range symbols {
+		if quotes[symbol].Last <= 0 || len(bars[symbol]) == 0 {
+			missing = append(missing, symbol)
+		}
+	}
+	if len(missing) == 0 || ctx.Err() != nil {
+		return quotes, bars, err
+	}
+	fq, fb, ferr := s.fallback.Snapshot(ctx, missing, timeframe, lookback)
+	for _, symbol := range missing {
+		// Replace the pair together so a delayed bar never masquerades as IBKR data.
+		if fq[symbol].Last > 0 && len(fb[symbol]) > 0 {
+			quotes[symbol] = fq[symbol]
+			bars[symbol] = fb[symbol]
+		}
+	}
+	return quotes, bars, errors.Join(err, ferr, fmt.Errorf("primary snapshot incomplete for %s; attempted yfinance fallback", strings.Join(missing, ", ")))
+}
+
+func (s *BrokerSource) snapshot(ctx context.Context, symbols []string, timeframe string, lookback time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
 	b, source, err := s.connect(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -272,4 +314,24 @@ func basisForSource(source string) string {
 		return "realtime"
 	}
 	return "delayed"
+}
+
+// The fallback's mark is the latest delayed 5-minute close, with the bar's
+// timestamp. Fetch all symbols together to avoid subprocess startup starvation.
+type barSnapshotSource struct{ pythonBin string }
+
+func (s *barSnapshotSource) Snapshot(ctx context.Context, symbols []string, timeframe string, lookback time.Duration) (map[string]Quote, map[string][]model.OHLCV, error) {
+	if timeframe != "5 mins" {
+		return nil, nil, fmt.Errorf("unsupported fallback interval %s", timeframe)
+	}
+	bars, err := marketdata.RawBatchBars(ctx, s.pythonBin, symbols, "5m", "1d")
+	quotes := map[string]Quote{}
+	for symbol, rows := range bars {
+		if len(rows) == 0 {
+			continue
+		}
+		last := rows[len(rows)-1]
+		quotes[symbol] = Quote{Symbol: symbol, Last: last.Close, AsOf: last.Timestamp, Source: "yfinance", Basis: "delayed"}
+	}
+	return quotes, bars, errors.Join(err, fmt.Errorf("fallback marks use delayed 5-minute bar closes"))
 }

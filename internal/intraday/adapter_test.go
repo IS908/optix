@@ -293,3 +293,16 @@ func TestBarsFromBrokerAbortsPromptlyOnContextCancellation(t *testing.T) {
 		t.Fatalf("bars = %d entries, want fewer than the full %d-symbol universe", len(bars), len(symbols))
 	}
 }
+
+func TestSnapshotRecoversMissingBarsWithLabeledFallback(t *testing.T) {
+	primary := NewBrokerSource(&fakeBroker{source: "IBKR", quote: &model.StockQuote{Last: 200}}, "IBKR", "realtime")
+	fallback := NewBrokerSource(&slowQuoteBroker{fakeBroker: fakeBroker{source: "Yahoo Finance"}}, "Yahoo Finance", "delayed")
+	primary.fallback = fallback
+	quotes, bars, err := primary.Snapshot(context.Background(), []string{"FAST"}, "5 mins", time.Hour)
+	if err == nil {
+		t.Fatal("fallback must report primary degradation")
+	}
+	if quotes["FAST"].Last != 100 || quotes["FAST"].Source != "yfinance" || quotes["FAST"].Basis != "delayed" || len(bars["FAST"]) != 1 {
+		t.Fatalf("fallback snapshot: %v %v", quotes, bars)
+	}
+}

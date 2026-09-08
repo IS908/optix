@@ -15,4 +15,5 @@ type MarketDepth struct {
 	Symbol    string
 	Timestamp time.Time
 	Levels    []MarketDepthLevel
+	Warnings  []string
 }

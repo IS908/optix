@@ -2,8 +2,10 @@ package premarket
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,10 +70,10 @@ func TestMoversUsesTodayPremarketAgainstPriorRegularClose(t *testing.T) {
 		"AAPL": {
 			premarketMoverBar(2026, time.June, 10, 4, 0, 90, 400),
 			premarketMoverBar(2026, time.June, 10, 9, 0, 91, 600),
-			premarketMoverBar(2026, time.June, 10, 16, 0, 95, 1_000),
+			premarketMoverBar(2026, time.June, 10, 15, 55, 95, 1_000),
 			premarketMoverBar(2026, time.June, 11, 4, 0, 96, 200),
 			premarketMoverBar(2026, time.June, 11, 9, 0, 97, 300),
-			premarketMoverBar(2026, time.June, 11, 16, 0, 100, 1_000),
+			premarketMoverBar(2026, time.June, 11, 15, 55, 100, 1_000),
 			premarketMoverBar(2026, time.June, 12, 4, 0, 108, 100),
 			premarketMoverBar(2026, time.June, 12, 9, 0, 110, 200),
 		},
@@ -269,5 +271,16 @@ func TestSentimentMissingDataDoesNotCreateBullishSignal(t *testing.T) {
 				t.Fatalf("regime = %q, want %q", got.Regime, tc.want)
 			}
 		})
+	}
+}
+
+func TestMoversMarksUnavailablePremarketVolume(t *testing.T) {
+	now := time.Date(2026, 9, 8, 10, 0, 0, 0, nyLoc)
+	src := &fakeSource{premkt: map[string][]model.OHLCV{"AAPL": {premarketMoverBar(2026, 9, 4, 15, 55, 100, 100), premarketMoverBar(2026, 9, 8, 9, 25, 102, 0)}}}
+	svc, _ := newSvc(t, src, now)
+	rows, _ := svc.Movers(context.Background(), nil)
+	raw, _ := json.Marshal(rows)
+	if !strings.Contains(string(raw), `"missing_metrics":["vol_ratio"]`) || len(rows.Warnings) == 0 {
+		t.Fatalf("missing volume presented as real zero: %s", raw)
 	}
 }

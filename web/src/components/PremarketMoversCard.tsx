@@ -15,7 +15,7 @@ function MoverRow({ mover, direction }: { mover: Mover; direction: '↑' | '↓'
         {mover.pct >= 0 ? '+' : ''}
         {mover.pct.toFixed(2)}%
       </span>
-      <span className="text-zinc-500">量比 {mover.vol_ratio.toFixed(1)}x</span>
+      <span className="text-zinc-500">量比 {mover.missing_metrics?.includes('vol_ratio') ? '不可用' : `${mover.vol_ratio.toFixed(1)}x`}</span>
     </div>
   )
 }

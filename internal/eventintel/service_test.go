@@ -153,3 +153,19 @@ func (f *fallbackEventSource) EventDates(context.Context) ([]EventDate, error) {
 		{Date: dateUTC(2026, 6, 10), Kind: "CPI", Label: "Jun CPI"},
 	}, errors.New("remote calendar down")
 }
+
+func TestFallbackCalendarCovers2026SecondHalf(t *testing.T) {
+	events := defaultEventDates()
+	want := map[string]bool{"CPI:2026-07-14": false, "CPI:2026-08-12": false, "CPI:2026-09-11": false, "CPI:2026-10-14": false, "CPI:2026-11-10": false, "CPI:2026-12-10": false, "FOMC:2026-06-17": false, "FOMC:2026-07-29": false, "FOMC:2026-09-16": false, "FOMC:2026-10-28": false, "FOMC:2026-12-09": false}
+	for _, e := range events {
+		key := e.Kind + ":" + e.Date.Format("2006-01-02")
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+	}
+	for key, found := range want {
+		if !found {
+			t.Errorf("official fallback event missing: %s", key)
+		}
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,10 +69,10 @@ func renderPremarket(b premarket.BundleDTO) {
 		b.Gaps.Symbol, b.Gaps.ImpliedGapPct, b.Gaps.Band, b.Gaps.HistFillRate*100, b.Gaps.SampleN)
 	fmt.Printf("\n盘前异动 (%s):\n", b.Movers.UniverseNote)
 	for _, m := range topN(b.Movers.Gainers, 5) {
-		fmt.Printf("  ↑ %-6s %+.2f%% ·量比 %.1fx%s\n", m.Symbol, m.Pct, m.VolRatio, wlMark(m.Watchlist))
+		fmt.Printf("  ↑ %-6s %+.2f%% ·量比 %s%s\n", m.Symbol, m.Pct, premarketVolumeRatioLabel(m), wlMark(m.Watchlist))
 	}
 	for _, m := range topN(b.Movers.Losers, 5) {
-		fmt.Printf("  ↓ %-6s %+.2f%% ·量比 %.1fx%s\n", m.Symbol, m.Pct, m.VolRatio, wlMark(m.Watchlist))
+		fmt.Printf("  ↓ %-6s %+.2f%% ·量比 %s%s\n", m.Symbol, m.Pct, premarketVolumeRatioLabel(m), wlMark(m.Watchlist))
 	}
 	pc := "P/C 不可用"
 	if b.Sentiment.PCAvailable {
@@ -100,4 +101,11 @@ func watchlistSymbols(items []model.WatchlistItem) []string {
 		out = append(out, item.Symbol)
 	}
 	return out
+}
+
+func premarketVolumeRatioLabel(m premarket.Mover) string {
+	if slices.Contains(m.MissingMetrics, "vol_ratio") {
+		return "不可用"
+	}
+	return fmt.Sprintf("%.1fx", m.VolRatio)
 }

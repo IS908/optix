@@ -225,10 +225,11 @@ func (s *Service) loadMarketDataFresh(ctx context.Context, symbols []string) (ma
 	total := len(symbols)
 	if snap, ok := s.src.(snapshotSource); ok {
 		quotes, bars, err := snap.Snapshot(loadCtx, symbols, barInterval, barLookback)
+		warnings := partialDataWarnings(sourceName(s.src), total, quotes, bars)
 		if err != nil {
-			return nil, nil, []string{fmt.Sprintf("intraday source unavailable: %v", err)}
+			warnings = append(warnings, fmt.Sprintf("intraday source degraded: %v", err))
 		}
-		return quotes, bars, partialDataWarnings(sourceName(s.src), total, quotes, bars)
+		return quotes, bars, warnings
 	}
 	quotes, err := s.src.Quotes(loadCtx, symbols)
 	if err != nil {

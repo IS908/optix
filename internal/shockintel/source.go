@@ -30,8 +30,11 @@ type BrokerQuoteAdapter struct {
 	connect         BrokerConnector
 	fallback        MarketSource
 	overlayTimeout  time.Duration
+	depthTimeout    time.Duration
 	connectTimeout  time.Duration
 	fallbackTimeout time.Duration
+	spotMu          sync.Mutex
+	spotQuotes      map[string]ShockQuote
 }
 
 type YFinanceAdapter struct {
@@ -58,7 +61,7 @@ func NewIBKRPreferredSource(host string, port int, pythonBin string) *BrokerQuot
 }
 
 func NewBrokerQuoteAdapter(connect BrokerConnector, fallback MarketSource) *BrokerQuoteAdapter {
-	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond, connectTimeout: 4 * time.Second, fallbackTimeout: 8 * time.Second}
+	return &BrokerQuoteAdapter{connect: connect, fallback: fallback, overlayTimeout: 1500 * time.Millisecond, depthTimeout: 4 * time.Second, connectTimeout: 4 * time.Second, fallbackTimeout: 8 * time.Second}
 }
 
 func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
@@ -67,6 +70,16 @@ func NewYFinanceAdapter(pythonBin string) *YFinanceAdapter {
 
 func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[string]ShockQuote, error) {
 	out := map[string]ShockQuote{}
+	defer func() {
+		a.spotMu.Lock()
+		defer a.spotMu.Unlock()
+		if a.spotQuotes == nil {
+			a.spotQuotes = map[string]ShockQuote{}
+		}
+		for id, q := range out {
+			a.spotQuotes[id] = q
+		}
+	}()
 	var fallbackErr error
 	if a.fallback != nil {
 		fallbackCtx := ctx
@@ -129,14 +142,29 @@ func (a *BrokerQuoteAdapter) Quotes(ctx context.Context, ids []string) (map[stri
 	if source != "ibkr" {
 		warnParts = append(warnParts, fmt.Sprintf("broker quotes degraded: using %s fallback for broker-preferred quotes", source))
 	}
+	type quoteResult struct {
+		quote *model.StockQuote
+		err   error
+	}
+	results := make([]quoteResult, len(brokerIDs))
+	var wg sync.WaitGroup
+	// The curated broker overlay has at most ten symbols. A missing stock
+	// subscription must not consume the collection window of every other quote.
+	for i, id := range brokerIDs {
+		wg.Add(1)
+		go func() { defer wg.Done(); q, err := b.GetQuote(overlayCtx, id); results[i] = quoteResult{q, err} }()
+	}
+	wg.Wait()
 	var quoteErrs []string
-	for _, id := range brokerIDs {
-		q, err := b.GetQuote(overlayCtx, id)
-		if err != nil {
-			quoteErrs = append(quoteErrs, fmt.Sprintf("%s: %v", id, err))
+	for i, r := range results {
+		id := brokerIDs[i]
+		if r.err != nil {
+			quoteErrs = append(quoteErrs, fmt.Sprintf("%s: %v", id, r.err))
 			continue
 		}
-		out[id] = stockQuoteToShock(id, q, source)
+		if r.quote != nil && r.quote.Last > 0 {
+			out[id] = stockQuoteToShock(id, r.quote, source)
+		}
 	}
 	if len(quoteErrs) > 0 {
 		warnParts = append(warnParts, fmt.Sprintf("broker quotes partial: %s", strings.Join(quoteErrs, "; ")))
@@ -184,9 +212,9 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 		return out, fmt.Errorf("broker depth degraded: %w", err)
 	}
 	depthCtx := ctx
-	if a.overlayTimeout > 0 {
+	if a.depthTimeout > 0 {
 		var cancel context.CancelFunc
-		depthCtx, cancel = context.WithTimeout(ctx, a.overlayTimeout)
+		depthCtx, cancel = context.WithTimeout(ctx, a.depthTimeout)
 		defer cancel()
 	}
 	source = normalizeSourceName(source)
@@ -206,14 +234,23 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 		err   error
 	}
 	results := make(chan depthResult, len(brokerIDs))
-	var wg sync.WaitGroup
+	jobs := make(chan string, len(brokerIDs))
 	for _, id := range brokerIDs {
+		jobs <- id
+	}
+	close(jobs)
+	var wg sync.WaitGroup
+	// Standard IBKR accounts allow three concurrent depth subscriptions.
+	// GetMarketDepth cancels each stream before this worker starts another.
+	for range min(3, len(brokerIDs)) {
 		wg.Add(1)
-		go func(id string) {
+		go func() {
 			defer wg.Done()
-			depth, err := fetcher.GetMarketDepth(depthCtx, id, levels)
-			results <- depthResult{id: id, depth: depth, err: err}
-		}(id)
+			for id := range jobs {
+				depth, err := fetchDepthWithQuotaRetry(depthCtx, fetcher, id, levels)
+				results <- depthResult{id: id, depth: depth, err: err}
+			}
+		}()
 	}
 	wg.Wait()
 	close(results)
@@ -225,6 +262,11 @@ func (a *BrokerQuoteAdapter) Depth(ctx context.Context, ids []string, levels int
 			continue
 		}
 		out[result.id] = marketDepthToShock(result.id, result.depth, source)
+		if result.depth != nil {
+			for _, warning := range result.depth.Warnings {
+				warnParts = append(warnParts, result.id+": "+warning)
+			}
+		}
 	}
 	if len(warnParts) > 0 {
 		err := fmt.Errorf("broker depth partial: %s", strings.Join(warnParts, "; "))
@@ -268,8 +310,14 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 	if source != "ibkr" {
 		warnParts = append(warnParts, fmt.Sprintf("broker option stress degraded: using %s fallback for option chain", source))
 	}
-	// At most two full chains at a time (each IBKR chain has its own
-	// bounded OI pool). Reserve a share of the deadline for later waves.
+	// Full-chain sources use two workers. ATM sampling sources use four
+	// workers with two contracts each. Reserve time for any later waves.
+	sampler, sampling := b.(broker.OISpotFetcher)
+	sampling = sampling && sampler.CanSampleOptionStress()
+	workers := 2
+	if sampling {
+		workers = 4
+	} // at most 8 ATM streams, versus 10 for full-chain fallback
 	perSymbol := 6 * time.Second
 	if deadline, ok := optionCtx.Deadline(); ok {
 		perSymbol = time.Until(deadline)
@@ -278,7 +326,7 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 	// slice for collecting completed rows and returning them before that
 	// caller stops waiting; otherwise one slow job discards every fast result.
 	perSymbol -= min(100*time.Millisecond, perSymbol/10)
-	perSymbol /= time.Duration((len(ids) + 1) / 2)
+	perSymbol /= time.Duration((len(ids) + workers - 1) / workers)
 	type result struct {
 		row OptionStress
 		ok  bool
@@ -291,16 +339,31 @@ func (a *BrokerQuoteAdapter) OptionMetrics(ctx context.Context, underlyings []st
 	}
 	close(jobs)
 	var wg sync.WaitGroup
-	for range min(2, len(ids)) {
+	for range min(workers, len(ids)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
 				itemCtx, cancel := context.WithTimeout(optionCtx, perSymbol)
-				chain, err := optionStressChain(itemCtx, b, ids[i])
+				a.spotMu.Lock()
+				hint := a.spotQuotes[ids[i]]
+				a.spotMu.Unlock()
+				var chain *model.OptionChain
+				var err error
+				if sampling {
+					if time.Since(hint.AsOf) < 0 || time.Since(hint.AsOf) >= 30*time.Second {
+						hint = ShockQuote{}
+					}
+					chain, err = sampler.GetOptionChainWithSpot(itemCtx, ids[i], "", hint.Price, hint.Source)
+				} else {
+					chain, err = optionStressChain(itemCtx, b, ids[i])
+				}
 				err = errors.Join(err, itemCtx.Err())
 				cancel()
 				row, ok := summarizeOptionStress(ids[i], chain, source, time.Now().UTC())
+				if sampling && ok {
+					row.Note += "; nearest call/put sample"
+				}
 				results[i] = result{row: row, ok: ok, err: err}
 			}
 		}()
@@ -394,9 +457,7 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 		return OptionStress{}, false
 	}
 	spot := chain.UnderlyingPrice
-	if spot <= 0 {
-		spot = inferSpotFromChain(exp)
-	}
+	validSpot := spot > 0 && !math.IsNaN(spot) && !math.IsInf(spot, 0)
 	call, hasCall := nearestOption(exp.Calls, spot)
 	put, hasPut := nearestOption(exp.Puts, spot)
 
@@ -412,10 +473,10 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 	}
 
 	callIV, putIV := 0.0, 0.0
-	if hasCall {
+	if hasCall && validSpot {
 		callIV = call.ImpliedVolatility
 	}
-	if hasPut {
+	if hasPut && validSpot {
 		putIV = put.ImpliedVolatility
 	}
 	atmIV := averagePositive(callIV, putIV)
@@ -428,6 +489,9 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 	}
 
 	missing := []string{}
+	if !validSpot {
+		missing = append(missing, "underlying_price")
+	}
 	if callIV <= 0 || putIV <= 0 {
 		missing = append(missing, "iv_skew")
 	}
@@ -441,6 +505,9 @@ func summarizeOptionStress(underlying string, chain *model.OptionChain, source s
 		missing = append(missing, "open_interest")
 	}
 	note := fmt.Sprintf("exp=%s; volume/OI totals cover observed contracts only", exp.Expiration)
+	if chain.UnderlyingPriceSource != "" {
+		note += fmt.Sprintf("; spot=%.2f source=%s", spot, chain.UnderlyingPriceSource)
+	}
 	if atmIV > 0 {
 		note = fmt.Sprintf("%s atm_iv=%.2f", note, atmIV)
 	}
@@ -614,5 +681,24 @@ func basisForSource(source string) string {
 		return string(marketdata.BasisDelayed)
 	default:
 		return string(marketdata.BasisDelayed)
+	}
+}
+
+func fetchDepthWithQuotaRetry(ctx context.Context, fetcher broker.MarketDepthFetcher, id string, levels int) (*model.MarketDepth, error) {
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		depth, err := fetcher.GetMarketDepth(ctx, id, levels)
+		if !errors.Is(err, broker.ErrMarketDepthLimit) || attempt >= 3 {
+			return depth, err
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 150 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 }

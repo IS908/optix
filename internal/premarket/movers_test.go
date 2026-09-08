@@ -56,3 +56,12 @@ func TestMoverUniverseNormalizesInteriorWhitespace(t *testing.T) {
 		t.Fatalf("watchlist map = %#v, want BRKB marked", inWL)
 	}
 }
+
+func TestPriorRegularCloseExcludesBarStartingAtMarketClose(t *testing.T) {
+	now := time.Date(2026, 9, 8, 10, 0, 0, 0, nyLoc)
+	bars := []model.OHLCV{premarketMoverBar(2026, 9, 4, 15, 55, 230.345, 1000), premarketMoverBar(2026, 9, 4, 16, 0, 229.82, 0)}
+	got := priorRegularCloseBefore(bars, now, 0)
+	if got != 230.345 {
+		t.Fatalf("used after-hours close %v instead of regular-session close", got)
+	}
+}

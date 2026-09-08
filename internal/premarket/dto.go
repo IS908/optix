@@ -41,10 +41,11 @@ type GapsDTO struct {
 }
 
 type Mover struct {
-	Symbol    string  `json:"symbol"`
-	Pct       float64 `json:"pct"`
-	VolRatio  float64 `json:"vol_ratio"`
-	Watchlist bool    `json:"watchlist"`
+	MissingMetrics []string `json:"missing_metrics,omitempty"`
+	Symbol         string   `json:"symbol"`
+	Pct            float64  `json:"pct"`
+	VolRatio       float64  `json:"vol_ratio"`
+	Watchlist      bool     `json:"watchlist"`
 }
 
 type MoversDTO struct {

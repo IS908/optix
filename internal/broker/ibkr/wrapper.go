@@ -232,17 +232,18 @@ func (pq *pendingQuote) snapshot() quoteSnapshot {
 // On reqMktData with genericTickList="101", IB delivers tick type
 // OPTION_OPEN_INTEREST (which the scmhub/ibapi library exposes via TickSize
 // callback as a generic-tick value, distinct from the 86 used for non-options).
-// We close `done` as soon as ANY OI tick arrives so the caller can cancel the
-// streaming subscription quickly.
+// Full-window OI enrichment completes on OI. Bounded ATM stress samples wait
+// for OI, volume, and IV so an early OI tick does not discard later IV.
 type pendingOI struct {
-	dataNotice   error
-	right        string
-	volume       int64
-	mu           sync.Mutex
-	openInterest int32
-	iv           float64
-	done         chan struct{}
-	once         sync.Once
+	waitForMetrics bool
+	dataNotice     error
+	right          string
+	volume         int64
+	mu             sync.Mutex
+	openInterest   int32
+	iv             float64
+	done           chan struct{}
+	once           sync.Once
 }
 
 type oiSnapshot struct {
@@ -259,7 +260,7 @@ func (po *pendingOI) setOpenInterest(openInterest int32) {
 	po.mu.Lock()
 	po.openInterest = openInterest
 	po.mu.Unlock()
-	po.once.Do(func() { close(po.done) })
+	po.maybeComplete()
 }
 
 func (po *pendingOI) setIV(iv float64) {
@@ -272,6 +273,7 @@ func (po *pendingOI) setIV(iv float64) {
 		po.iv = iv
 	}
 	po.mu.Unlock()
+	po.maybeComplete()
 }
 
 func (po *pendingOI) setNotice(err error) { po.mu.Lock(); po.dataNotice = err; po.mu.Unlock() }
@@ -284,6 +286,7 @@ func (po *pendingOI) setVolume(volume float64) {
 	po.mu.Lock()
 	po.volume = int64(volume)
 	po.mu.Unlock()
+	po.maybeComplete()
 }
 
 func (po *pendingOI) snapshot() oiSnapshot {
@@ -300,6 +303,7 @@ func (po *pendingOI) snapshot() oiSnapshot {
 // UpdateMktDepthL2 callbacks. IB reports side 0 as ask and side 1 as bid;
 // operation 2 deletes a level, while 0/1 insert or update it.
 type pendingDepth struct {
+	notice string
 	mu     sync.Mutex
 	levels map[string]model.MarketDepthLevel
 	want   int
@@ -1000,6 +1004,18 @@ var strictErrorCodes = map[int64]bool{
 // or logs them as informational messages (errCode < 2000 are often warnings).
 func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errString string, _ string) {
 	ibErr := &ibAPIError{code: errCode, message: errString}
+	// SMART depth may include subscribed venues while other venues lack permission.
+	if errCode == 2152 {
+		w.mu.Lock()
+		pd := w.depth[reqID]
+		w.mu.Unlock()
+		if pd != nil {
+			pd.mu.Lock()
+			pd.notice = ibErr.Error()
+			pd.mu.Unlock()
+			return
+		}
+	}
 	// Remember subscription notices for option-chain diagnostics without ending
 	// the stream: delayed ticks may still follow these informational messages.
 	if errCode == 354 || errCode == 10167 {
@@ -1021,8 +1037,9 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 	if errCode < 2000 {
 		w.mu.Lock()
 		strict := w.strictReqIDs[reqID]
+		_, depthRequest := w.depth[reqID]
 		w.mu.Unlock()
-		if !strict || !strictErrorCodes[errCode] {
+		if !(depthRequest && errCode == 309) && (!strict || !strictErrorCodes[errCode]) {
 			return
 		}
 	}
@@ -1061,4 +1078,22 @@ func (w *IbWrapper) Error(reqID ibapi.TickerID, _ int64, errCode int64, errStrin
 		}
 		w.mu.Unlock()
 	}
+}
+
+func (po *pendingOI) maybeComplete() {
+	po.mu.Lock()
+	ready := po.openInterest > 0 && (!po.waitForMetrics || (po.iv > 0 && po.volume > 0))
+	po.mu.Unlock()
+	if ready {
+		po.once.Do(func() { close(po.done) })
+	}
+}
+
+func (pd *pendingDepth) warnings() []string {
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+	if pd.notice == "" {
+		return nil
+	}
+	return []string{pd.notice}
 }

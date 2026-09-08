@@ -154,5 +154,6 @@ func isPremarket(t time.Time) bool {
 
 func isRegular(t time.Time) bool {
 	mins := t.Hour()*60 + t.Minute()
-	return mins >= 9*60+30 && mins <= 16*60
+	// Five-minute bars are labeled by their start; 16:00 belongs to after-hours.
+	return mins >= 9*60+30 && mins < 16*60
 }

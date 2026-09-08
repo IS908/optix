@@ -26,6 +26,8 @@ type Config struct {
 	Host     string
 	Port     int
 	ClientID int64
+	// OptionSpotFallback supplies a delayed selection hint when stock subscriptions are unavailable.
+	OptionSpotFallback func(context.Context, string) (*model.StockQuote, error)
 }
 
 const (
@@ -698,6 +700,10 @@ func (c *Client) GetMarketDepth(ctx context.Context, symbol string, levels int) 
 	select {
 	case <-pd.done:
 	case err := <-errCh:
+		var ibErr *ibAPIError
+		if errors.As(err, &ibErr) && ibErr.code == 309 {
+			return nil, fmt.Errorf("GetMarketDepth %s: %w: %v", symbol, broker.ErrMarketDepthLimit, err)
+		}
 		return nil, fmt.Errorf("GetMarketDepth %s: %w", symbol, err)
 	case <-depthCtx.Done():
 	}
@@ -713,6 +719,7 @@ func (c *Client) GetMarketDepth(ctx context.Context, symbol string, levels int) 
 		Symbol:    symbol,
 		Timestamp: time.Now().UTC(),
 		Levels:    snapshot,
+		Warnings:  pd.warnings(),
 	}, nil
 }
 
@@ -759,6 +766,7 @@ func (c *Client) GetHistoricalBars(ctx context.Context, symbol, timeframe, start
 		nil,       // chartOptions
 	)
 
+	defer c.ibClient.CancelHistoricalData(reqID)
 	select {
 	case <-pb.done:
 	case err := <-errCh:
@@ -907,11 +915,35 @@ func (c *Client) GetOptionChain(ctx context.Context, underlying string, expirati
 // the stream, wait for the first OPEN_INTEREST tick, then immediately
 // cancelMktData to avoid leaking subscriptions.
 func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error) {
+	return c.getOptionChainWithOI(ctx, underlying, expiration, 0, "", false)
+}
+
+func (c *Client) GetOptionChainWithSpot(ctx context.Context, underlying, expiration string, spotHint float64, spotSource string) (*model.OptionChain, error) {
+	return c.getOptionChainWithOI(ctx, underlying, expiration, spotHint, spotSource, true)
+}
+
+func (c *Client) getOptionChainWithOI(ctx context.Context, underlying, expiration string, spotHint float64, spotSource string, sampleOnly bool) (*model.OptionChain, error) {
 	started := time.Now()
 	var structureTime, spotTime, metricsTime time.Duration
 	eligible, requested, observedOI, observedIV, observedVolume := 0, 0, 0, 0, 0
 	defer func() {
 		log.Printf("ibkr: option phases symbol=%s structure=%s spot=%s metrics=%s total=%s eligible=%d requested=%d observed_oi=%d observed_iv=%d observed_volume=%d ctx=%v", underlying, structureTime, spotTime, metricsTime, time.Since(started), eligible, requested, observedOI, observedIV, observedVolume, ctx.Err())
+	}()
+	// Fetch a selection hint concurrently with contract discovery.
+	spotCtx, cancelSpot := optionSpotContext(ctx)
+	defer cancelSpot()
+	type spotResult struct {
+		quote  *model.StockQuote
+		source string
+	}
+	spotReady := make(chan spotResult, 1)
+	go func() {
+		if spotHint > 0 && !math.IsNaN(spotHint) && !math.IsInf(spotHint, 0) {
+			spotReady <- spotResult{&model.StockQuote{Last: spotHint}, spotSource}
+			return
+		}
+		q, source := resolveOptionSpot(spotCtx, underlying, c.GetQuote, c.cfg.OptionSpotFallback)
+		spotReady <- spotResult{q, source}
 	}()
 	// Reuse the structure-only chain to get strikes/expirations.
 	chain, err := c.GetOptionChain(ctx, underlying, expiration)
@@ -925,9 +957,8 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 
 	// Get spot price to filter ATM strikes (±15% window).
 	spotStarted := time.Now()
-	spotCtx, cancelSpot := optionSpotContext(ctx)
-	quote, qErr := c.GetQuote(spotCtx, underlying)
-	cancelSpot()
+	hint := <-spotReady
+	quote := hint.quote
 	spotTime = time.Since(spotStarted)
 	spot, authoritativeSpot := spotForOIWindow(chain, quote)
 	if spot <= 0 {
@@ -935,8 +966,9 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	}
 	if authoritativeSpot {
 		chain.UnderlyingPrice = spot
+		chain.UnderlyingPriceSource = hint.source
 	} else {
-		log.Printf("ibkr: GetOptionChainWithOI %s: spot quote unavailable (%v) — using median strike for OI window only", underlying, qErr)
+		return chain, fmt.Errorf("GetOptionChainWithOI %s: underlying price unavailable; cannot select ATM contracts", underlying)
 	}
 	low := spot * (1 - oiStrikeWindowPct)
 	high := spot * (1 + oiStrikeWindowPct)
@@ -969,6 +1001,9 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 	log.Printf("ibkr: fetching OI for %d contracts (%s exp=%s spot=$%.2f)", len(jobs), underlying, exp.Expiration, spot)
 
 	prioritizeOptionMetricJobs(jobs, spot)
+	if sampleOnly {
+		jobs = atmMetricJobs(jobs)
+	}
 	eligible = len(jobs)
 	metricsStarted := time.Now()
 
@@ -991,7 +1026,7 @@ func (c *Client) GetOptionChainWithOI(ctx context.Context, underlying string, ex
 				mu.Lock()
 				requested++
 				mu.Unlock()
-				metrics := c.fetchOIForContract(ctx, underlying, exp.Expiration, j.right, j.strike)
+				metrics := c.fetchOIForContract(ctx, underlying, exp.Expiration, j.right, j.strike, sampleOnly)
 				oi, iv := metrics.openInterest, metrics.iv
 
 				mu.Lock()
@@ -1046,9 +1081,9 @@ func prioritizeOptionMetricJobs(jobs []optionMetricJob, spot float64) {
 // Without a quote, the existing median-strike fallback is not an actual spot.
 func optionSpotContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if deadline, ok := ctx.Deadline(); ok {
-		return context.WithTimeout(ctx, min(time.Second, time.Until(deadline)/4))
+		return context.WithTimeout(ctx, min(3*time.Second, time.Until(deadline)/4))
 	}
-	return context.WithCancel(ctx)
+	return context.WithTimeout(ctx, 3*time.Second)
 }
 
 func spotForOIWindow(chain *model.OptionChain, quote *model.StockQuote) (float64, bool) {
@@ -1066,9 +1101,10 @@ func spotForOIWindow(chain *model.OptionChain, quote *model.StockQuote) (float64
 // fetchOIForContract issues a streaming reqMktData with generic tick 101 (Open
 // Interest), waits for the first OI tick (or timeout), then cancels the stream.
 // Also captures standard contract volume. Missing ticks remain zero.
-func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, right string, strike float64) oiSnapshot {
+func (c *Client) fetchOIForContract(ctx context.Context, symbol, expiration, right string, strike float64, waitForMetrics bool) oiSnapshot {
 	reqID := c.nextReqID()
 	po := c.wrapper.registerOI(reqID, right)
+	po.waitForMetrics = waitForMetrics
 	errCh := c.wrapper.registerError(reqID)
 	defer c.wrapper.unregister(reqID)
 
@@ -1542,3 +1578,52 @@ func optionQuoteFromSnapshot(underlying, expiration, right string, strike float6
 	}
 	return q
 }
+
+func resolveOptionSpot(ctx context.Context, symbol string, primary, fallback func(context.Context, string) (*model.StockQuote, error)) (*model.StockQuote, string) {
+	type result struct {
+		quote  *model.StockQuote
+		source string
+	}
+	results := make(chan result, 2)
+	count := 0
+	for source, fetch := range map[string]func(context.Context, string) (*model.StockQuote, error){"ibkr": primary, "yfinance": fallback} {
+		if fetch == nil {
+			continue
+		}
+		count++
+		go func() { q, _ := fetch(ctx, symbol); results <- result{q, source} }()
+	}
+	var backup *model.StockQuote
+	for range count {
+		select {
+		case r := <-results:
+			if r.quote != nil && r.quote.Last > 0 && !math.IsNaN(r.quote.Last) && !math.IsInf(r.quote.Last, 0) {
+				if r.source == "ibkr" {
+					return r.quote, r.source
+				}
+				backup = r.quote
+			}
+		case <-ctx.Done():
+			return backup, "yfinance"
+		}
+	}
+	return backup, "yfinance"
+}
+
+// Select one nearest call and one nearest put even when strike grids differ.
+func atmMetricJobs(sorted []optionMetricJob) []optionMetricJob {
+	out := make([]optionMetricJob, 0, 2)
+	seen := map[string]bool{}
+	for _, job := range sorted {
+		if !seen[job.right] {
+			out = append(out, job)
+			seen[job.right] = true
+		}
+		if len(out) == 2 {
+			break
+		}
+	}
+	return out
+}
+
+func (c *Client) CanSampleOptionStress() bool { return true }

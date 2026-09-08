@@ -12,6 +12,8 @@ above it.
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-09
+
 ### Fixed
 
 - Capture per-contract volume during IBKR option-chain enrichment, preserve
@@ -20,6 +22,29 @@ above it.
 - Reserve option collection time after spot lookup, prioritize ATM call/put
   subscriptions within the existing bounded pool, and log stage timings and
   subscription notices without terminating delayed data collection (#212).
+
+- Recover intraday movers and sector heatmaps when a connected IBKR historical
+  data farm fails, using bounded batch fallback with explicit delayed bar prices
+  and timestamps (#221).
+- Sample the nearest call/put using a recent sourced underlying price, wait for
+  IV, volume and OI, and preserve ordinary full-chain Yahoo fallback (#221).
+- Respect IBKR's three-depth-subscription limit, retry temporary quota exhaustion,
+  and preserve authorized venue data alongside partial-permission warnings (#221).
+- Fetch shock quote overlays concurrently so one slow symbol cannot starve others
+  within the collection deadline (#221).
+- Display unavailable premarket volume ratios explicitly in JSON, CLI and web;
+  exclude the 16:00 after-hours bar from the prior regular-session close (#221).
+- Extend the local CPI/FOMC fallback calendar through December 2026 using official
+  published schedules (#221).
+
+### Validation and data availability
+
+- Real-session acceptance passed for nine intraday symbols, five mapped sectors,
+  six two-sided depth snapshots and four complete ATM option samples. Nine
+  completed premarket-window price changes were independently reconciled.
+- Gateway farm connectivity, exchange entitlements and BLS HTTP 403 remain upstream
+  conditions; available data and explicit degradation warnings are retained.
+  See [acceptance evidence](docs/debug-2026-09-08.md).
 
 ## [0.16.0] - 2026-09-07
 
@@ -2013,7 +2038,8 @@ the IBKR connection-handling work from the preceding PRs.
   `~/.agents/skills/optix/` layout, dev/release modes, `OPTIX_HOME`
   override, and `--uninstall --purge`.
 
-[Unreleased]: https://github.com/IS908/optix/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/IS908/optix/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/IS908/optix/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/IS908/optix/compare/v0.15.7...v0.16.0
 [0.15.7]: https://github.com/IS908/optix/compare/v0.15.6...v0.15.7
 [0.15.6]: https://github.com/IS908/optix/compare/v0.15.5...v0.15.6

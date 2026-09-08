@@ -771,3 +771,34 @@ func TestOIAccumulatorContractVolumeAndSide(t *testing.T) {
 		}
 	}
 }
+
+func TestDepthQuotaErrorIsRouted(t *testing.T) {
+	w := newIbWrapper()
+	w.registerDepth(2001, 5)
+	errs := w.registerError(2001)
+	w.Error(2001, 0, 309, "maximum depth subscriptions", "")
+	select {
+	case err := <-errs:
+		if err == nil {
+			t.Fatal("nil quota error")
+		}
+	default:
+		t.Fatal("309 was swallowed as informational")
+	}
+}
+
+func TestDepthPartialSubscriptionNoticeDoesNotDiscardAvailableVenue(t *testing.T) {
+	w := newIbWrapper()
+	pd := w.registerDepth(2002, 5)
+	errs := w.registerError(2002)
+	w.UpdateMktDepth(2002, 0, 0, 1, 100, ibapi.StringToDecimal("10"))
+	w.Error(2002, 0, 2152, "additional market data permissions required", "")
+	select {
+	case err := <-errs:
+		t.Fatalf("partial venue notice killed available depth: %v", err)
+	default:
+	}
+	if len(pd.snapshot()) != 1 {
+		t.Fatal("partial rows lost")
+	}
+}

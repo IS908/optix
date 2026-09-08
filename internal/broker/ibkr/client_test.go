@@ -955,3 +955,14 @@ func TestHistoricalDurationBucketsByStartDateDistance(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionSpotUsesFallbackWhilePrimaryStalls(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	primary := func(ctx context.Context, _ string) (*model.StockQuote, error) { <-ctx.Done(); return nil, ctx.Err() }
+	fallback := func(context.Context, string) (*model.StockQuote, error) { return &model.StockQuote{Last: 767}, nil }
+	q, source := resolveOptionSpot(ctx, "SPY", primary, fallback)
+	if q == nil || q.Last != 767 || source != "yfinance" {
+		t.Fatalf("spot=%+v source=%s", q, source)
+	}
+}

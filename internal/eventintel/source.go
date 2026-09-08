@@ -126,6 +126,20 @@ func defaultEventDates() []EventDate {
 		{Date: eventDateUTC(2026, 4, 29), Kind: "FOMC", Label: "2026 Apr FOMC"},
 		{Date: eventDateUTC(2026, 5, 12), Kind: "CPI", Label: "2026 Apr CPI"},
 		{Date: eventDateUTC(2026, 6, 10), Kind: "CPI", Label: "2026 May CPI"},
+		// Official schedules checked 2026-09-08:
+		// https://www.bls.gov/schedule/news_release/cpi.htm
+		// https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+		{Date: eventDateUTC(2026, 6, 17), Kind: "FOMC", Label: "2026 Jun FOMC"},
+		{Date: eventDateUTC(2026, 7, 14), Kind: "CPI", Label: "2026 Jun CPI"},
+		{Date: eventDateUTC(2026, 7, 29), Kind: "FOMC", Label: "2026 Jul FOMC"},
+		{Date: eventDateUTC(2026, 8, 12), Kind: "CPI", Label: "2026 Jul CPI"},
+		{Date: eventDateUTC(2026, 9, 11), Kind: "CPI", Label: "2026 Aug CPI"},
+		{Date: eventDateUTC(2026, 9, 16), Kind: "FOMC", Label: "2026 Sep FOMC"},
+		{Date: eventDateUTC(2026, 10, 14), Kind: "CPI", Label: "2026 Sep CPI"},
+		{Date: eventDateUTC(2026, 10, 28), Kind: "FOMC", Label: "2026 Oct FOMC"},
+		{Date: eventDateUTC(2026, 11, 10), Kind: "CPI", Label: "2026 Oct CPI"},
+		{Date: eventDateUTC(2026, 12, 9), Kind: "FOMC", Label: "2026 Dec FOMC"},
+		{Date: eventDateUTC(2026, 12, 10), Kind: "CPI", Label: "2026 Nov CPI"},
 	}
 }
 

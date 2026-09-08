@@ -208,3 +208,15 @@ func (fb *FallbackBroker) GetOptionQuoteDetails(ctx context.Context, underlying,
 	}
 	return nil, ErrMarketDataNotSupported
 }
+
+func (fb *FallbackBroker) GetOptionChainWithSpot(ctx context.Context, underlying, expiration string, spot float64, source string) (*model.OptionChain, error) {
+	if f, ok := fb.active.(OISpotFetcher); ok {
+		return f.GetOptionChainWithSpot(ctx, underlying, expiration, spot, source)
+	}
+	return nil, ErrOINotSupported
+}
+
+func (fb *FallbackBroker) CanSampleOptionStress() bool {
+	f, ok := fb.active.(OISpotFetcher)
+	return ok && f.CanSampleOptionStress()
+}

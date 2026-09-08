@@ -40,6 +40,9 @@ var ErrOINotSupported = errors.New("broker does not support per-contract Open In
 // top-of-book market depth.
 var ErrMarketDepthNotSupported = errors.New("broker does not support market depth")
 
+// ErrMarketDepthLimit indicates a temporarily exhausted Gateway subscription quota.
+var ErrMarketDepthLimit = errors.New("market depth subscription limit")
+
 // ErrExpiryNotAvailable is returned by GetOptionChainWithOI when the caller
 // requested a specific expiration that the broker does not offer for this
 // underlying. Available contains the full unsorted list of expirations the
@@ -106,4 +109,12 @@ type Broker interface {
 
 	// GetOptionChain retrieves the option chain for an underlying.
 	GetOptionChain(ctx context.Context, underlying string, expiration string) (*model.OptionChain, error)
+}
+
+// OISpotFetcher samples only the nearest call and put (at most two contract
+// streams) using a recent externally sourced spot hint.
+type OISpotFetcher interface {
+	// CanSampleOptionStress reflects the active backend of a fallback broker.
+	CanSampleOptionStress() bool
+	GetOptionChainWithSpot(ctx context.Context, underlying, expiration string, spot float64, source string) (*model.OptionChain, error)
 }

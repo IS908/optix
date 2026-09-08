@@ -17,7 +17,8 @@ import (
 // pythonBin is the path to the Python interpreter for yfinance.
 // If empty, defaults to "python3".
 func NewWithFallback(ibCfg ibkr.Config, pythonBin string) *broker.FallbackBroker {
-	primary := ibkr.New(ibCfg)
 	fallback := yfinance.New(yfinance.Config{PythonBin: pythonBin})
+	ibCfg.OptionSpotFallback = fallback.GetQuote
+	primary := ibkr.New(ibCfg)
 	return broker.NewFallbackBroker(primary, fallback)
 }

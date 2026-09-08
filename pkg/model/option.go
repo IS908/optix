@@ -61,7 +61,8 @@ type OptionChainExpiry struct {
 
 // OptionChain holds the full option chain for an underlying.
 type OptionChain struct {
-	Underlying      string
-	UnderlyingPrice float64
-	Expirations     []OptionChainExpiry
+	Underlying            string
+	UnderlyingPrice       float64
+	UnderlyingPriceSource string
+	Expirations           []OptionChainExpiry
 }

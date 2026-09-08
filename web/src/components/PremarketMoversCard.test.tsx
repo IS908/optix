@@ -64,3 +64,10 @@ describe('PremarketMoversCard', () => {
     expect(screen.getByText('premarket bars unavailable')).toBeInTheDocument()
   })
 })
+
+it('shows unavailable for missing premarket volume rather than a zero ratio', async () => {
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({as_of:'',universe_note:'',gainers:[{symbol:'AAPL',pct:2,vol_ratio:0,missing_metrics:['vol_ratio'],watchlist:false}],losers:[]})}))
+ render(<PremarketMoversCard />)
+ await waitFor(()=>expect(screen.getByText('量比 不可用')).toBeInTheDocument())
+ expect(screen.queryByText('量比 0.0x')).not.toBeInTheDocument()
+})

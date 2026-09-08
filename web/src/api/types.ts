@@ -149,6 +149,7 @@ export interface Mover {
   symbol: string
   pct: number
   vol_ratio: number
+  missing_metrics?: string[]
   watchlist: boolean
 }
 

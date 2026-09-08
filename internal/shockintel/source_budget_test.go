@@ -133,3 +133,24 @@ func TestServicePreservesFastOptionWhenOtherUnderlyingUsesItsBudget(t *testing.T
 		t.Fatalf("TTL deadline discarded completed option data: rows=%v warnings=%v", rows, warnings)
 	}
 }
+
+type slowOverlayBroker struct{ testBroker }
+
+func (b slowOverlayBroker) GetQuote(ctx context.Context, symbol string) (*model.StockQuote, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if symbol == "SPY" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &model.StockQuote{Symbol: symbol, Last: 717, Timestamp: time.Now()}, nil
+}
+func TestSlowOverlayDoesNotStarveOtherBrokerQuotes(t *testing.T) {
+	a := NewBrokerQuoteAdapter(func(context.Context) (broker.Broker, string, error) { return slowOverlayBroker{}, "ibkr", nil }, nil)
+	a.overlayTimeout = 20 * time.Millisecond
+	rows, _ := a.Quotes(context.Background(), []string{"SPY", "QQQ"})
+	if rows["QQQ"].Price != 717 {
+		t.Fatalf("slow SPY starved QQQ: %v", rows)
+	}
+}

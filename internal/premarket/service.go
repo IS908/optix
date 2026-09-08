@@ -172,6 +172,7 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 	}
 	now := s.now()
 	var inputs []moverInput
+	missingVolume := 0
 	for _, sym := range syms {
 		series := bars[sym]
 		if len(series) == 0 {
@@ -185,12 +186,19 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 		if prevClose <= 0 {
 			continue
 		}
+		ratio := computeVolRatio(todayVol, series, now)
+		if ratio <= 0 {
+			missingVolume++
+		}
 		inputs = append(inputs, moverInput{
 			Symbol:      sym,
 			Pct:         (last - prevClose) / prevClose * 100,
-			VolRatio:    computeVolRatio(todayVol, series, now),
+			VolRatio:    ratio,
 			InWatchlist: inWL[sym],
 		})
+	}
+	if missingVolume > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf("%d/%d movers: premarket volume ratio unavailable (missing current volume or historical baseline)", missingVolume, len(inputs)))
 	}
 	g, l := rankMovers(inputs)
 	out.Gainers = toMovers(g)
@@ -204,9 +212,11 @@ func (s *Service) Movers(ctx context.Context, watchlist []string) (MoversDTO, er
 func toMovers(in []moverInput) []Mover {
 	out := make([]Mover, 0, len(in))
 	for _, m := range in {
-		out = append(out, Mover{
-			Symbol: m.Symbol, Pct: m.Pct, VolRatio: m.VolRatio, Watchlist: m.InWatchlist,
-		})
+		row := Mover{Symbol: m.Symbol, Pct: m.Pct, VolRatio: m.VolRatio, Watchlist: m.InWatchlist}
+		if m.VolRatio <= 0 {
+			row.MissingMetrics = []string{"vol_ratio"}
+		}
+		out = append(out, row)
 	}
 	return out
 }
